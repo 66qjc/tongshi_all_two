@@ -85,8 +85,8 @@ def main():
     args = sys.argv[1:]
 
     if "--check" in args:
-        check_connection()
-        return
+        ok = check_connection()
+        sys.exit(0 if ok else 1)
 
     print("=" * 50)
     print("  AI 通识课平台 — 数据库部署")

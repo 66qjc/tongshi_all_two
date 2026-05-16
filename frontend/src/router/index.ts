@@ -77,6 +77,12 @@ const router = createRouter({
       meta: { title: '我的成长档案' },
     },
     {
+      path: '/inbox',
+      name: 'inbox',
+      component: () => import('../views/InboxView.vue'),
+      meta: { title: '消息通知' },
+    },
+    {
       path: '/teacher',
       component: () => import('../views/teacher/TeacherLayout.vue'),
       meta: { title: '教师工作台', role: 'teacher' },
@@ -86,6 +92,12 @@ const router = createRouter({
           name: 'teacher-dashboard',
           component: () => import('../views/teacher/TeacherDashboard.vue'),
           meta: { title: '教师工作台' },
+        },
+        {
+          path: 'classes',
+          name: 'teacher-classes',
+          component: () => import('../views/teacher/TeacherClasses.vue'),
+          meta: { title: '班级管理' },
         },
         {
           path: 'materials',
@@ -98,6 +110,12 @@ const router = createRouter({
           name: 'teacher-questions',
           component: () => import('../views/teacher/TeacherQuestions.vue'),
           meta: { title: '题库管理' },
+        },
+        {
+          path: 'announcements',
+          name: 'teacher-announcements',
+          component: () => import('../views/teacher/TeacherAnnouncements.vue'),
+          meta: { title: '任务发布' },
         },
         {
           path: 'students',

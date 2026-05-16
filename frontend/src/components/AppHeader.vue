@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { getUnreadCount } from '@/api/announcement'
 
 const router = useRouter()
 const route = useRoute()
@@ -9,6 +10,15 @@ const authStore = useAuthStore()
 
 const scrolled = ref(false)
 const mobileMenuOpen = ref(false)
+const unreadCount = ref(0)
+
+async function fetchUnreadCount() {
+  if (!authStore.isLoggedIn || authStore.user?.role !== 'student') return
+  try {
+    const res = await getUnreadCount()
+    unreadCount.value = res.count
+  } catch {}
+}
 
 const navItems = [
   { name: '探 · 学无止境', path: '/learn', icon: '&#9678;' },
@@ -32,7 +42,10 @@ function handleLogout() {
   router.push('/')
 }
 
-onMounted(() => window.addEventListener('scroll', handleScroll))
+onMounted(() => {
+  window.addEventListener('scroll', handleScroll)
+  fetchUnreadCount()
+})
 onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 </script>
 
@@ -79,6 +92,13 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
           <router-link v-if="authStore.user?.role === 'teacher'" to="/teacher" class="nav-link teacher-link">
             教师工作台
           </router-link>
+          <router-link v-if="authStore.user?.role === 'student'" to="/inbox" class="notification-bell">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0"
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+          </router-link>
           <span class="user-name">{{ authStore.user?.name }}</span>
           <button class="btn-logout" @click="handleLogout">退出</button>
         </template>
@@ -108,6 +128,10 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
           {{ item.name }}
         </a>
         <template v-if="authStore.isLoggedIn">
+          <router-link v-if="authStore.user?.role === 'student'" to="/inbox"
+                       class="mobile-nav-link" @click="mobileMenuOpen = false">
+            消息通知{{ unreadCount > 0 ? ` (${unreadCount})` : '' }}
+          </router-link>
           <router-link v-if="authStore.user?.role === 'teacher'" to="/teacher"
                        class="mobile-nav-link" @click="mobileMenuOpen = false">
             教师工作台
@@ -272,6 +296,41 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 .teacher-link {
   color: var(--color-primary) !important;
   font-weight: 600 !important;
+}
+
+.notification-bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+  transition: all var(--duration-fast);
+}
+
+.notification-bell:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-glow);
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: white;
+  background: #ef4444;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* Hamburger */

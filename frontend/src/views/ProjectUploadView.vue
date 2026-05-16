@@ -13,6 +13,7 @@ const form = reactive({
   major: '',
   description: '',
   videoUrl: '',
+  linkUrl: '',
 })
 
 const tags = ref<string[]>([])
@@ -81,6 +82,7 @@ async function handleSubmit() {
       video_url: form.videoUrl.trim() || undefined,
       report_url: reportUrl || undefined,
       image_url: imageUrl || undefined,
+      link_url: form.linkUrl.trim() || undefined,
     })
 
     ElMessage.success('作品提交成功！')
@@ -171,6 +173,11 @@ async function handleSubmit() {
         <div class="form-group">
           <label>演示视频链接</label>
           <el-input v-model="form.videoUrl" placeholder="粘贴 Bilibili / YouTube 视频链接" size="large" />
+        </div>
+
+        <div class="form-group">
+          <label>外链地址</label>
+          <el-input v-model="form.linkUrl" placeholder="GitHub 仓库、博客、在线演示等任意链接" size="large" />
         </div>
 
         <div class="form-group">

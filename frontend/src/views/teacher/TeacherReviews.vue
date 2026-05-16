@@ -59,12 +59,19 @@ async function handleReject() {
     ElMessage.error('操作失败')
   }
 }
+
+function handleBatchDownload() {
+  const token = localStorage.getItem('auth_token')
+  const url = `/api/teacher/projects/batch-download?token=${encodeURIComponent(token || '')}`
+  window.open(url, '_blank')
+}
 </script>
 
 <template>
   <div class="reviews-page">
     <div class="page-header">
       <h1>作品审核</h1>
+      <el-button round @click="handleBatchDownload">批量下载 PDF</el-button>
     </div>
 
     <div class="status-summary">
@@ -116,6 +123,13 @@ async function handleReject() {
           <div class="detail-tags">
             <span v-for="tag in selectedProject.tags" :key="tag" class="tag">{{ tag }}</span>
           </div>
+        </div>
+
+        <div v-if="selectedProject.link_url" class="detail-section">
+          <label>外链</label>
+          <a :href="selectedProject.link_url" target="_blank" rel="noopener" class="detail-link">
+            {{ selectedProject.link_url }}
+          </a>
         </div>
 
         <div class="detail-section">
@@ -218,6 +232,12 @@ async function handleReject() {
   margin-top: var(--space-sm);
   font-size: 0.85rem;
   color: #ef4444;
+}
+
+.detail-link {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  word-break: break-all;
 }
 
 .detail-actions {

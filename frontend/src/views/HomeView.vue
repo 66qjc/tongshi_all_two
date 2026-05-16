@@ -6,6 +6,7 @@ import ModuleShowcase from '../components/home/ModuleShowcase.vue'
 import CoursePreview from '../components/home/CoursePreview.vue'
 import StatsSection from '../components/home/StatsSection.vue'
 import CtaSection from '../components/home/CtaSection.vue'
+import AnnouncementPopup from '../components/AnnouncementPopup.vue'
 
 const router = useRouter()
 
@@ -40,6 +41,7 @@ onUnmounted(() => {
     <CoursePreview />
     <StatsSection />
     <CtaSection />
+    <AnnouncementPopup />
   </div>
 </template>
 

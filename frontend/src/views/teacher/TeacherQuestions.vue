@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getQuestions, createQuestion, updateQuestion, deleteQuestion as apiDeleteQuestion, type Question } from '@/api/question'
+import { getQuestions, createQuestion, updateQuestion, deleteQuestion as apiDeleteQuestion, importQuestions, type Question } from '@/api/question'
 
 const chapterNames: Record<number, string> = {
   1: '人工智能概述',
@@ -102,13 +102,51 @@ async function handleDelete(id: number) {
     ElMessage.success('已删除')
   } catch {}
 }
+
+const importDialogVisible = ref(false)
+const importFile = ref<File | null>(null)
+const importInput = ref<HTMLInputElement | null>(null)
+const importing = ref(false)
+
+function openImport() {
+  importFile.value = null
+  importDialogVisible.value = true
+}
+
+function handleImportFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files && input.files[0]) {
+    importFile.value = input.files[0]
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) {
+    ElMessage.warning('请选择文件')
+    return
+  }
+  importing.value = true
+  try {
+    const result = await importQuestions(importFile.value)
+    ElMessage.success(`导入完成：成功 ${result.success_count} 题，失败 ${result.fail_count} 题`)
+    importDialogVisible.value = false
+    questions.value = await getQuestions()
+  } catch {
+    ElMessage.error('导入失败')
+  } finally {
+    importing.value = false
+  }
+}
 </script>
 
 <template>
   <div class="questions-page">
     <div class="page-header">
       <h1>题库管理</h1>
-      <el-button type="primary" round @click="openNew">新增题目</el-button>
+      <div class="header-actions">
+        <el-button round @click="openImport">导入题目</el-button>
+        <el-button type="primary" round @click="openNew">新增题目</el-button>
+      </div>
     </div>
 
     <div class="filter-bar">
@@ -188,6 +226,31 @@ async function handleDelete(id: number) {
         <el-button type="primary" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- Import dialog -->
+    <el-dialog v-model="importDialogVisible" title="Excel 批量导入题目" width="500px">
+      <div class="import-info">
+        <p>请上传 .xlsx 文件，表头格式：</p>
+        <table class="format-table">
+          <thead><tr><th>type</th><th>chapter</th><th>stem</th><th>options</th><th>answer</th><th>explanation</th></tr></thead>
+          <tbody><tr><td>choice</td><td>01</td><td>图灵测试由谁提出？</td><td>A. xxx|B. xxx|C. xxx|D. xxx</td><td>A</td><td>解析内容</td></tr></tbody>
+        </table>
+        <p class="import-note">type 为 choice 或 fill，chapter 填章节编号（如 01），填空题 options 留空。</p>
+      </div>
+      <div class="upload-zone-import" @click="importInput?.click()">
+        <input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="handleImportFile" />
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+          <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span v-if="!importFile">点击选择 Excel 文件</span>
+        <span v-else class="file-name">{{ importFile.name }}</span>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importing" @click="handleImport">开始导入</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -197,6 +260,11 @@ async function handleDelete(id: number) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-xl);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .page-header h1 {
@@ -249,5 +317,63 @@ async function handleDelete(id: number) {
   background: var(--color-bg-alt);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
+}
+
+.import-info {
+  margin-bottom: var(--space-lg);
+}
+
+.import-info p {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+.format-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  margin: var(--space-sm) 0;
+}
+
+.format-table th,
+.format-table td {
+  border: 1px solid var(--color-border);
+  padding: 0.3rem 0.5rem;
+  text-align: center;
+}
+
+.format-table th {
+  background: var(--color-bg-alt);
+  font-weight: 600;
+}
+
+.import-note {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.upload-zone-import {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.upload-zone-import:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.file-name {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 </style>

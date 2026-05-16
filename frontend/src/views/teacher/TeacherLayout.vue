@@ -8,8 +8,10 @@ const authStore = useAuthStore()
 
 const navItems = [
   { name: '概览', path: '/teacher', icon: '&#9673;' },
+  { name: '班级管理', path: '/teacher/classes', icon: '&#9881;' },
   { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
   { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
+  { name: '任务发布', path: '/teacher/announcements', icon: '&#9993;' },
   { name: '学生数据', path: '/teacher/students', icon: '&#9783;' },
   { name: '作品审核', path: '/teacher/reviews', icon: '&#10003;' },
 ]

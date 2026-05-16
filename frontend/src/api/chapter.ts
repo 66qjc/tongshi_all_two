@@ -14,6 +14,9 @@ export interface Chapter {
   total: number
   done: number
   accuracy: number
+  day_of_week: string
+  class_periods: string
+  schedule_note: string
 }
 
 export function getChapters() {
@@ -22,4 +25,8 @@ export function getChapters() {
 
 export function getChapterContents(chapterId: number) {
   return http.get<any, any[]>(`/chapters/${chapterId}/contents`)
+}
+
+export function updateChapterSchedule(id: number, data: { day_of_week?: string; class_periods?: string; schedule_note?: string }) {
+  return http.put<any, any>(`/chapters/${id}/schedule`, data)
 }

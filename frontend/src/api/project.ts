@@ -13,6 +13,7 @@ export interface Project {
   video_url: string
   report_url: string
   image_url: string
+  link_url: string
   status: string
   reject_reason: string
   date: string
@@ -30,7 +31,7 @@ export function getMyProjects() {
   return http.get<any, Project[]>('/projects/mine')
 }
 
-export function createProject(data: { title: string; description: string; tags: string[]; video_url?: string; report_url?: string; image_url?: string }) {
+export function createProject(data: { title: string; description: string; tags: string[]; video_url?: string; report_url?: string; image_url?: string; link_url?: string }) {
   return http.post<any, { id: number }>('/projects', data)
 }
 

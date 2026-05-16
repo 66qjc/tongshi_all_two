@@ -94,6 +94,18 @@ async function toggleLike() {
           </a>
         </section>
 
+        <!-- External link -->
+        <section v-if="project.link_url" class="detail-section">
+          <h3>项目链接</h3>
+          <a :href="project.link_url" target="_blank" rel="noopener" class="external-link">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            {{ project.link_url }}
+          </a>
+        </section>
+
         <!-- Related projects -->
         <section v-if="relatedProjects.length > 0" class="detail-section">
           <h3>相关作品</h3>
@@ -271,6 +283,25 @@ async function toggleLike() {
 
 .video-link:hover {
   background: rgba(245, 158, 11, 0.12);
+}
+
+.external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0.6rem 1.2rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-primary);
+  background: var(--color-primary-glow);
+  border: 1px solid rgba(79, 70, 229, 0.15);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast);
+  word-break: break-all;
+}
+
+.external-link:hover {
+  background: rgba(79, 70, 229, 0.12);
 }
 
 .related-grid {

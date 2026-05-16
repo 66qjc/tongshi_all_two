@@ -29,3 +29,11 @@ export function updateQuestion(id: number, data: Partial<Question>) {
 export function deleteQuestion(id: number) {
   return http.delete<any, any>(`/questions/${id}`)
 }
+
+export function importQuestions(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http.post<any, { success_count: number; fail_count: number; errors: { row: number; reason: string }[] }>('/questions/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
