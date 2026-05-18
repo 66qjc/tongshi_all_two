@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAllProjects, approveProject, rejectProject } from '@/api/teacher'
 import type { Project } from '@/api/project'
 
@@ -10,6 +10,8 @@ const loading = ref(true)
 onMounted(async () => {
   try {
     projects.value = await getAllProjects()
+  } catch {
+    ElMessage.error('作品数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -34,12 +36,15 @@ function openDetail(p: Project) {
 async function handleApprove() {
   if (!selectedProject.value) return
   try {
+    await ElMessageBox.confirm(`确定通过作品「${selectedProject.value.title}」？`, '审核确认', { type: 'warning' })
     await approveProject(selectedProject.value.id)
     selectedProject.value.status = 'approved'
     drawerVisible.value = false
     ElMessage.success('已通过')
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('审核失败，请稍后重试')
+    }
   }
 }
 
@@ -50,13 +55,16 @@ async function handleReject() {
     return
   }
   try {
+    await ElMessageBox.confirm(`确定驳回作品「${selectedProject.value.title}」？驳回理由将反馈给学生。`, '审核确认', { type: 'warning' })
     await rejectProject(selectedProject.value.id, rejectReason.value.trim())
     selectedProject.value.status = 'rejected'
     selectedProject.value.reject_reason = rejectReason.value.trim()
     drawerVisible.value = false
     ElMessage.success('已驳回')
-  } catch {
-    ElMessage.error('操作失败')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('驳回失败，请稍后重试')
+    }
   }
 }
 
@@ -86,7 +94,7 @@ function handleBatchDownload() {
       </span>
     </div>
 
-    <el-table :data="projects" stripe style="width: 100%">
+    <el-table :data="projects" stripe style="width: 100%" v-loading="loading">
       <el-table-column prop="title" label="作品名称" min-width="180" />
       <el-table-column prop="author_name" label="作者" width="100" />
       <el-table-column prop="major" label="专业" width="120" />
@@ -104,6 +112,10 @@ function handleBatchDownload() {
         </template>
       </el-table-column>
     </el-table>
+
+    <div v-if="!loading && projects.length === 0" class="empty-state">
+      <p>暂无待审核作品。</p>
+    </div>
 
     <!-- Detail drawer -->
     <el-drawer v-model="drawerVisible" title="作品详情" size="480px">
@@ -250,5 +262,12 @@ function handleBatchDownload() {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-3xl) 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 </style>

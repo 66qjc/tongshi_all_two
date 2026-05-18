@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { getStudents, type Student } from '@/api/teacher'
 import { getAnnouncements, getCompletionReport, type Announcement, type CompletionReport } from '@/api/announcement'
 
@@ -13,6 +14,8 @@ onMounted(async () => {
     const [s, a] = await Promise.all([getStudents(), getAnnouncements()])
     students.value = s
     announcements.value = a
+  } catch {
+    ElMessage.error('学生数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -37,6 +40,8 @@ async function loadReport(id: number) {
   reportLoading.value = true
   try {
     reportData.value = await getCompletionReport(id)
+  } catch {
+    ElMessage.error('任务完成情况加载失败，请稍后重试')
   } finally {
     reportLoading.value = false
   }
@@ -93,6 +98,10 @@ function handleAnnouncementChange(val: number | null) {
           </template>
         </el-table-column>
       </el-table>
+
+      <div v-if="!loading && filteredStudents.length === 0" class="empty-state">
+        暂无学生数据，请先导入学生或创建班级。
+      </div>
     </template>
 
     <!-- Tasks tab -->
@@ -116,6 +125,10 @@ function handleAnnouncementChange(val: number | null) {
       </div>
 
       <div v-if="reportLoading" class="loading-state">加载中...</div>
+
+      <div v-else-if="announcements.filter(a => a.type === 'quiz').length === 0" class="empty-state">
+        暂无可查看的题目任务。
+      </div>
 
       <div v-else-if="reportData" class="report-content">
         <div class="report-header">

@@ -39,6 +39,8 @@ onMounted(async () => {
     materials.value = m
     chapters.value = c
     filteredMaterials.value = m
+  } catch {
+    ElMessage.error('资料数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -81,7 +83,11 @@ async function handleDelete(id: number) {
     materials.value = materials.value.filter(m => m.id !== id)
     handleFilter()
     ElMessage.success('已删除')
-  } catch {}
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
 }
 
 function openSchedule(ch: Chapter) {
@@ -144,7 +150,7 @@ async function handleSaveSchedule() {
       </div>
     </div>
 
-    <el-table :data="filteredMaterials" stripe style="width: 100%">
+    <el-table :data="filteredMaterials" stripe style="width: 100%" v-loading="loading">
       <el-table-column prop="title" label="文件名称" min-width="200" />
       <el-table-column prop="chapter" label="所属章节" width="160" />
       <el-table-column prop="type" label="类型" width="80">
@@ -162,6 +168,10 @@ async function handleSaveSchedule() {
         </template>
       </el-table-column>
     </el-table>
+
+    <div v-if="!loading && filteredMaterials.length === 0" class="empty-state">
+      <p>暂无资料，点击「上传资料」添加课程视频或 PDF。</p>
+    </div>
 
     <!-- Upload dialog -->
     <el-dialog v-model="dialogVisible" title="上传资料" width="480px">
@@ -352,6 +362,13 @@ async function handleSaveSchedule() {
   color: var(--color-primary);
   font-weight: 500;
   flex-shrink: 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-3xl) 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {

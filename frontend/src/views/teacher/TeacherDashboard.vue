@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getTeacherStats } from '@/api/teacher'
 
 const router = useRouter()
@@ -27,7 +28,9 @@ onMounted(async () => {
       { label: '待审作品', value: String(data.pending_reviews), color: 'var(--color-create)' },
       { label: '本周练习量', value: String(data.weekly_exercises), color: 'var(--color-act)' },
     ]
-  } catch {}
+  } catch {
+    ElMessage.error('统计数据加载失败，请稍后重试')
+  }
 })
 </script>
 
