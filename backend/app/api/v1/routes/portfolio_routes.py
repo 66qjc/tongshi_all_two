@@ -12,7 +12,7 @@ from app.services.portfolio_service import get_portfolio
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 
-@router.get("")
+@router.get("", summary="成长档案", description="学生端：返回个人学习数据可视化（雷达图、统计、时间线、作品列表）")
 def portfolio(db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)):
     data = get_portfolio(db, current_user.id)
     if not data:

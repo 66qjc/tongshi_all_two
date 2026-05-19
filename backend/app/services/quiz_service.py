@@ -1,6 +1,8 @@
 """Quiz service"""
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
+
 from app.models.entities import Question, QuizAttempt, StudentProgress
 
 
@@ -27,21 +29,24 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
         sp = StudentProgress(user_id=user_id, chapter_id=question.chapter_id)
         db.add(sp)
 
-    sp.questions_done += 1
+    # 先 flush 确保新增的 attempt 对后续查询可见（session 设置了 autoflush=False）
+    db.flush()
+
     total = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.question_id.in_(
             db.query(Question.id).filter(Question.chapter_id == question.chapter_id)
         ),
     ).count()
-    correct = db.query(QuizAttempt).filter(
+    correct_count = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.is_correct == True,
         QuizAttempt.question_id.in_(
             db.query(Question.id).filter(Question.chapter_id == question.chapter_id)
         ),
     ).count()
-    sp.accuracy = int(correct / total * 100) if total > 0 else 0
+    sp.questions_done = total
+    sp.accuracy = int(correct_count / total * 100) if total > 0 else 0
 
     db.commit()
     return {
@@ -56,13 +61,14 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
 
 
 def get_quiz_history(db: Session, user_id: str, limit: int = 10):
-    attempts = db.query(QuizAttempt).filter(
+    attempts = db.query(QuizAttempt).options(joinedload(QuizAttempt.question)).filter(
         QuizAttempt.user_id == user_id,
     ).order_by(QuizAttempt.answered_at.desc()).limit(limit).all()
 
     result = []
     for a in attempts:
-        q = db.query(Question).filter(Question.id == a.question_id).first()
+        # 利用 ORM relationship 直接访问 Question，避免 N+1 查询
+        q = a.question
         result.append({
             "id": a.id,
             "question_id": a.question_id,

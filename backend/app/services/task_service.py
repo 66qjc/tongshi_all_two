@@ -35,7 +35,7 @@ def completion_report(db: Session, announcement_id: int):
     ann = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not ann:
         return None
-    cls = db.query(Class).filter(Class.id == ann.class_id).first()
+    cls = ann.class_
     students = (
         db.query(User)
         .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)

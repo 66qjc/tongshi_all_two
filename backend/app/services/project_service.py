@@ -1,8 +1,11 @@
 """Project service"""
+import logging
 from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.entities import Project, ProjectLike, User
+
+logger = logging.getLogger(__name__)
 
 
 def list_approved_projects(db: Session):
@@ -34,6 +37,7 @@ def create_project(db: Session, user_id: str, data: dict):
     db.add(project)
     db.commit()
     db.refresh(project)
+    logger.info(f"作品提交: user_id={user_id}, title={project.title}, id={project.id}")
     return project
 
 
@@ -59,6 +63,7 @@ def approve_project(db: Session, project_id: int):
     p.status = "approved"
     p.reject_reason = ""
     db.commit()
+    logger.info(f"作品审核通过: project_id={project_id}, title={p.title}")
     return p
 
 
@@ -69,4 +74,5 @@ def reject_project(db: Session, project_id: int, reason: str):
     p.status = "rejected"
     p.reject_reason = reason
     db.commit()
+    logger.info(f"作品驳回: project_id={project_id}, title={p.title}, reason={reason}")
     return p

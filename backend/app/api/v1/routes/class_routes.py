@@ -6,7 +6,8 @@ from app.db.session import get_db
 from app.core.security import require_role
 from app.core.response import success
 from app.core.exceptions import BusinessException
-from app.schemas.common import AuthUser, ClassCreate
+from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
+from app.schemas.common import AuthUser, ClassCreate, ClassEnrollRequest
 from app.services.class_service import (
     list_classes, create_class, delete_class,
     list_class_students, enroll_student, remove_student,
@@ -16,18 +17,18 @@ from app.services.class_service import (
 router = APIRouter(prefix="/classes", tags=["classes"])
 
 
-@router.get("")
+@router.get("", summary="班级列表", description="教师端：返回所有班级及其学生人数")
 def get_classes(db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     return success(list_classes(db))
 
 
-@router.post("")
+@router.post("", summary="创建班级", description="教师端：创建新班级")
 def post_class(data: ClassCreate, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     cls = create_class(db, data.name, data.major)
     return success({"id": cls.id})
 
 
-@router.delete("/{class_id}")
+@router.delete("/{class_id}", summary="删除班级", description="教师端：删除班级及所有注册关系")
 def remove_class(class_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     cls = delete_class(db, class_id)
     if not cls:
@@ -35,7 +36,7 @@ def remove_class(class_id: int, db: Session = Depends(get_db), _: AuthUser = Dep
     return success()
 
 
-@router.get("/{class_id}/students")
+@router.get("/{class_id}/students", summary="班级学生列表", description="教师端：返回指定班级的所有学生")
 def get_students(class_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     students = list_class_students(db, class_id)
     if students is None:
@@ -43,9 +44,9 @@ def get_students(class_id: int, db: Session = Depends(get_db), _: AuthUser = Dep
     return success(students)
 
 
-@router.post("/{class_id}/enroll")
-def add_student(class_id: int, student_id: str, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    enrollment, status = enroll_student(db, class_id, student_id)
+@router.post("/{class_id}/enroll", summary="添加学生", description="教师端：将学生手动添加到班级")
+def add_student(class_id: int, data: ClassEnrollRequest, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
+    enrollment, status = enroll_student(db, class_id, data.student_id)
     if enrollment is None and status == "班级不存在":
         raise BusinessException(404, status)
     if enrollment is None and status == "学生不存在":
@@ -53,7 +54,7 @@ def add_student(class_id: int, student_id: str, db: Session = Depends(get_db), _
     return success({"status": status})
 
 
-@router.delete("/{class_id}/enroll/{student_id}")
+@router.delete("/{class_id}/enroll/{student_id}", summary="移除学生", description="教师端：从班级中移除指定学生")
 def remove_enrollment(class_id: int, student_id: str, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     enrollment = remove_student(db, class_id, student_id)
     if not enrollment:
@@ -61,8 +62,11 @@ def remove_enrollment(class_id: int, student_id: str, db: Session = Depends(get_
     return success()
 
 
-@router.post("/import")
+@router.post("/import", summary="Excel 批量导入", description="教师端：上传 Excel 文件批量导入学生、班级和注册关系（.xlsx，表头：student_id/name/major/class_name）")
 def import_class_students(file: UploadFile = File(...), db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     content = file.file.read()
+    err = validate_upload(file.filename, len(content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
+    if err:
+        raise BusinessException(400, err)
     result = import_students_from_excel(db, content)
     return success(result)

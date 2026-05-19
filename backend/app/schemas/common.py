@@ -1,6 +1,7 @@
 """Pydantic request / response schemas"""
+import re
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
@@ -27,6 +28,15 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=6)
     role: str = "student"
     major: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        if not re.search(r"[a-zA-Z]", v):
+            raise ValueError("密码必须包含至少一个字母")
+        if not re.search(r"\d", v):
+            raise ValueError("密码必须包含至少一个数字")
+        return v
 
 
 # ── Class ───────────────────────────────────────────────────────────────────
@@ -60,6 +70,28 @@ class ClassImportResult(BaseModel):
     errors: List[dict] = []
 
 
+class ClassEnrollRequest(BaseModel):
+    student_id: str = Field(min_length=1)
+
+
+class AnnouncementCreate(BaseModel):
+    class_id: int
+    type: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    content: str = ""
+    question_ids: List[int] = []
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+class CourseCreateRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class CourseUpdateRequest(BaseModel):
+    name: str = Field(min_length=1)
+
+
 # ── Chapter ─────────────────────────────────────────────────────────────────
 class ChapterOut(BaseModel):
     id: int
@@ -71,6 +103,10 @@ class ChapterOut(BaseModel):
     videos: int = 0
     docs: int = 0
     progress: int = 0
+    course_id: Optional[int] = None
+    day_of_week: str = ""
+    class_periods: str = ""
+    schedule_note: str = ""
 
     class Config:
         from_attributes = True
@@ -78,6 +114,12 @@ class ChapterOut(BaseModel):
 
 class ChapterUpdate(BaseModel):
     status: Optional[str] = None
+
+
+class ChapterScheduleUpdate(BaseModel):
+    day_of_week: Optional[str] = None
+    class_periods: Optional[str] = None
+    schedule_note: Optional[str] = None
 
 
 # ── Material ────────────────────────────────────────────────────────────────

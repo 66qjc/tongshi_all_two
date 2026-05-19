@@ -1,7 +1,10 @@
 """Seed data for the tongshi AI course platform"""
+from datetime import datetime, timedelta, timezone
+
 from app.core.security import get_password_hash
 from app.db.session import SessionLocal
 from app.models.entities import User, Chapter, Material, Question, Project, ActivityEvent
+from app.models.entities import Course, Class, StudentClassEnrollment, Announcement
 
 
 def seed():
@@ -21,15 +24,45 @@ def seed():
         db.commit()
         print("  Users seeded")
 
+    # ── Classes & Enrollment ──────────────────────────────────────────────────
+    if db.query(Class).count() == 0:
+        class1 = Class(name="2025级1班", major="自动化专业")
+        class2 = Class(name="2025级2班", major="机械工程")
+        db.add_all([class1, class2])
+        db.flush()
+
+        # 注册学生到班级
+        enrollments = [
+            StudentClassEnrollment(user_id="2025001", class_id=class1.id),  # 张同学 → 1班
+            StudentClassEnrollment(user_id="2025002", class_id=class2.id),  # 李同学 → 2班
+            StudentClassEnrollment(user_id="2025003", class_id=class1.id),  # 王同学 → 1班
+            StudentClassEnrollment(user_id="2025004", class_id=class2.id),  # 陈同学 → 2班
+            StudentClassEnrollment(user_id="2025005", class_id=class1.id),  # 刘同学 → 1班
+        ]
+        db.add_all(enrollments)
+        db.commit()
+        print("  Classes & enrollments seeded")
+
+    # ── Course ────────────────────────────────────────────────────────────────
+    if db.query(Course).count() == 0:
+        course = Course(name="AI 通识课")
+        db.add(course)
+        db.commit()
+        db.refresh(course)
+        print("  Course seeded")
+        course_id = course.id
+    else:
+        course_id = db.query(Course).first().id
+
     # ── Chapters ─────────────────────────────────────────────────────────────
     if db.query(Chapter).count() == 0:
         chapters = [
-            Chapter(num="01", title="人工智能概述", desc="从图灵测试到深度学习，AI 发展全景扫描", topics=["AI 发展简史", "主要流派与学派", "关键里程碑事件", "中国 AI 发展"], status="已发布", sort_order=1),
-            Chapter(num="02", title="计算机基础知识", desc="办公软件使用基础与计算思维入门", topics=["计算思维", "数据表示与运算", "办公软件基础", "信息安全入门"], status="已发布", sort_order=2),
-            Chapter(num="03", title="AI 理论基础", desc="深度学习、大模型原理与核心算法", topics=["机器学习基础", "神经网络原理", "大模型架构", "Transformer 详解"], status="已发布", sort_order=3),
-            Chapter(num="04", title="AI 工具使用", desc="大模型、智能体应用及简单开发实践", topics=["Prompt 工程", "AI Agent 开发", "API 调用实战", "Gradio 快速上手"], status="即将发布", sort_order=4),
-            Chapter(num="05", title="AI 前沿与应用", desc="结合专业的前沿应用场景探索", topics=["AI + 医疗", "AI + 制造", "AI + 艺术", "AI + 科研"], status="即将发布", sort_order=5),
-            Chapter(num="06", title="AI 伦理与未来", desc="技术向善，负责任的人工智能发展之路", topics=["算法偏见", "数据隐私", "AI 安全", "人机协作的未来"], status="即将发布", sort_order=6),
+            Chapter(num="01", title="人工智能概述", desc="从图灵测试到深度学习，AI 发展全景扫描", topics=["AI 发展简史", "主要流派与学派", "关键里程碑事件", "中国 AI 发展"], status="已发布", sort_order=1, day_of_week="周一", class_periods="1-3", schedule_note="", course_id=course_id),
+            Chapter(num="02", title="计算机基础知识", desc="办公软件使用基础与计算思维入门", topics=["计算思维", "数据表示与运算", "办公软件基础", "信息安全入门"], status="已发布", sort_order=2, day_of_week="周三", class_periods="5-7", schedule_note="双周", course_id=course_id),
+            Chapter(num="03", title="AI 理论基础", desc="深度学习、大模型原理与核心算法", topics=["机器学习基础", "神经网络原理", "大模型架构", "Transformer 详解"], status="已发布", sort_order=3, day_of_week="周五", class_periods="1-3", schedule_note="", course_id=course_id),
+            Chapter(num="04", title="AI 工具使用", desc="大模型、智能体应用及简单开发实践", topics=["Prompt 工程", "AI Agent 开发", "API 调用实战", "Gradio 快速上手"], status="即将发布", sort_order=4, course_id=course_id),
+            Chapter(num="05", title="AI 前沿与应用", desc="结合专业的前沿应用场景探索", topics=["AI + 医疗", "AI + 制造", "AI + 艺术", "AI + 科研"], status="即将发布", sort_order=5, course_id=course_id),
+            Chapter(num="06", title="AI 伦理与未来", desc="技术向善，负责任的人工智能发展之路", topics=["算法偏见", "数据隐私", "AI 安全", "人机协作的未来"], status="即将发布", sort_order=6, course_id=course_id),
         ]
         db.add_all(chapters)
         db.commit()
@@ -84,6 +117,38 @@ def seed():
         db.add_all(projects)
         db.commit()
         print("  Projects seeded")
+
+    # ── Announcements ─────────────────────────────────────────────────────────
+    if db.query(Announcement).count() == 0:
+        # 获取第一个班级用于示例公告
+        first_class = db.query(Class).first()
+        if first_class:
+            from datetime import timedelta
+            now = datetime.now(timezone.utc)
+            announcements = [
+                Announcement(
+                    class_id=first_class.id,
+                    teacher_id="T001",
+                    type="announcement",
+                    title="欢迎选修 AI 通识课",
+                    content="各位同学好！欢迎来到 AI 通识课。本课程共 6 章，涵盖人工智能的发展历程、理论基础、工具使用、前沿应用与伦理思考。请按章节顺序学习，按时完成课后练习。",
+                    start_time=now,
+                    end_time=now + timedelta(days=90),
+                ),
+                Announcement(
+                    class_id=first_class.id,
+                    teacher_id="T001",
+                    type="quiz",
+                    title="第一章课后练习",
+                    content="",
+                    question_ids=[1, 2, 3],
+                    start_time=now,
+                    end_time=now + timedelta(days=14),
+                ),
+            ]
+            db.add_all(announcements)
+            db.commit()
+            print("  Announcements seeded")
 
     # ── Activity events ──────────────────────────────────────────────────────
     if db.query(ActivityEvent).count() == 0:

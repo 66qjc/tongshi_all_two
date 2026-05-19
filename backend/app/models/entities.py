@@ -65,6 +65,9 @@ class Chapter(Base):
     status = Column(String(16), default="已发布")
     sort_order = Column(Integer, default=0)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
+    day_of_week = Column(String(16), default="")
+    class_periods = Column(String(32), default="")
+    schedule_note = Column(String(128), default="")
 
     course = relationship("Course", back_populates="chapters")
     materials = relationship("Material", back_populates="chapter", cascade="all, delete-orphan")
@@ -109,6 +112,7 @@ class QuizAttempt(Base):
     answered_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="quiz_attempts")
+    question = relationship("Question")
 
 
 class StudentProgress(Base):
@@ -168,6 +172,11 @@ class Announcement(Base):
     end_time = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    class_ = relationship("Class")
+    teacher = relationship("User")
+    reads = relationship("AnnouncementRead", back_populates="announcement", cascade="all, delete-orphan")
+    completions = relationship("TaskCompletion", back_populates="announcement", cascade="all, delete-orphan")
+
 
 class AnnouncementRead(Base):
     __tablename__ = "announcement_reads"
@@ -178,6 +187,9 @@ class AnnouncementRead(Base):
     announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True)
     read_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    announcement = relationship("Announcement", back_populates="reads")
+    user = relationship("User")
+
 
 class TaskCompletion(Base):
     __tablename__ = "task_completions"
@@ -187,6 +199,9 @@ class TaskCompletion(Base):
     announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     completed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    announcement = relationship("Announcement", back_populates="completions")
+    user = relationship("User")
 
 
 class ActivityEvent(Base):

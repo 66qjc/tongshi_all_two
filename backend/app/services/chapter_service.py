@@ -27,6 +27,10 @@ def list_chapters(db: Session, user_id: str = None):
             "videos": videos,
             "docs": docs,
             "progress": progress,
+            "course_id": ch.course_id,
+            "day_of_week": ch.day_of_week or "",
+            "class_periods": ch.class_periods or "",
+            "schedule_note": ch.schedule_note or "",
         })
     return result
 

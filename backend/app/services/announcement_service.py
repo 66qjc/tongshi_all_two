@@ -1,6 +1,7 @@
 """Announcement service"""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -9,20 +10,19 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.models.entities import Announcement, AnnouncementRead, Class, StudentClassEnrollment, User
 
+logger = logging.getLogger(__name__)
+
 
 def _iso(dt: datetime | None) -> str:
     return dt.isoformat() if dt else ""
 
 
-def _announcement_payload(db: Session, ann: Announcement, current_user_id: str | None = None):
-    cls = db.query(Class).filter(Class.id == ann.class_id).first()
-    teacher = db.query(User).filter(User.id == ann.teacher_id).first()
+def _announcement_payload(ann: Announcement, current_user_id: str | None = None):
+    cls = ann.class_
+    teacher = ann.teacher
     is_read = False
     if current_user_id:
-        is_read = db.query(AnnouncementRead).filter(
-            AnnouncementRead.user_id == current_user_id,
-            AnnouncementRead.announcement_id == ann.id,
-        ).first() is not None
+        is_read = any(r.user_id == current_user_id for r in ann.reads)
     return {
         "id": ann.id,
         "class_id": ann.class_id,
@@ -43,7 +43,7 @@ def _announcement_payload(db: Session, ann: Announcement, current_user_id: str |
 def list_announcements(db: Session, current_user):
     if current_user.role == "teacher":
         anns = db.query(Announcement).filter(Announcement.teacher_id == current_user.id).order_by(Announcement.created_at.desc()).all()
-        return [_announcement_payload(db, ann, current_user.id) for ann in anns]
+        return [_announcement_payload(ann, current_user.id) for ann in anns]
 
     class_ids = [row.class_id for row in db.query(StudentClassEnrollment.class_id).filter(StudentClassEnrollment.user_id == current_user.id).all()]
     if not class_ids:
@@ -54,7 +54,7 @@ def list_announcements(db: Session, current_user):
         .order_by(Announcement.created_at.desc())
         .all()
     )
-    return [_announcement_payload(db, ann, current_user.id) for ann in anns]
+    return [_announcement_payload(ann, current_user.id) for ann in anns]
 
 
 def create_announcement(db: Session, teacher_id: str, data: dict):
@@ -75,6 +75,7 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
         db.add(ann)
         db.commit()
         db.refresh(ann)
+        logger.info(f"教师发布公告: teacher_id={teacher_id}, class_id={data['class_id']}, type={data['type']}, title={data['title']}")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "发布失败")
@@ -88,6 +89,7 @@ def delete_announcement(db: Session, announcement_id: int, teacher_id: str):
     try:
         db.delete(ann)
         db.commit()
+        logger.info(f"教师删除公告: teacher_id={teacher_id}, announcement_id={announcement_id}")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "删除失败")
@@ -102,7 +104,7 @@ def get_announcement(db: Session, announcement_id: int, current_user):
         class_ids = [row.class_id for row in db.query(StudentClassEnrollment.class_id).filter(StudentClassEnrollment.user_id == current_user.id).all()]
         if ann.class_id not in class_ids:
             raise BusinessException(403, "无权访问")
-    return _announcement_payload(db, ann, current_user.id)
+    return _announcement_payload(ann, current_user.id)
 
 
 def unread_count(db: Session, user_id: str) -> int:

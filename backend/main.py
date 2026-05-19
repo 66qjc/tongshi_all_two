@@ -2,6 +2,7 @@
 Layered architecture: routes → services → models (MySQL + SQLAlchemy)
 """
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -24,12 +25,36 @@ logger = logging.getLogger(__name__)
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# ── lifespan ─────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时：建表 + 种子数据
+    Base.metadata.create_all(bind=engine)
+    logger.info(f"Database tables ready ({settings.database_url.split(':')[0]})")
+    try:
+        from seed_data import seed
+        from app.db.session import SessionLocal
+        from app.models.entities import Chapter
+        db = SessionLocal()
+        count = db.query(Chapter).count()
+        if count == 0:
+            logger.info("Empty database, running seed...")
+            seed()
+        db.close()
+    except Exception as e:
+        logger.warning(f"Seed skipped: {e}")
+
+    yield  # 服务器运行中...
+
+    # 关闭时：在此释放资源（如连接池等）
+
 # ── app factory ──────────────────────────────────────────────────────────────
 app = FastAPI(
     title="AI 通识课平台 API",
     version="1.0.0",
     docs_url="/docs",
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -63,24 +88,6 @@ async def general_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=200, content={
         "code": 500, "data": None, "message": "服务器内部错误",
     })
-
-# ── init DB + seed on first run ───────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    Base.metadata.create_all(bind=engine)
-    logger.info(f"Database tables ready ({settings.database_url.split(':')[0]})")
-    try:
-        from seed_data import seed
-        from app.db.session import SessionLocal
-        from app.models.entities import Chapter
-        db = SessionLocal()
-        count = db.query(Chapter).count()
-        if count == 0:
-            logger.info("Empty database, running seed...")
-            seed()
-        db.close()
-    except Exception as e:
-        logger.warning(f"Seed skipped: {e}")
 
 # ── routers ───────────────────────────────────────────────────────────────────
 app.include_router(api_router, prefix="/api")

@@ -11,7 +11,7 @@ from app.services.quiz_service import submit_answer, get_quiz_history, get_quiz_
 router = APIRouter(prefix="/quiz", tags=["quiz"])
 
 
-@router.post("/submit")
+@router.post("/submit", summary="提交答案", description="学生端：提交单道题目的答案，返回批改结果（正确/错误 + 解析）")
 def submit(
     data: QuizSubmitRequest,
     db: Session = Depends(get_db),
@@ -21,7 +21,7 @@ def submit(
     return success(result)
 
 
-@router.get("/history")
+@router.get("/history", summary="答题历史", description="学生端：获取最近 N 次答题记录（含题目和答案）")
 def history(
     limit: int = 10,
     db: Session = Depends(get_db),
@@ -30,7 +30,7 @@ def history(
     return success(get_quiz_history(db, current_user.id, limit))
 
 
-@router.get("/stats")
+@router.get("/stats", summary="答题统计总览", description="学生端：返回总题目数、已完成数、正确率、今日答题数")
 def stats(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
@@ -38,7 +38,7 @@ def stats(
     return success(get_quiz_stats(db, current_user.id))
 
 
-@router.get("/stats/{chapter_id}")
+@router.get("/stats/{chapter_id}", summary="章节答题统计", description="学生端：返回指定章节的答题完成数和正确率")
 def chapter_stats(
     chapter_id: int,
     db: Session = Depends(get_db),

@@ -1,6 +1,7 @@
 """Class service"""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from io import BytesIO
 from typing import Dict, List, Tuple
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.core.security import get_password_hash
 from app.models.entities import Class, StudentClassEnrollment, User
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_STUDENT_PASSWORD = "123456"
 
@@ -44,6 +47,7 @@ def create_class(db: Session, name: str, major: str):
         db.add(cls)
         db.commit()
         db.refresh(cls)
+        logger.info(f"班级创建: id={cls.id}, name={name}, major={major}")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "创建班级失败")
@@ -57,6 +61,7 @@ def delete_class(db: Session, class_id: int):
     try:
         db.delete(cls)
         db.commit()
+        logger.info(f"班级删除: class_id={class_id}, name={cls.name}")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "删除班级失败")
@@ -166,40 +171,41 @@ def import_students_from_excel(db: Session, file_bytes: bytes):
             result["errors"].append({"row": row_idx, "reason": "字段不能为空"})
             continue
 
+        # 使用保存点让每行独立提交，单行失败不影响其他行
         try:
-            student = db.query(User).filter(User.id == student_id).first()
-            if not student:
-                student = User(
-                    id=student_id,
-                    name=name,
-                    hashed_password=get_password_hash(DEFAULT_STUDENT_PASSWORD),
-                    role="student",
-                    major=major,
-                )
-                db.add(student)
-                db.flush()
-            else:
-                student.name = name
-                student.major = major
+            with db.begin_nested():
+                student = db.query(User).filter(User.id == student_id).first()
+                if not student:
+                    student = User(
+                        id=student_id,
+                        name=name,
+                        hashed_password=get_password_hash(DEFAULT_STUDENT_PASSWORD),
+                        role="student",
+                        major=major,
+                    )
+                    db.add(student)
+                    db.flush()
+                else:
+                    student.name = name
+                    student.major = major
 
-            cls = db.query(Class).filter(Class.name == class_name).first()
-            if not cls:
-                cls = Class(name=class_name, major=major)
-                db.add(cls)
-                db.flush()
+                cls = db.query(Class).filter(Class.name == class_name).first()
+                if not cls:
+                    cls = Class(name=class_name, major=major)
+                    db.add(cls)
+                    db.flush()
 
-            existing = db.query(StudentClassEnrollment).filter(
-                StudentClassEnrollment.user_id == student_id,
-                StudentClassEnrollment.class_id == cls.id,
-            ).first()
-            if existing:
-                result["skip_count"] += 1
-                continue
+                existing = db.query(StudentClassEnrollment).filter(
+                    StudentClassEnrollment.user_id == student_id,
+                    StudentClassEnrollment.class_id == cls.id,
+                ).first()
+                if existing:
+                    result["skip_count"] += 1
+                    continue
 
-            db.add(StudentClassEnrollment(user_id=student_id, class_id=cls.id))
+                db.add(StudentClassEnrollment(user_id=student_id, class_id=cls.id))
             result["success_count"] += 1
-        except SQLAlchemyError as exc:
-            db.rollback()
+        except (SQLAlchemyError, IntegrityError) as exc:
             result["fail_count"] += 1
             result["errors"].append({"row": row_idx, "reason": str(exc)[:120]})
             continue

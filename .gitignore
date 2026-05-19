@@ -1,3 +1,33 @@
-/111.txt
-/222.txt
-/技术方案分析.txt
+# 1. 虚拟环境与依赖
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+# 2. 机密环境变量 (核心安全底线)
+.env
+*.secret
+
+# 3. 媒体缓存与临时文件 (多模态业务隔离)
+*.mp4
+*.wav
+*.avi
+*.mp3
+/tmp/
+temp/
+
+# 4. IDE 与系统配置文件
+.vscode/
+.idea/
+.DS_Store
+.venv/
+.gitnexus
+
+# 5. SQLite 数据库与临时文件
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# 6. Claude 本机配置
+.claude/settings.local.json

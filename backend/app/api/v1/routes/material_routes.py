@@ -22,7 +22,7 @@ def _format_material(m):
     }
 
 
-@router.get("/chapters/{chapter_id}/contents")
+@router.get("/chapters/{chapter_id}/contents", summary="获取章节内容", description="返回指定章节的所有视频和 PDF 学习资料")
 def get_chapter_contents(
     chapter_id: int,
     db: Session = Depends(get_db),
@@ -32,7 +32,7 @@ def get_chapter_contents(
     return success([_format_material(m) for m in materials])
 
 
-@router.get("/materials")
+@router.get("/materials", summary="获取全部资料列表", description="教师端：按章节排序返回所有学习资料")
 def get_all_materials(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("teacher")),
@@ -41,7 +41,7 @@ def get_all_materials(
     return success([_format_material(m) for m in materials])
 
 
-@router.post("/materials")
+@router.post("/materials", summary="新增资料", description="教师端：为指定章节添加视频或 PDF 学习资料")
 def add_material(
     data: MaterialCreate,
     db: Session = Depends(get_db),
@@ -53,7 +53,7 @@ def add_material(
     return success({"id": m.id})
 
 
-@router.delete("/materials/{material_id}")
+@router.delete("/materials/{material_id}", summary="删除资料", description="教师端：删除指定的学习资料")
 def remove_material(
     material_id: int,
     db: Session = Depends(get_db),

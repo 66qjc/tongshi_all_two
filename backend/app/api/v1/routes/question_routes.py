@@ -11,7 +11,8 @@ from app.db.session import get_db
 from app.core.security import get_current_user, require_role
 from app.core.response import success
 from app.core.exceptions import BusinessException
-from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate
+from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
+from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate, CourseCreateRequest, CourseUpdateRequest
 from app.services.question_service import (
     list_questions, create_question, update_question, delete_question,
     get_chapter_questions, list_courses, create_course, update_course, delete_course,
@@ -29,25 +30,25 @@ def _format_question(q):
     }
 
 
-@router.get("")
+@router.get("", summary="题目列表", description="按章节和题型筛选题目")
 def get_questions(chapter_id: int = None, type: str = None, db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
     questions = list_questions(db, chapter_id, type)
     return success([_format_question(q) for q in questions])
 
 
-@router.get("/chapter/{chapter_id}")
+@router.get("/chapter/{chapter_id}", summary="章节题目", description="获取指定章节的所有题目（用于测验）")
 def get_chapter_questions_for_quiz(chapter_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
     questions = get_chapter_questions(db, chapter_id)
     return success([_format_question(q) for q in questions])
 
 
-@router.post("")
+@router.post("", summary="新增题目", description="教师端：创建选择题或填空题")
 def add_question(data: QuestionCreate, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     q = create_question(db, data.model_dump())
     return success({"id": q.id})
 
 
-@router.put("/{question_id}")
+@router.put("/{question_id}", summary="编辑题目", description="教师端：修改指定题目的内容")
 def edit_question(question_id: int, data: QuestionUpdate, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     q = update_question(db, question_id, data.model_dump(exclude_unset=True))
     if not q:
@@ -55,42 +56,46 @@ def edit_question(question_id: int, data: QuestionUpdate, db: Session = Depends(
     return success()
 
 
-@router.delete("/{question_id}")
+@router.delete("/{question_id}", summary="删除题目", description="教师端：删除指定题目")
 def remove_question(question_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     if not delete_question(db, question_id):
         raise BusinessException(404, "题目不存在")
     return success()
 
 
-@router.get("/courses")
+@router.get("/courses", summary="课程列表", description="获取所有课程")
 def get_courses(db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
     return success([{ "id": c.id, "name": c.name, "created_at": c.created_at.isoformat() if c.created_at else "" } for c in list_courses(db)])
 
 
-@router.post("/courses")
-def add_course(payload: dict, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    course = create_course(db, payload.get("name", "").strip())
+@router.post("/courses", summary="创建课程", description="教师端：创建新课程")
+def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
+    course = create_course(db, data.name.strip())
     return success({"id": course.id})
 
 
-@router.put("/courses/{course_id}")
-def edit_course(course_id: int, payload: dict, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    course = update_course(db, course_id, payload.get("name", "").strip())
+@router.put("/courses/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")
+def edit_course(course_id: int, data: CourseUpdateRequest, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
+    course = update_course(db, course_id, data.name.strip())
     if not course:
         raise BusinessException(404, "课程不存在")
     return success()
 
 
-@router.delete("/courses/{course_id}")
+@router.delete("/courses/{course_id}", summary="删除课程", description="教师端：删除指定课程")
 def remove_course(course_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     if not delete_course(db, course_id):
         raise BusinessException(404, "课程不存在")
     return success()
 
 
-@router.post("/import")
+@router.post("/import", summary="Excel 批量导入题目", description="教师端：上传 Excel 批量导入题目（.xlsx，表头：type/chapter/stem/options/answer/explanation）")
 def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    wb = load_workbook(filename=BytesIO(file.file.read()), data_only=True)
+    content = file.file.read()
+    err = validate_upload(file.filename, len(content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
+    if err:
+        raise BusinessException(400, err)
+    wb = load_workbook(filename=BytesIO(content), data_only=True)
     ws = wb.active
     headers = [str(c.value).strip() if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
     rows = []

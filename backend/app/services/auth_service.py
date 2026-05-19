@@ -1,4 +1,5 @@
 """Auth service: login and register"""
+import logging
 from datetime import timedelta
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -10,11 +11,15 @@ from app.core.exceptions import BusinessException
 from app.models.entities import User
 from app.schemas.common import RegisterRequest
 
+logger = logging.getLogger(__name__)
+
 
 def login_user(db: Session, user_id: str, password: str) -> dict:
     user = db.query(User).filter(User.id == user_id).first()
     if not user or not verify_password(password, user.hashed_password):
+        logger.warning(f"登录失败: user_id={user_id}")
         raise BusinessException(401, "学号或密码错误")
+    logger.info(f"用户登录: user_id={user_id}, role={user.role}")
     token = create_access_token(
         {"sub": user.id},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
@@ -40,6 +45,7 @@ def register_user(db: Session, data: RegisterRequest) -> dict:
     try:
         db.add(user)
         db.commit()
+        logger.info(f"用户注册成功: user_id={user.id}, role={user.role}")
     except IntegrityError:
         db.rollback()
         raise BusinessException(400, "该学号已注册")
