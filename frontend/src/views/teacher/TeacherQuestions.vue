@@ -32,6 +32,8 @@ const newQuestion = reactive({
 onMounted(async () => {
   try {
     questions.value = await getQuestions()
+  } catch {
+    ElMessage.error('题库数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -100,7 +102,11 @@ async function handleDelete(id: number) {
     await apiDeleteQuestion(id)
     questions.value = questions.value.filter(q => q.id !== id)
     ElMessage.success('已删除')
-  } catch {}
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
 }
 
 const importDialogVisible = ref(false)
@@ -160,7 +166,7 @@ async function handleImport() {
       <span class="filter-count">共 {{ filteredQuestions.length }} 题</span>
     </div>
 
-    <el-table :data="filteredQuestions" stripe style="width: 100%">
+    <el-table :data="filteredQuestions" stripe style="width: 100%" v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column label="题干" min-width="250">
         <template #default="{ row }">
@@ -186,6 +192,10 @@ async function handleImport() {
         </template>
       </el-table-column>
     </el-table>
+
+    <div v-if="!loading && filteredQuestions.length === 0" class="empty-state">
+      <p>暂无题目，点击「新增题目」或「导入题目」开始维护题库。</p>
+    </div>
 
     <!-- Edit dialog -->
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑题目' : '新增题目'" width="560px">
@@ -375,5 +385,12 @@ async function handleImport() {
 .file-name {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-3xl) 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 </style>

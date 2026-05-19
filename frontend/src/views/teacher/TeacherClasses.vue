@@ -34,6 +34,8 @@ async function loadClasses() {
   loading.value = true
   try {
     classes.value = await getClasses()
+  } catch {
+    ElMessage.error('班级数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -66,7 +68,11 @@ async function handleDelete(cls: ClassInfo) {
     await apiDeleteClass(cls.id)
     classes.value = classes.value.filter(c => c.id !== cls.id)
     ElMessage.success('已删除')
-  } catch {}
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
 }
 
 async function openStudents(cls: ClassInfo) {
@@ -75,6 +81,8 @@ async function openStudents(cls: ClassInfo) {
   studentLoading.value = true
   try {
     classStudents.value = await getClassStudents(cls.id)
+  } catch {
+    ElMessage.error('学生列表加载失败，请稍后重试')
   } finally {
     studentLoading.value = false
   }
@@ -109,7 +117,11 @@ async function handleUnenroll(student: ClassStudent) {
     classStudents.value = classStudents.value.filter(s => s.id !== student.id)
     ElMessage.success('已移除')
     await loadClasses()
-  } catch {}
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('移除失败，请稍后重试')
+    }
+  }
 }
 
 function openImport() {

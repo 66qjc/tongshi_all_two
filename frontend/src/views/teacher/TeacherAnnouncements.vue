@@ -36,6 +36,8 @@ onMounted(async () => {
     const [a, c] = await Promise.all([getAnnouncements(), getClasses()])
     announcements.value = a
     classes.value = c
+  } catch {
+    ElMessage.error('任务数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -60,6 +62,8 @@ async function loadQuestions() {
   questionLoading.value = true
   try {
     questions.value = await getQuestions()
+  } catch {
+    ElMessage.error('题库数据加载失败，请稍后重试')
   } finally {
     questionLoading.value = false
   }
@@ -95,11 +99,15 @@ async function handleCreate() {
 
 async function handleDelete(item: Announcement) {
   try {
-    await ElMessageBox.confirm('确定删除该公告？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确定删除该任务？删除后学生将无法继续查看或完成该任务。', '提示', { type: 'warning' })
     await apiDeleteAnnouncement(item.id)
     announcements.value = announcements.value.filter(a => a.id !== item.id)
     ElMessage.success('已删除')
-  } catch {}
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
 }
 
 async function openReport(item: Announcement) {
@@ -107,6 +115,8 @@ async function openReport(item: Announcement) {
   reportLoading.value = true
   try {
     reportData.value = await getCompletionReport(item.id)
+  } catch {
+    ElMessage.error('完成情况加载失败，请稍后重试')
   } finally {
     reportLoading.value = false
   }
@@ -121,7 +131,7 @@ function getClassName(classId: number) {
   <div class="announcements-page">
     <div class="page-header">
       <h1>任务发布</h1>
-      <el-button type="primary" round @click="openCreate">发布公告</el-button>
+      <el-button type="primary" round @click="openCreate">发布任务</el-button>
     </div>
 
     <el-table :data="announcements" stripe style="width: 100%" v-loading="loading">
@@ -152,7 +162,7 @@ function getClassName(classId: number) {
     </el-table>
 
     <div v-if="!loading && announcements.length === 0" class="empty-state">
-      <p>暂无公告，点击「发布公告」开始发布</p>
+      <p>暂无任务，点击「发布任务」创建课程通知或学习任务。</p>
     </div>
 
     <!-- Create dialog -->

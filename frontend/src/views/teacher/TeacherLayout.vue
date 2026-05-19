@@ -42,7 +42,7 @@ function isActive(path: string) {
         </router-link>
       </div>
       <div class="header-right">
-        <span class="teacher-name">{{ authStore.user?.name }}</span>
+        <span class="teacher-name">{{ authStore.user?.name || '教师' }}</span>
         <button class="btn-student-view" @click="router.push('/')">
           返回学生端
         </button>
