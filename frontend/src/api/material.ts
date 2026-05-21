@@ -1,4 +1,4 @@
-import http from './http'
+﻿import http from './http'
 
 export interface Material {
   id: number
@@ -13,11 +13,19 @@ export interface Material {
   date: string
 }
 
+export interface MaterialCreatePayload {
+  chapter_id: number
+  type: 'video' | 'pdf'
+  title: string
+  url: string
+  size: string
+}
+
 export function getAllMaterials() {
   return http.get<any, Material[]>('/materials')
 }
 
-export function createMaterial(data: { chapter_id: number; type: string; title: string }) {
+export function createMaterial(data: MaterialCreatePayload) {
   return http.post<any, { id: number }>('/materials', data)
 }
 

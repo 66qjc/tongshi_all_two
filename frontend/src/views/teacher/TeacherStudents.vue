@@ -2,17 +2,21 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getStudents, type Student } from '@/api/teacher'
+import { getClasses, type ClassInfo } from '@/api/class'
 import { getAnnouncements, getCompletionReport, type Announcement, type CompletionReport } from '@/api/announcement'
 
 const students = ref<Student[]>([])
+const classes = ref<ClassInfo[]>([])
 const announcements = ref<Announcement[]>([])
 const loading = ref(true)
 const activeTab = ref('students')
+const selectedClassId = ref<number | null>(null)
 
 onMounted(async () => {
   try {
-    const [s, a] = await Promise.all([getStudents(), getAnnouncements()])
+    const [s, c, a] = await Promise.all([getStudents(), getClasses(), getAnnouncements()])
     students.value = s
+    classes.value = c
     announcements.value = a
   } catch {
     ElMessage.error('学生数据加载失败，请稍后重试')
@@ -22,6 +26,21 @@ onMounted(async () => {
 })
 
 const searchQuery = ref('')
+
+async function loadStudents() {
+  loading.value = true
+  try {
+    students.value = await getStudents(selectedClassId.value || undefined)
+  } catch {
+    ElMessage.error('学生数据加载失败，请稍后重试')
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleClassChange() {
+  loadStudents()
+}
 
 const filteredStudents = computed(() => {
   if (!searchQuery.value.trim()) return students.value
@@ -66,6 +85,16 @@ function handleAnnouncementChange(val: number | null) {
     <!-- Students tab -->
     <template v-if="activeTab === 'students'">
       <div class="filter-bar">
+        <el-select
+          v-model="selectedClassId"
+          placeholder="全部班级"
+          clearable
+          size="default"
+          style="width: 220px"
+          @change="handleClassChange"
+        >
+          <el-option v-for="cls in classes" :key="cls.id" :label="`${cls.major} · ${cls.name}`" :value="cls.id" />
+        </el-select>
         <el-input
           v-model="searchQuery"
           placeholder="搜索学号或姓名"
@@ -80,6 +109,11 @@ function handleAnnouncementChange(val: number | null) {
         <el-table-column prop="id" label="学号" width="120" />
         <el-table-column prop="name" label="姓名" width="100" />
         <el-table-column prop="major" label="专业" width="140" />
+        <el-table-column prop="class_name" label="班级" width="140">
+          <template #default="{ row }">
+            {{ row.class_name || '未分班' }}
+          </template>
+        </el-table-column>
         <el-table-column label="学习进度" min-width="160">
           <template #default="{ row }">
             <div class="progress-cell">

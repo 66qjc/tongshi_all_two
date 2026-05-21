@@ -1,4 +1,4 @@
-"""Announcement service"""
+﻿"""Announcement service"""
 from __future__ import annotations
 
 import logging
@@ -61,6 +61,9 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
     cls = db.query(Class).filter(Class.id == data.get("class_id")).first()
     if not cls:
         raise BusinessException(404, "班级不存在")
+
+    start_time = data.get("start_time")
+    end_time = data.get("end_time")
     ann = Announcement(
         class_id=data["class_id"],
         teacher_id=teacher_id,
@@ -68,8 +71,8 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
         title=data["title"],
         content=data.get("content", ""),
         question_ids=data.get("question_ids") or [],
-        start_time=data.get("start_time"),
-        end_time=data.get("end_time"),
+        start_time=start_time,
+        end_time=end_time,
     )
     try:
         db.add(ann)

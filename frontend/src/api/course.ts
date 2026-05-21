@@ -1,13 +1,24 @@
 import http from './http'
+import type { Chapter } from './chapter'
 
 export interface Course {
   id: number
   name: string
   created_at: string
+  chapter_count: number
+  material_count: number
+}
+
+export interface CourseDetail extends Course {
+  chapters: Chapter[]
 }
 
 export function getCourses() {
   return http.get<any, Course[]>('/questions/courses')
+}
+
+export function getCourseDetail(id: number) {
+  return http.get<any, CourseDetail>(`/questions/courses/${id}`)
 }
 
 export function createCourse(data: { name: string }) {

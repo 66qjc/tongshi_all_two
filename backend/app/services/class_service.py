@@ -12,7 +12,18 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.core.security import get_password_hash
-from app.models.entities import Class, StudentClassEnrollment, User
+from app.models.entities import (
+    Announcement,
+    AnnouncementRead,
+    Class,
+    Project,
+    ProjectLike,
+    QuizAttempt,
+    StudentClassEnrollment,
+    StudentProgress,
+    TaskCompletion,
+    User,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +65,59 @@ def create_class(db: Session, name: str, major: str):
     return cls
 
 
+def _delete_student_data(db: Session, student_id: str):
+    project_ids = [row.id for row in db.query(Project.id).filter(Project.author_id == student_id).all()]
+    if project_ids:
+        db.query(ProjectLike).filter(ProjectLike.project_id.in_(project_ids)).delete(synchronize_session=False)
+    db.query(ProjectLike).filter(ProjectLike.user_id == student_id).delete(synchronize_session=False)
+    db.query(Project).filter(Project.author_id == student_id).delete(synchronize_session=False)
+    db.query(QuizAttempt).filter(QuizAttempt.user_id == student_id).delete(synchronize_session=False)
+    db.query(StudentProgress).filter(StudentProgress.user_id == student_id).delete(synchronize_session=False)
+    db.query(AnnouncementRead).filter(AnnouncementRead.user_id == student_id).delete(synchronize_session=False)
+    db.query(TaskCompletion).filter(TaskCompletion.user_id == student_id).delete(synchronize_session=False)
+    db.query(StudentClassEnrollment).filter(StudentClassEnrollment.user_id == student_id).delete(synchronize_session=False)
+    db.query(User).filter(User.id == student_id, User.role == "student").delete(synchronize_session=False)
+
+
 def delete_class(db: Session, class_id: int):
     cls = db.query(Class).filter(Class.id == class_id).first()
     if not cls:
         return None
     try:
+        student_ids = [
+            row.user_id
+            for row in db.query(StudentClassEnrollment.user_id)
+            .filter(StudentClassEnrollment.class_id == class_id)
+            .all()
+        ]
+        for student_id in student_ids:
+            other_class_count = (
+                db.query(StudentClassEnrollment)
+                .filter(
+                    StudentClassEnrollment.user_id == student_id,
+                    StudentClassEnrollment.class_id != class_id,
+                )
+                .count()
+            )
+            if other_class_count > 0:
+                db.query(StudentClassEnrollment).filter(
+                    StudentClassEnrollment.user_id == student_id,
+                    StudentClassEnrollment.class_id == class_id,
+                ).delete(synchronize_session=False)
+            else:
+                _delete_student_data(db, student_id)
+
+        class_announcement_ids = [
+            row.id for row in db.query(Announcement.id).filter(Announcement.class_id == class_id).all()
+        ]
+        if class_announcement_ids:
+            db.query(AnnouncementRead).filter(
+                AnnouncementRead.announcement_id.in_(class_announcement_ids)
+            ).delete(synchronize_session=False)
+            db.query(TaskCompletion).filter(
+                TaskCompletion.announcement_id.in_(class_announcement_ids)
+            ).delete(synchronize_session=False)
+        db.query(Announcement).filter(Announcement.class_id == class_id).delete(synchronize_session=False)
         db.delete(cls)
         db.commit()
         logger.info(f"班级删除: class_id={class_id}, name={cls.name}")

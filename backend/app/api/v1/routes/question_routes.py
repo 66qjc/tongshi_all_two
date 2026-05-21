@@ -13,10 +13,11 @@ from app.core.response import success
 from app.core.exceptions import BusinessException
 from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
 from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate, CourseCreateRequest, CourseUpdateRequest
+from app.services.chapter_service import format_chapters
 from app.services.question_service import (
     list_questions, create_question, update_question, delete_question,
     get_chapter_questions, list_courses, create_course, update_course, delete_course,
-    import_questions_from_excel,
+    get_course_detail, import_questions_from_excel,
 )
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -65,13 +66,39 @@ def remove_question(question_id: int, db: Session = Depends(get_db), _: AuthUser
 
 @router.get("/courses", summary="课程列表", description="获取所有课程")
 def get_courses(db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
-    return success([{ "id": c.id, "name": c.name, "created_at": c.created_at.isoformat() if c.created_at else "" } for c in list_courses(db)])
+    return success([{
+        "id": c.id,
+        "name": c.name,
+        "created_at": c.created_at.isoformat() if c.created_at else "",
+        "chapter_count": len(c.chapters),
+        "material_count": sum(len(ch.materials) for ch in c.chapters),
+    } for c in list_courses(db)])
 
 
 @router.post("/courses", summary="创建课程", description="教师端：创建新课程")
 def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     course = create_course(db, data.name.strip())
     return success({"id": course.id})
+
+
+@router.get("/courses/{course_id}", summary="课程详情", description="返回课程信息、章节列表和资料统计")
+def get_course(
+    course_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    detail = get_course_detail(db, course_id)
+    if not detail:
+        raise BusinessException(404, "课程不存在")
+    course, chapters, material_count = detail
+    return success({
+        "id": course.id,
+        "name": course.name,
+        "created_at": course.created_at.isoformat() if course.created_at else "",
+        "chapter_count": len(chapters),
+        "material_count": material_count,
+        "chapters": format_chapters(db, chapters, current_user.id),
+    })
 
 
 @router.put("/courses/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")

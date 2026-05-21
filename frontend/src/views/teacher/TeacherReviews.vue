@@ -1,11 +1,25 @@
-<script setup lang="ts">
-import { ref, onMounted } from 'vue'
+﻿<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAllProjects, approveProject, rejectProject } from '@/api/teacher'
+import { approveProject, downloadProjectReportsZip, getAllProjects, rejectProject } from '@/api/teacher'
 import type { Project } from '@/api/project'
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
+const downloading = ref(false)
+const drawerVisible = ref(false)
+const selectedProject = ref<Project | null>(null)
+const rejectReason = ref('')
+
+const statusMap: Record<string, { label: string; type: 'warning' | 'success' | 'danger' }> = {
+  pending: { label: '待审', type: 'warning' },
+  approved: { label: '通过', type: 'success' },
+  rejected: { label: '驳回', type: 'danger' },
+}
+
+const pendingCount = computed(() => projects.value.filter(p => p.status === 'pending').length)
+const approvedCount = computed(() => projects.value.filter(p => p.status === 'approved').length)
+const rejectedCount = computed(() => projects.value.filter(p => p.status === 'rejected').length)
 
 onMounted(async () => {
   try {
@@ -17,18 +31,8 @@ onMounted(async () => {
   }
 })
 
-const drawerVisible = ref(false)
-const selectedProject = ref<Project | null>(null)
-const rejectReason = ref('')
-
-const statusMap: Record<string, { label: string; type: string }> = {
-  pending: { label: '待审', type: 'warning' },
-  approved: { label: '通过', type: 'success' },
-  rejected: { label: '驳回', type: 'danger' },
-}
-
-function openDetail(p: Project) {
-  selectedProject.value = p
+function openDetail(project: Project) {
+  selectedProject.value = project
   rejectReason.value = ''
   drawerVisible.value = true
 }
@@ -36,13 +40,17 @@ function openDetail(p: Project) {
 async function handleApprove() {
   if (!selectedProject.value) return
   try {
-    await ElMessageBox.confirm(`确定通过作品「${selectedProject.value.title}」？`, '审核确认', { type: 'warning' })
+    await ElMessageBox.confirm(
+      `确定通过作品「${selectedProject.value.title}」吗？`,
+      '审核确认',
+      { type: 'warning' },
+    )
     await approveProject(selectedProject.value.id)
     selectedProject.value.status = 'approved'
     drawerVisible.value = false
     ElMessage.success('已通过')
   } catch (error) {
-    if (error !== 'cancel') {
+    if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('审核失败，请稍后重试')
     }
   }
@@ -50,28 +58,46 @@ async function handleApprove() {
 
 async function handleReject() {
   if (!selectedProject.value) return
-  if (!rejectReason.value.trim()) {
+  const reason = rejectReason.value.trim()
+  if (!reason) {
     ElMessage.warning('请填写驳回理由')
     return
   }
+
   try {
-    await ElMessageBox.confirm(`确定驳回作品「${selectedProject.value.title}」？驳回理由将反馈给学生。`, '审核确认', { type: 'warning' })
-    await rejectProject(selectedProject.value.id, rejectReason.value.trim())
+    await ElMessageBox.confirm(
+      `确定驳回作品「${selectedProject.value.title}」吗？驳回理由将反馈给学生。`,
+      '审核确认',
+      { type: 'warning' },
+    )
+    await rejectProject(selectedProject.value.id, reason)
     selectedProject.value.status = 'rejected'
-    selectedProject.value.reject_reason = rejectReason.value.trim()
+    selectedProject.value.reject_reason = reason
     drawerVisible.value = false
     ElMessage.success('已驳回')
   } catch (error) {
-    if (error !== 'cancel') {
+    if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('驳回失败，请稍后重试')
     }
   }
 }
 
-function handleBatchDownload() {
-  const token = localStorage.getItem('auth_token')
-  const url = `/api/teacher/projects/batch-download?token=${encodeURIComponent(token || '')}`
-  window.open(url, '_blank')
+async function handleBatchDownload() {
+  downloading.value = true
+  try {
+    const { blob, filename } = await downloadProjectReportsZip()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success('下载已开始')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量下载失败')
+  } finally {
+    downloading.value = false
+  }
 }
 </script>
 
@@ -79,34 +105,28 @@ function handleBatchDownload() {
   <div class="reviews-page">
     <div class="page-header">
       <h1>作品审核</h1>
-      <el-button round @click="handleBatchDownload">批量下载 PDF</el-button>
+      <el-button round :loading="downloading" @click="handleBatchDownload">批量下载报告</el-button>
     </div>
 
     <div class="status-summary">
-      <span class="summary-item">
-        待审 <strong>{{ projects.filter(p => p.status === 'pending').length }}</strong>
-      </span>
-      <span class="summary-item">
-        已通过 <strong>{{ projects.filter(p => p.status === 'approved').length }}</strong>
-      </span>
-      <span class="summary-item">
-        已驳回 <strong>{{ projects.filter(p => p.status === 'rejected').length }}</strong>
-      </span>
+      <span class="summary-item">待审 <strong>{{ pendingCount }}</strong></span>
+      <span class="summary-item">通过 <strong>{{ approvedCount }}</strong></span>
+      <span class="summary-item">驳回 <strong>{{ rejectedCount }}</strong></span>
     </div>
 
     <el-table :data="projects" stripe style="width: 100%" v-loading="loading">
       <el-table-column prop="title" label="作品名称" min-width="180" />
-      <el-table-column prop="author_name" label="作者" width="100" />
+      <el-table-column prop="author_name" label="作者" width="120" />
       <el-table-column prop="major" label="专业" width="120" />
       <el-table-column prop="date" label="提交时间" width="120" />
-      <el-table-column label="状态" width="80">
+      <el-table-column label="状态" width="90">
         <template #default="{ row }">
-          <el-tag :type="statusMap[row.status]!.type as any" size="small" effect="plain">
-            {{ statusMap[row.status]!.label }}
+          <el-tag :type="statusMap[row.status]?.type || 'info'" size="small" effect="plain">
+            {{ statusMap[row.status]?.label || '未知' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="80" fixed="right">
+      <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
           <el-button text size="small" @click="openDetail(row)">查看</el-button>
         </template>
@@ -114,10 +134,9 @@ function handleBatchDownload() {
     </el-table>
 
     <div v-if="!loading && projects.length === 0" class="empty-state">
-      <p>暂无待审核作品。</p>
+      <p>暂无待审核作品。学生提交后会出现在这里。</p>
     </div>
 
-    <!-- Detail drawer -->
     <el-drawer v-model="drawerVisible" title="作品详情" size="480px">
       <template v-if="selectedProject">
         <div class="detail-section">
@@ -146,8 +165,8 @@ function handleBatchDownload() {
 
         <div class="detail-section">
           <label>当前状态</label>
-          <el-tag :type="statusMap[selectedProject.status]!.type as any" size="small" effect="plain">
-            {{ statusMap[selectedProject.status]!.label }}
+          <el-tag :type="statusMap[selectedProject.status]?.type || 'info'" size="small" effect="plain">
+            {{ statusMap[selectedProject.status]?.label || '未知' }}
           </el-tag>
           <p v-if="selectedProject.reject_reason" class="reject-reason">驳回理由：{{ selectedProject.reject_reason }}</p>
         </div>
@@ -155,7 +174,7 @@ function handleBatchDownload() {
         <div v-if="selectedProject.status === 'pending'" class="detail-actions">
           <el-button type="success" round @click="handleApprove">通过</el-button>
           <div class="reject-area">
-            <el-input v-model="rejectReason" type="textarea" :rows="2" placeholder="填写驳回理由" />
+            <el-input v-model="rejectReason" type="textarea" :rows="2" placeholder="请填写驳回理由" />
             <el-button type="danger" round @click="handleReject">驳回</el-button>
           </div>
         </div>

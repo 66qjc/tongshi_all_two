@@ -47,7 +47,7 @@ def add_material(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("teacher")),
 ):
-    m = create_material(db, data.chapter_id, data.type, data.title)
+    m = create_material(db, data.chapter_id, data.type, data.title, data.url, data.size)
     if not m:
         raise BusinessException(404, "章节不存在")
     return success({"id": m.id})

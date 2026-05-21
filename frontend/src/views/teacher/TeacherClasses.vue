@@ -64,7 +64,11 @@ async function handleCreate() {
 
 async function handleDelete(cls: ClassInfo) {
   try {
-    await ElMessageBox.confirm(`确定删除班级「${cls.name}」？该班级的所有学生注册关系将一并删除。`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(
+      `确定删除班级「${cls.name}」？只属于该班级的学生账号和学习数据会一并删除；仍属于其它班级的学生只会移出当前班级。`,
+      '提示',
+      { type: 'warning' },
+    )
     await apiDeleteClass(cls.id)
     classes.value = classes.value.filter(c => c.id !== cls.id)
     ElMessage.success('已删除')

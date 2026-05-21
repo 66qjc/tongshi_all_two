@@ -1,16 +1,16 @@
-<script setup lang="ts">
-import { ref, reactive } from 'vue'
+﻿<script setup lang="ts">
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import { createProject } from '@/api/project'
 import { uploadFile } from '@/api/upload'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const form = reactive({
   title: '',
-  author: '',
-  major: '',
   description: '',
   videoUrl: '',
   linkUrl: '',
@@ -24,15 +24,13 @@ const reportInput = ref<HTMLInputElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const submitting = ref(false)
 
-const majors = [
-  '自动化专业', '机械工程', '测控技术', '电气工程',
-  '材料科学', '光学工程', '计算机科学', '电子信息',
-]
+const currentUserName = computed(() => authStore.user?.name || '当前用户')
+const currentMajor = computed(() => authStore.user?.major || '未设置')
 
 function addTag() {
-  const t = tagInput.value.trim()
-  if (t && !tags.value.includes(t) && tags.value.length < 5) {
-    tags.value.push(t)
+  const value = tagInput.value.trim()
+  if (value && !tags.value.includes(value) && tags.value.length < 5) {
+    tags.value.push(value)
     tagInput.value = ''
   }
 }
@@ -41,25 +39,29 @@ function removeTag(index: number) {
   tags.value.splice(index, 1)
 }
 
-function handleReportUpload(e: Event) {
-  const input = e.target as HTMLInputElement
+function handleReportUpload(event: Event) {
+  const input = event.target as HTMLInputElement
   if (input.files && input.files[0]) {
     reportFile.value = input.files[0]
   }
 }
 
-function handleImageUpload(e: Event) {
-  const input = e.target as HTMLInputElement
+function handleImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement
   if (input.files && input.files[0]) {
     imageFile.value = input.files[0]
   }
 }
 
 async function handleSubmit() {
-  if (!form.title.trim()) { ElMessage.warning('请填写作品名称'); return }
-  if (!form.author.trim()) { ElMessage.warning('请填写作者姓名'); return }
-  if (!form.major) { ElMessage.warning('请选择所属专业'); return }
-  if (!form.description.trim()) { ElMessage.warning('请填写作品描述'); return }
+  if (!form.title.trim()) {
+    ElMessage.warning('请填写作品名称')
+    return
+  }
+  if (!form.description.trim()) {
+    ElMessage.warning('请填写作品描述')
+    return
+  }
 
   submitting.value = true
   try {
@@ -67,12 +69,12 @@ async function handleSubmit() {
     let imageUrl = ''
 
     if (reportFile.value) {
-      const res = await uploadFile(reportFile.value)
-      reportUrl = res.url
+      const result = await uploadFile(reportFile.value)
+      reportUrl = result.url
     }
     if (imageFile.value) {
-      const res = await uploadFile(imageFile.value)
-      imageUrl = res.url
+      const result = await uploadFile(imageFile.value)
+      imageUrl = result.url
     }
 
     await createProject({
@@ -85,7 +87,7 @@ async function handleSubmit() {
       link_url: form.linkUrl.trim() || undefined,
     })
 
-    ElMessage.success('作品提交成功！')
+    ElMessage.success('作品提交成功')
     router.push('/create')
   } catch {
     ElMessage.error('提交失败，请重试')
@@ -100,31 +102,29 @@ async function handleSubmit() {
     <div class="container">
       <button class="back-btn" @click="router.push('/create')">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M16 10H4m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16 10H4m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         返回作品列表
       </button>
 
       <div class="upload-card">
         <h1>提交你的作品</h1>
-        <p class="subtitle">将你的 AI + 硬件创意作品展示给更多人</p>
+        <p class="subtitle">提交后由教师端统一审核，报告和展示图会随作品一起保存。</p>
+
+        <div class="meta-row">
+          <div class="meta-item">
+            <span class="meta-label">提交人</span>
+            <span class="meta-value">{{ currentUserName }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">所属专业</span>
+            <span class="meta-value">{{ currentMajor }}</span>
+          </div>
+        </div>
 
         <div class="form-group">
           <label>作品名称 <span class="req">*</span></label>
           <el-input v-model="form.title" placeholder="给你的作品起个名字" size="large" />
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>作者姓名 <span class="req">*</span></label>
-            <el-input v-model="form.author" placeholder="你的姓名" size="large" />
-          </div>
-          <div class="form-group">
-            <label>所属专业 <span class="req">*</span></label>
-            <el-select v-model="form.major" placeholder="选择专业" size="large" style="width: 100%">
-              <el-option v-for="m in majors" :key="m" :label="m" :value="m" />
-            </el-select>
-          </div>
         </div>
 
         <div class="form-group">
@@ -133,7 +133,7 @@ async function handleSubmit() {
             v-model="form.description"
             type="textarea"
             :rows="5"
-            placeholder="描述你的作品：功能、技术实现、创新点..."
+            placeholder="描述作品的功能、技术实现和亮点"
             size="large"
           />
         </div>
@@ -150,9 +150,9 @@ async function handleSubmit() {
             <button class="btn-add-tag" @click="addTag">+ 添加</button>
           </div>
           <div v-if="tags.length > 0" class="tags-display">
-            <span v-for="(tag, i) in tags" :key="tag" class="tag-item">
+            <span v-for="(tag, index) in tags" :key="tag" class="tag-item">
               {{ tag }}
-              <button class="tag-remove" @click="removeTag(i)">&times;</button>
+              <button class="tag-remove" @click="removeTag(index)">&times;</button>
             </span>
           </div>
         </div>
@@ -163,7 +163,7 @@ async function handleSubmit() {
             <input ref="reportInput" type="file" accept=".pdf" hidden @change="handleReportUpload" />
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span v-if="!reportFile">点击或拖拽上传 PDF 文件（限 20MB）</span>
             <span v-else class="file-name">{{ reportFile.name }}</span>
@@ -172,12 +172,12 @@ async function handleSubmit() {
 
         <div class="form-group">
           <label>演示视频链接</label>
-          <el-input v-model="form.videoUrl" placeholder="粘贴 Bilibili / YouTube 视频链接" size="large" />
+          <el-input v-model="form.videoUrl" placeholder="填写 Bilibili / YouTube 链接" size="large" />
         </div>
 
         <div class="form-group">
           <label>外链地址</label>
-          <el-input v-model="form.linkUrl" placeholder="GitHub 仓库、博客、在线演示等任意链接" size="large" />
+          <el-input v-model="form.linkUrl" placeholder="GitHub 仓库、在线演示等链接" size="large" />
         </div>
 
         <div class="form-group">
@@ -186,7 +186,7 @@ async function handleSubmit() {
             <input ref="imageInput" type="file" accept="image/*" hidden @change="handleImageUpload" />
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"
-                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <span v-if="!imageFile">点击上传接线图（JPG/PNG，限 5MB）</span>
             <span v-else class="file-name">{{ imageFile.name }}</span>
@@ -244,7 +244,35 @@ async function handleSubmit() {
 .subtitle {
   font-size: 0.9rem;
   color: var(--color-text-secondary);
-  margin-bottom: var(--space-2xl);
+  margin-bottom: var(--space-xl);
+}
+
+.meta-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-md);
+  margin-bottom: var(--space-xl);
+}
+
+.meta-item {
+  padding: var(--space-md);
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+}
+
+.meta-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-xs);
+}
+
+.meta-value {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .form-group {
@@ -261,12 +289,6 @@ async function handleSubmit() {
 
 .req {
   color: #ef4444;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-lg);
 }
 
 .tag-input-row {
@@ -354,7 +376,7 @@ async function handleSubmit() {
 }
 
 @media (max-width: 640px) {
-  .form-row {
+  .meta-row {
     grid-template-columns: 1fr;
   }
 }

@@ -47,8 +47,10 @@ def create_database():
 def create_tables():
     """用 SQLAlchemy 创建所有表"""
     from app.db.session import engine, Base
+    from app.db.schema_compat import ensure_schema_compatibility
     import app.models.entities  # noqa: F401 - 确保模型被加载
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility(engine)
     print("  所有表已创建")
 
 

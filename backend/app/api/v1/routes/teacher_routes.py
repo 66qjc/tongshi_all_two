@@ -1,4 +1,4 @@
-"""Teacher routes"""
+﻿"""Teacher routes"""
 import io
 import zipfile
 from datetime import datetime
@@ -26,8 +26,12 @@ def teacher_stats(db: Session = Depends(get_db), _: AuthUser = Depends(require_r
 
 
 @router.get("/students", summary="学生数据", description="教师端：返回所有学生的学号、姓名、专业、班级、学习进度和练习统计")
-def get_students(db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    return success(list_students(db))
+def get_students(
+    class_id: int = None,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    return success(list_students(db, class_id))
 
 
 @router.get("/projects", summary="作品审核列表", description="教师端：按状态筛选所有学生作品，默认返回全部")
@@ -78,7 +82,6 @@ def batch_download_projects(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("teacher")),
 ):
-    """批量下载已通过作品的所有 PDF 报告（ZIP 压缩包）"""
     projects = (
         db.query(Project)
         .filter(Project.status == "approved", Project.report_url != "", Project.report_url.isnot(None))
@@ -98,9 +101,8 @@ def batch_download_projects(
                 continue
             author = db.query(User).filter(User.id == p.author_id).first()
             author_name = author.name if author else p.author_id
-            # ZIP 内部文件名：{作者名}_{作品标题}.pdf
             ext = file_path.suffix or ".pdf"
-            safe_title = "".join(c for c in p.title if c not in r'\/:*?"<>|')
+            safe_title = "".join(c for c in p.title if c not in r'\\/:*?"<>|')
             inner_name = f"{author_name}_{safe_title}{ext}"
             zf.write(file_path, inner_name)
 
@@ -109,7 +111,7 @@ def batch_download_projects(
 
     zip_buffer.seek(0)
     today = datetime.now().strftime("%Y%m%d")
-    filename = f"作品报告_{today}.zip"
+    filename = f"project_reports_{today}.zip"
 
     return StreamingResponse(
         zip_buffer,

@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Chapter, Course, Question
+from app.models.entities import Chapter, Course, Material, Question, StudentProgress
 
 
 def list_questions(db: Session, chapter_id: int = None, type_: str = None):
@@ -71,6 +71,10 @@ def update_course(db: Session, course_id: int, name: str):
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         return None
+    if name != course.name:
+        duplicate = db.query(Course).filter(Course.name == name, Course.id != course_id).first()
+        if duplicate:
+            raise BusinessException(400, "课程已存在")
     course.name = name
     db.commit()
     return course
@@ -80,9 +84,35 @@ def delete_course(db: Session, course_id: int):
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         return None
+    chapter_ids = [item.id for item in db.query(Chapter.id).filter(Chapter.course_id == course_id).all()]
+    if chapter_ids:
+        has_materials = db.query(Material).filter(Material.chapter_id.in_(chapter_ids)).count() > 0
+        has_questions = db.query(Question).filter(Question.chapter_id.in_(chapter_ids)).count() > 0
+        has_progress = db.query(StudentProgress).filter(StudentProgress.chapter_id.in_(chapter_ids)).count() > 0
+        if has_materials or has_questions or has_progress:
+            raise BusinessException(400, "课程下仍有章节关联资料、题目或学习记录，不能直接删除")
     db.delete(course)
     db.commit()
     return True
+
+
+def get_course_detail(db: Session, course_id: int):
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        return None
+    chapters = (
+        db.query(Chapter)
+        .filter(Chapter.course_id == course_id)
+        .order_by(Chapter.sort_order, Chapter.id)
+        .all()
+    )
+    material_count = (
+        db.query(Material)
+        .join(Chapter, Material.chapter_id == Chapter.id)
+        .filter(Chapter.course_id == course_id)
+        .count()
+    )
+    return course, chapters, material_count
 
 
 def import_questions_from_excel(db: Session, rows: list[dict]):

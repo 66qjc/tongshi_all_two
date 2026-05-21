@@ -6,8 +6,8 @@ from app.db.session import get_db
 from app.core.security import get_current_user, require_role
 from app.core.response import success
 from app.core.exceptions import BusinessException
-from app.schemas.common import AuthUser, ChapterUpdate, ChapterScheduleUpdate
-from app.services.chapter_service import list_chapters, get_chapter, update_chapter
+from app.schemas.common import AuthUser, ChapterCreate, ChapterManageUpdate, ChapterUpdate, ChapterScheduleUpdate
+from app.services.chapter_service import list_chapters, get_chapter, create_chapter, update_chapter, delete_chapter
 
 router = APIRouter(prefix="/chapters", tags=["chapters"])
 
@@ -32,6 +32,16 @@ def get_chapter_detail(num: str, db: Session = Depends(get_db), current_user: Au
     })
 
 
+@router.post("", summary="新增章节", description="教师端：创建课程章节")
+def add_chapter(
+    data: ChapterCreate,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    ch = create_chapter(db, data.model_dump())
+    return success({"id": ch.id})
+
+
 @router.patch("/{chapter_id}", summary="更新章节状态", description="教师端：修改章节发布状态")
 def update_chapter_status(
     chapter_id: int,
@@ -40,6 +50,19 @@ def update_chapter_status(
     _: AuthUser = Depends(require_role("teacher")),
 ):
     ch = update_chapter(db, chapter_id, data.model_dump(exclude_unset=True))
+    if not ch:
+        raise BusinessException(404, "章节不存在")
+    return success()
+
+
+@router.put("/{chapter_id}", summary="编辑章节", description="教师端：修改章节基础信息和排课信息")
+def edit_chapter(
+    chapter_id: int,
+    data: ChapterManageUpdate,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    ch = update_chapter(db, chapter_id, data.model_dump())
     if not ch:
         raise BusinessException(404, "章节不存在")
     return success()
@@ -54,5 +77,16 @@ def update_chapter_schedule(
 ):
     ch = update_chapter(db, chapter_id, data.model_dump(exclude_unset=True))
     if not ch:
+        raise BusinessException(404, "章节不存在")
+    return success()
+
+
+@router.delete("/{chapter_id}", summary="删除章节", description="教师端：删除无关联数据的章节")
+def remove_chapter(
+    chapter_id: int,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    if not delete_chapter(db, chapter_id):
         raise BusinessException(404, "章节不存在")
     return success()

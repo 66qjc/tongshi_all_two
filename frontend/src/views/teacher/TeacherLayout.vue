@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
@@ -23,7 +23,6 @@ function isActive(path: string) {
 
 <template>
   <div class="teacher-layout">
-    <!-- Top bar -->
     <header class="teacher-header">
       <div class="header-left">
         <router-link to="/" class="logo-link">
@@ -35,8 +34,7 @@ function isActive(path: string) {
               </linearGradient>
             </defs>
             <circle cx="16" cy="16" r="14" fill="url(#tLogoGrad)" />
-            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700"
-                  fill="white" font-family="sans-serif">探</text>
+            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700" fill="white" font-family="sans-serif">师</text>
           </svg>
           <span class="logo-text">教师工作台</span>
         </router-link>
@@ -50,7 +48,6 @@ function isActive(path: string) {
     </header>
 
     <div class="teacher-body">
-      <!-- Sidebar -->
       <aside class="teacher-sidebar">
         <nav class="sidebar-nav">
           <router-link
@@ -66,7 +63,6 @@ function isActive(path: string) {
         </nav>
       </aside>
 
-      <!-- Content -->
       <main class="teacher-main">
         <router-view />
       </main>

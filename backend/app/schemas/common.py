@@ -1,5 +1,6 @@
 """Pydantic request / response schemas"""
 import re
+from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
@@ -80,8 +81,8 @@ class AnnouncementCreate(BaseModel):
     title: str = Field(min_length=1)
     content: str = ""
     question_ids: List[int] = []
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
 
 
 class CourseCreateRequest(BaseModel):
@@ -116,7 +117,34 @@ class ChapterUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class ChapterCreate(BaseModel):
+    num: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    desc: str = ""
+    topics: List[str] = []
+    status: str = "即将发布"
+    sort_order: int = 0
+    course_id: Optional[int] = None
+    day_of_week: str = ""
+    class_periods: str = ""
+    schedule_note: str = ""
+
+
+class ChapterManageUpdate(BaseModel):
+    num: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    desc: str = ""
+    topics: List[str] = []
+    status: str = "即将发布"
+    sort_order: int = 0
+    course_id: Optional[int] = None
+    day_of_week: str = ""
+    class_periods: str = ""
+    schedule_note: str = ""
+
+
 class ChapterScheduleUpdate(BaseModel):
+    course_id: Optional[int] = None
     day_of_week: Optional[str] = None
     class_periods: Optional[str] = None
     schedule_note: Optional[str] = None
@@ -143,6 +171,8 @@ class MaterialCreate(BaseModel):
     chapter_id: int
     type: str = "video"
     title: str = Field(min_length=1)
+    url: str = ""
+    size: str = "0 MB"
 
 
 # ── Question ────────────────────────────────────────────────────────────────
@@ -246,10 +276,11 @@ class StudentOut(BaseModel):
     id: str
     name: str
     major: str = ""
+    class_id: Optional[int] = None
+    class_name: str = ""
     progress: int = 0
     exercises: int = 0
     accuracy: int = 0
-    class_name: str = ""
 
 
 class TeacherStatsOut(BaseModel):

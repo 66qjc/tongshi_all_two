@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import settings
 from app.core.exceptions import BusinessException
 from app.db.session import engine, Base
+from app.db.schema_compat import ensure_schema_compatibility
 from app.api.v1 import api_router
 
 # ── logging ──────────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 async def lifespan(app: FastAPI):
     # 启动时：建表 + 种子数据
     Base.metadata.create_all(bind=engine)
+    ensure_schema_compatibility(engine)
     logger.info(f"Database tables ready ({settings.database_url.split(':')[0]})")
     try:
         from seed_data import seed

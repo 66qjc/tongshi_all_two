@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { title: '探 · 学无止境' },
     },
     {
+      path: '/learn/course/:courseId',
+      name: 'course-detail',
+      component: () => import('../views/CourseDetailView.vue'),
+      meta: { title: '课程详情' },
+    },
+    {
       path: '/learn/:chapterId',
       name: 'chapter-detail',
       component: () => import('../views/ChapterView.vue'),

@@ -61,6 +61,8 @@ class TestChapter:
         # 新字段存在
         assert "schedule_note" in ch
         assert "course_id" in ch
+        assert "course_name" in ch
+        assert ch["course_name"] == "测试课程"
 
     def test_chapter_detail(self, client, student_token):
         resp = client.get("/api/chapters/01", headers=auth_header(student_token))
