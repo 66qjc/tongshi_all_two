@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
@@ -7,49 +7,47 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const navItems = [
-  { name: '概览', path: '/teacher', icon: '&#9673;' },
-  { name: '班级管理', path: '/teacher/classes', icon: '&#9881;' },
-  { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
-  { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
-  { name: '课程管理', path: '/teacher/courses', icon: '&#9670;' },
-  { name: '任务发布', path: '/teacher/announcements', icon: '&#9993;' },
-  { name: '学生数据', path: '/teacher/students', icon: '&#9783;' },
-  { name: '作品审核', path: '/teacher/reviews', icon: '&#10003;' },
+  { name: '教师管理', path: '/admin/teachers', icon: '&#9783;' },
+  { name: '内容管理', path: '/admin/showcase', icon: '&#128196;' },
 ]
 
 function isActive(path: string) {
   return route.path === path
 }
+
+const handleLogout = () => {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
-  <div class="teacher-layout">
-    <header class="teacher-header">
+  <div class="admin-layout">
+    <header class="admin-header">
       <div class="header-left">
-        <router-link to="/" class="logo-link">
+        <div class="logo-wrap">
           <svg viewBox="0 0 32 32" width="24" height="24">
             <defs>
-              <linearGradient id="tLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <linearGradient id="aLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" style="stop-color: var(--color-primary)" />
-                <stop offset="100%" style="stop-color: var(--color-learn)" />
+                <stop offset="100%" style="stop-color: var(--color-act)" />
               </linearGradient>
             </defs>
-            <circle cx="16" cy="16" r="14" fill="url(#tLogoGrad)" />
-            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700" fill="white" font-family="sans-serif">师</text>
+            <circle cx="16" cy="16" r="14" fill="url(#aLogoGrad)" />
+            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700"
+                  fill="white" font-family="sans-serif">管</text>
           </svg>
-          <span class="logo-text">教师工作台</span>
-        </router-link>
+          <span class="logo-text">AI通识课管理后台</span>
+        </div>
       </div>
       <div class="header-right">
-        <span class="teacher-name">{{ authStore.user?.name || '教师' }}</span>
-        <button class="btn-student-view" @click="router.push('/')">
-          返回学生端
-        </button>
+        <span class="admin-name">{{ authStore.user?.name || '管理员' }}</span>
+        <button class="btn-logout" @click="handleLogout">退出登录</button>
       </div>
     </header>
 
-    <div class="teacher-body">
-      <aside class="teacher-sidebar">
+    <div class="admin-body">
+      <aside class="admin-sidebar">
         <nav class="sidebar-nav">
           <router-link
             v-for="item in navItems"
@@ -64,7 +62,7 @@ function isActive(path: string) {
         </nav>
       </aside>
 
-      <main class="teacher-main">
+      <main class="admin-main">
         <router-view />
       </main>
     </div>
@@ -72,12 +70,12 @@ function isActive(path: string) {
 </template>
 
 <style scoped>
-.teacher-layout {
+.admin-layout {
   min-height: 100vh;
   background: var(--color-bg-alt);
 }
 
-.teacher-header {
+.admin-header {
   position: fixed;
   top: 0;
   left: 0;
@@ -97,7 +95,7 @@ function isActive(path: string) {
   align-items: center;
 }
 
-.logo-link {
+.logo-wrap {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -115,34 +113,36 @@ function isActive(path: string) {
   gap: var(--space-md);
 }
 
-.teacher-name {
+.admin-name {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--color-text);
 }
 
-.btn-student-view {
+.btn-logout {
   padding: 0.4rem 1rem;
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
+  cursor: pointer;
+  background: transparent;
   transition: all var(--duration-fast);
 }
 
-.btn-student-view:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+.btn-logout:hover {
+  border-color: #f56c6c;
+  color: #f56c6c;
 }
 
-.teacher-body {
+.admin-body {
   display: flex;
   padding-top: 56px;
   min-height: 100vh;
 }
 
-.teacher-sidebar {
+.admin-sidebar {
   width: 200px;
   flex-shrink: 0;
   background: var(--color-bg-card);
@@ -172,6 +172,7 @@ function isActive(path: string) {
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
   transition: all var(--duration-fast);
+  text-decoration: none;
 }
 
 .sidebar-link:hover {
@@ -191,14 +192,14 @@ function isActive(path: string) {
   text-align: center;
 }
 
-.teacher-main {
+.admin-main {
   flex: 1;
   margin-left: 200px;
   padding: var(--space-xl);
 }
 
 @media (max-width: 768px) {
-  .teacher-sidebar {
+  .admin-sidebar {
     width: 60px;
   }
 
@@ -211,11 +212,11 @@ function isActive(path: string) {
     display: none;
   }
 
-  .teacher-main {
+  .admin-main {
     margin-left: 60px;
   }
 
-  .teacher-name {
+  .admin-name {
     display: none;
   }
 }

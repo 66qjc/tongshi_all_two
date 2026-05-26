@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from io import BytesIO
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, UploadFile, File
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
@@ -25,15 +27,28 @@ router = APIRouter(prefix="/questions", tags=["questions"])
 
 def _format_question(q):
     return {
-        "id": q.id, "type": q.type, "chapter_id": q.chapter_id,
-        "stem": q.stem, "options": q.options,
-        "answer": q.answer, "explanation": q.explanation,
+        "id": q.id,
+        "type": q.type,
+        "chapter_id": q.chapter_id,
+        "chapter_name": q.chapter.title if q.chapter else "",
+        "course_id": q.chapter.course_id if q.chapter else None,
+        "course_name": q.chapter.course.name if q.chapter and q.chapter.course else "",
+        "stem": q.stem,
+        "options": q.options or [],
+        "answer": q.answer,
+        "explanation": q.explanation or "",
     }
 
 
-@router.get("", summary="题目列表", description="按章节和题型筛选题目")
-def get_questions(chapter_id: int = None, type: str = None, db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
-    questions = list_questions(db, chapter_id, type)
+@router.get("", summary="题目列表", description="按章节、题型、课程筛选题目")
+def get_questions(
+    chapter_id: Optional[int] = None,
+    type: Optional[str] = None,
+    course_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(get_current_user),
+):
+    questions = list_questions(db, chapter_id, type, course_id)
     return success([_format_question(q) for q in questions])
 
 
@@ -119,14 +134,17 @@ def remove_course(course_id: int, db: Session = Depends(get_db), _: AuthUser = D
 @router.post("/import", summary="Excel 批量导入题目", description="教师端：上传 Excel 批量导入题目（.xlsx，表头：type/chapter/stem/options/answer/explanation）")
 def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     content = file.file.read()
-    err = validate_upload(file.filename, len(content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
+    err = validate_upload(file.filename, len(
+        content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
     if err:
         raise BusinessException(400, err)
     wb = load_workbook(filename=BytesIO(content), data_only=True)
     ws = wb.active
-    headers = [str(c.value).strip() if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    headers = [str(c.value).strip() if c.value is not None else "" for c in next(
+        ws.iter_rows(min_row=1, max_row=1))]
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        item = {headers[i]: row[i] if i < len(row) else None for i in range(len(headers))}
+        item = {headers[i]: row[i] if i < len(
+            row) else None for i in range(len(headers))}
         rows.append(item)
     return success(import_questions_from_excel(db, rows))

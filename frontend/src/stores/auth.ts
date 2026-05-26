@@ -1,12 +1,13 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import { login as apiLogin, register as apiRegister } from '@/api/auth'
+import { login as apiLogin, register as apiRegister, changePassword as apiChangePassword } from '@/api/auth'
 
 export interface User {
   id: string
   name: string
-  role: 'student' | 'teacher'
+  role: 'student' | 'teacher' | 'admin'
   major?: string
+  needs_password_change?: boolean
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -22,8 +23,9 @@ export const useAuthStore = defineStore('auth', () => {
       const u: User = {
         id: result.user.id,
         name: result.user.name,
-        role: result.user.role as 'student' | 'teacher',
+        role: result.user.role as 'student' | 'teacher' | 'admin',
         major: result.user.major,
+        needs_password_change: result.user.needs_password_change,
       }
       user.value = u
       token.value = result.access_token
@@ -52,5 +54,19 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('auth_token')
   }
 
-  return { user, token, isLoggedIn, login, register, logout }
+  async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+    try {
+      await apiChangePassword({ old_password: oldPassword, new_password: newPassword })
+      // 修改密码成功后，清除强制改密标记
+      if (user.value) {
+        user.value.needs_password_change = false
+        localStorage.setItem('auth_user', JSON.stringify(user.value))
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return { user, token, isLoggedIn, login, register, logout, changePassword }
 })

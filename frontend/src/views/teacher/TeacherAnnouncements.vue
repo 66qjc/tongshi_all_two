@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getAnnouncements, createAnnouncement, deleteAnnouncement as apiDeleteAnnouncement,
@@ -7,12 +7,35 @@ import {
   type Announcement, type CompletionReport,
 } from '@/api/announcement'
 import { getClasses, type ClassInfo } from '@/api/class'
-import { getQuestions, type Question } from '@/api/question'
+import http from '@/api/http'
 
+// 本地扩展题目类型（兼容后端返回的 course_name / chapter_name 字段）
+interface PickerQuestion {
+  id: number
+  type: 'choice' | 'fill'
+  stem: string
+  chapter_id?: number
+  chapter_name?: string
+  course_id?: number
+  course_name?: string
+}
+
+interface CourseOption {
+  id: number
+  name: string
+}
+
+interface ChapterOption {
+  id: number
+  name: string
+}
+
+// ---- 公告列表 ----
 const announcements = ref<Announcement[]>([])
 const classes = ref<ClassInfo[]>([])
 const loading = ref(true)
 
+// ---- 发布表单 ----
 const dialogVisible = ref(false)
 const form = reactive({
   class_id: 0,
@@ -24,9 +47,22 @@ const form = reactive({
   end_time: '',
 })
 
-const questions = ref<Question[]>([])
-const questionLoading = ref(false)
+// ---- 选题对话框状态 ----
+const pickerVisible = ref(false)
+const pickerLoading = ref(false)
+const pickerCourses = ref<CourseOption[]>([])
+const pickerChapters = ref<ChapterOption[]>([])
+const pickerQuestions = ref<PickerQuestion[]>([])
+const pickerFilterCourse = ref<number | ''>('')
+const pickerFilterChapter = ref<number | ''>('')
+const pickerFilterType = ref<string>('')
+// 跨筛选保留的已选题目 ID 列表
+const pickerSelectedIds = ref<number[]>([])
+const pickerTableRef = ref<any>(null)
+// 防止 restorePickerSelection 时 selection-change 回写
+const isRestoringSelection = ref(false)
 
+// ---- 完成情况报告 ----
 const reportDialogVisible = ref(false)
 const reportData = ref<CompletionReport | null>(null)
 const reportLoading = ref(false)
@@ -43,6 +79,7 @@ onMounted(async () => {
   }
 })
 
+// ---- 发布表单 ----
 function openCreate() {
   Object.assign(form, {
     class_id: classes.value[0]?.id || 0,
@@ -53,32 +90,12 @@ function openCreate() {
     start_time: '',
     end_time: '',
   })
-  questions.value = []
   dialogVisible.value = true
-}
-
-async function loadQuestions() {
-  if (questions.value.length > 0) return
-  questionLoading.value = true
-  try {
-    questions.value = await getQuestions()
-  } catch {
-    ElMessage.error('题库数据加载失败，请稍后重试')
-  } finally {
-    questionLoading.value = false
-  }
-}
-
-function handleTypeChange() {
-  if (form.type === 'quiz') {
-    loadQuestions()
-  }
 }
 
 async function handleCreate() {
   if (!form.title.trim()) { ElMessage.warning('请填写标题'); return }
   if (!form.class_id) { ElMessage.warning('请选择班级'); return }
-
   try {
     await createAnnouncement({
       class_id: form.class_id,
@@ -110,6 +127,117 @@ async function handleDelete(item: Announcement) {
   }
 }
 
+// ---- 选题对话框逻辑 ----
+async function loadPickerCourses() {
+  try {
+    const data = await http.get<any, CourseOption[]>('/questions/courses')
+    pickerCourses.value = Array.isArray(data) ? data : []
+  } catch {
+    pickerCourses.value = []
+  }
+}
+
+async function loadPickerQuestions() {
+  pickerLoading.value = true
+  try {
+    const params: Record<string, any> = {}
+    if (pickerFilterCourse.value !== '') params.course_id = pickerFilterCourse.value
+    if (pickerFilterChapter.value !== '') params.chapter_id = pickerFilterChapter.value
+    if (pickerFilterType.value) params.type = pickerFilterType.value
+    const data = await http.get<any, PickerQuestion[]>('/questions', { params })
+    pickerQuestions.value = Array.isArray(data) ? data : []
+    // 数据加载完毕后恢复已选状态
+    await nextTick()
+    restorePickerSelection()
+  } catch {
+    ElMessage.error('题目加载失败，请稍后重试')
+    pickerQuestions.value = []
+  } finally {
+    pickerLoading.value = false
+  }
+}
+
+/** 将 pickerSelectedIds 中在当前视图里的行重新打勾 */
+function restorePickerSelection() {
+  if (!pickerTableRef.value) return
+  isRestoringSelection.value = true
+  pickerQuestions.value.forEach(row => {
+    if (pickerSelectedIds.value.includes(row.id)) {
+      pickerTableRef.value.toggleRowSelection(row, true)
+    }
+  })
+  nextTick(() => {
+    isRestoringSelection.value = false
+  })
+}
+
+/** 打开选题对话框 */
+async function openPicker() {
+  // 重置筛选
+  pickerFilterCourse.value = ''
+  pickerFilterChapter.value = ''
+  pickerFilterType.value = ''
+  pickerChapters.value = []
+  // 从表单中恢复初始已选
+  pickerSelectedIds.value = [...form.question_ids]
+  pickerVisible.value = true
+  // 并行加载课程列表与题目列表
+  await Promise.all([loadPickerCourses(), loadPickerQuestions()])
+}
+
+/** 课程切换：联动清空章节、重新加载题目并提取章节选项 */
+async function handlePickerCourseChange() {
+  pickerFilterChapter.value = ''
+  pickerChapters.value = []
+  await loadPickerQuestions()
+  // 从已加载题目中提取章节（仅当选了具体课程时才有意义）
+  if (pickerFilterCourse.value !== '') {
+    const chapMap = new Map<number, string>()
+    pickerQuestions.value.forEach(q => {
+      if (q.chapter_id != null && q.chapter_name) {
+        chapMap.set(q.chapter_id, q.chapter_name)
+      }
+    })
+    pickerChapters.value = Array.from(chapMap.entries()).map(([id, name]) => ({ id, name }))
+  }
+}
+
+/** 章节切换：重新加载题目 */
+async function handlePickerChapterChange() {
+  await loadPickerQuestions()
+}
+
+/** 题型切换：重新加载题目 */
+async function handlePickerTypeChange() {
+  await loadPickerQuestions()
+}
+
+/**
+ * 表格勾选变化时，跨筛选保留已选状态：
+ * 移除当前视图中所有 ID，再加回此次被选中的 ID
+ */
+function handlePickerSelectionChange(rows: PickerQuestion[]) {
+  if (isRestoringSelection.value) return
+  const currentIds = pickerQuestions.value.map(q => q.id)
+  const selectedIds = rows.map(r => r.id)
+  pickerSelectedIds.value = [
+    ...pickerSelectedIds.value.filter(id => !currentIds.includes(id)),
+    ...selectedIds,
+  ]
+}
+
+/** 确定选题：写入表单并关闭对话框 */
+function confirmPicker() {
+  form.question_ids = [...pickerSelectedIds.value]
+  pickerVisible.value = false
+}
+
+/** 取消选题：不保存，关闭对话框 */
+function cancelPicker() {
+  pickerVisible.value = false
+}
+
+// ---- 完成情况报告 ----
 async function openReport(item: Announcement) {
   reportDialogVisible.value = true
   reportLoading.value = true
@@ -122,8 +250,14 @@ async function openReport(item: Announcement) {
   }
 }
 
+// ---- 辅助函数 ----
 function getClassName(classId: number) {
   return classes.value.find(c => c.id === classId)?.name || '未知班级'
+}
+
+function getTypeLabel(type: string) {
+  const map: Record<string, string> = { choice: '选择题', fill: '填空题' }
+  return map[type] || type
 }
 </script>
 
@@ -165,7 +299,7 @@ function getClassName(classId: number) {
       <p>暂无任务，点击「发布任务」创建课程通知或学习任务。</p>
     </div>
 
-    <!-- Create dialog -->
+    <!-- 发布公告/任务 对话框 -->
     <el-dialog v-model="dialogVisible" title="发布公告 / 任务" width="600px">
       <div class="form-group">
         <label>目标班级</label>
@@ -175,7 +309,7 @@ function getClassName(classId: number) {
       </div>
       <div class="form-group">
         <label>类型</label>
-        <el-radio-group v-model="form.type" size="large" @change="handleTypeChange">
+        <el-radio-group v-model="form.type" size="large">
           <el-radio-button value="announcement">普通公告</el-radio-button>
           <el-radio-button value="quiz">发布题目</el-radio-button>
         </el-radio-group>
@@ -192,23 +326,17 @@ function getClassName(classId: number) {
         </div>
       </template>
 
+      <!-- 题目选择区：替换旧 checkbox 列表，改为按钮触发选题对话框 -->
       <template v-if="form.type === 'quiz'">
         <div class="form-group">
           <label>选择题目</label>
-          <div v-loading="questionLoading" class="question-selector">
-            <el-checkbox-group v-model="form.question_ids">
-              <div v-for="q in questions" :key="q.id" class="question-item">
-                <el-checkbox :value="q.id">
-                  <span class="q-stem">{{ q.stem.length > 40 ? q.stem.slice(0, 40) + '...' : q.stem }}</span>
-                  <el-tag size="small" effect="plain" style="margin-left: 8px;">
-                    {{ q.type === 'choice' ? '选择' : '填空' }}
-                  </el-tag>
-                </el-checkbox>
-              </div>
-            </el-checkbox-group>
-            <div v-if="!questionLoading && questions.length === 0" class="empty-mini">题库为空</div>
+          <div class="question-picker-row">
+            <span class="selected-count">已选 <strong>{{ form.question_ids.length }}</strong> 道题</span>
+            <el-button type="primary" plain size="small" @click="openPicker">选择题目</el-button>
           </div>
-          <span class="hint">已选 {{ form.question_ids.length }} 题</span>
+          <div v-if="form.question_ids.length > 0" class="selected-hint">
+            已选题目 ID：{{ form.question_ids.join('、') }}
+          </div>
         </div>
       </template>
 
@@ -229,7 +357,102 @@ function getClassName(classId: number) {
       </template>
     </el-dialog>
 
-    <!-- Completion report dialog -->
+    <!-- 选题对话框 -->
+    <el-dialog
+      v-model="pickerVisible"
+      title="从题库选题"
+      width="860px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <!-- 筛选行 -->
+      <div class="picker-filters">
+        <div class="filter-item">
+          <span class="filter-label">课程：</span>
+          <el-select
+            v-model="pickerFilterCourse"
+            placeholder="全部课程"
+            clearable
+            style="width: 180px"
+            @change="handlePickerCourseChange"
+          >
+            <el-option v-for="c in pickerCourses" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </div>
+        <div class="filter-item">
+          <span class="filter-label">章节：</span>
+          <el-select
+            v-model="pickerFilterChapter"
+            placeholder="全部章节"
+            clearable
+            :disabled="pickerFilterCourse === ''"
+            style="width: 180px"
+            @change="handlePickerChapterChange"
+          >
+            <el-option v-for="ch in pickerChapters" :key="ch.id" :label="ch.name" :value="ch.id" />
+          </el-select>
+        </div>
+        <div class="filter-item">
+          <span class="filter-label">题型：</span>
+          <el-select
+            v-model="pickerFilterType"
+            placeholder="全部题型"
+            clearable
+            style="width: 140px"
+            @change="handlePickerTypeChange"
+          >
+            <el-option label="选择题" value="choice" />
+            <el-option label="填空题" value="fill" />
+          </el-select>
+        </div>
+      </div>
+
+      <!-- 题目表格 -->
+      <div class="picker-table-wrap" v-loading="pickerLoading">
+        <el-table
+          ref="pickerTableRef"
+          :data="pickerQuestions"
+          style="width: 100%"
+          row-key="id"
+          @selection-change="handlePickerSelectionChange"
+        >
+          <el-table-column type="selection" width="50" />
+          <el-table-column label="题型" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.type === 'choice' ? '' : 'warning'" effect="plain">
+                {{ getTypeLabel(row.type) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="题干" min-width="260">
+            <template #default="{ row }">
+              <span class="stem-text">{{ row.stem.length > 50 ? row.stem.slice(0, 50) + '…' : row.stem }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="所属课程" width="140">
+            <template #default="{ row }">{{ row.course_name || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="所属章节" width="140">
+            <template #default="{ row }">{{ row.chapter_name || '—' }}</template>
+          </el-table-column>
+        </el-table>
+        <div v-if="!pickerLoading && pickerQuestions.length === 0" class="picker-empty">
+          暂无符合条件的题目，请调整筛选条件
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="picker-footer">
+          <span class="picker-count">已选 <strong>{{ pickerSelectedIds.length }}</strong> 道题</span>
+          <div>
+            <el-button @click="cancelPicker">取消</el-button>
+            <el-button type="primary" @click="confirmPicker">确定</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 完成情况对话框 -->
     <el-dialog v-model="reportDialogVisible" title="任务完成情况" width="520px">
       <div v-loading="reportLoading">
         <template v-if="reportData">
@@ -310,34 +533,80 @@ function getClassName(classId: number) {
   color: var(--color-text-muted);
 }
 
-.hint {
+/* 选题触发行 */
+.question-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.selected-count {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+.selected-hint {
+  margin-top: 6px;
   font-size: 0.8rem;
   color: var(--color-text-muted);
-  margin-top: var(--space-xs);
-  display: block;
+  word-break: break-all;
 }
 
-.question-selector {
-  max-height: 300px;
-  overflow-y: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-sm);
+/* 选题对话框 */
+.picker-filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-light, #f0f0f0);
 }
 
-.question-item {
-  padding: var(--space-xs) var(--space-sm);
-  border-bottom: 1px solid var(--color-border-light);
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.question-item:last-child {
-  border-bottom: none;
-}
-
-.q-stem {
+.filter-label {
   font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
+.picker-table-wrap {
+  height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm, 6px);
+}
+
+.picker-empty {
+  text-align: center;
+  padding: 48px 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.stem-text {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.picker-count {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+}
+
+/* 空状态 */
 .empty-state {
   text-align: center;
   padding: var(--space-3xl) 0;
@@ -345,13 +614,7 @@ function getClassName(classId: number) {
   font-size: 0.9rem;
 }
 
-.empty-mini {
-  text-align: center;
-  padding: var(--space-lg);
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
-
+/* 完成情况报告 */
 .report-summary {
   display: flex;
   gap: var(--space-xl);

@@ -14,7 +14,8 @@ from app.db.session import get_db
 from app.models.entities import User
 from app.schemas.common import AuthUser
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["pbkdf2_sha256", "bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
 
@@ -33,7 +34,8 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
+    expire = datetime.now(
+        timezone.utc) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
@@ -43,7 +45,8 @@ async def get_current_user(
     db: Session = Depends(get_db),
 ) -> AuthUser:
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        payload = jwt.decode(token, settings.secret_key,
+                             algorithms=[settings.algorithm])
         user_id: str = payload.get("sub")
         if not user_id:
             raise BusinessException(401, "无效的认证凭据")
@@ -52,7 +55,13 @@ async def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise BusinessException(401, "无效的认证凭据")
-    return AuthUser(id=user.id, name=user.name, role=user.role, major=user.major)
+    return AuthUser(
+        id=user.id,
+        name=user.name,
+        role=user.role,
+        major=user.major,
+        needs_password_change=user.needs_password_change,
+    )
 
 
 def require_role(role: str):

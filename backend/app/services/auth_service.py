@@ -27,7 +27,7 @@ def login_user(db: Session, user_id: str, password: str) -> dict:
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user.id, "name": user.name, "role": user.role, "major": user.major},
+        "user": {"id": user.id, "name": user.name, "role": user.role, "major": user.major, "needs_password_change": user.needs_password_change},
     }
 
 
@@ -53,3 +53,15 @@ def register_user(db: Session, data: RegisterRequest) -> dict:
         db.rollback()
         raise BusinessException(500, "注册失败，请稍后重试")
     return {"success": True, "message": "注册成功"}
+
+
+def forgot_password(db: Session, user_id: str, new_password: str) -> dict:
+    """忘记密码：直接用学号/工号重置密码，无需旧密码"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise BusinessException(404, "学号不存在")
+    user.hashed_password = get_password_hash(new_password)
+    user.needs_password_change = False
+    db.commit()
+    logger.info(f"密码重置成功: user_id={user_id}")
+    return {"message": "密码重置成功"}

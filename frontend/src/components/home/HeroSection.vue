@@ -75,25 +75,24 @@ onMounted(() => {
 
       <h1 class="hero-title">
         <span class="title-line">
-          <span class="char t">探</span>
+          <span class="char t">学</span>
           <span class="char-dot">·</span>
-          <span class="char p">练</span>
+          <span class="char p">思</span>
           <span class="char-dot">·</span>
-          <span class="char c">创</span>
+          <span class="char c">践</span>
           <span class="char-dot">·</span>
-          <span class="char a">行</span>
+          <span class="char a">悟</span>
         </span>
-        <span class="title-sub">在做中学，在行中悟</span>
+        <span class="title-sub">在学中思，在践中悟</span>
       </h1>
 
       <p class="hero-desc">
-        从 AI 基础理论到在线练习巩固，从硬件创意实践到社区公益行动<br />
-        构建属于你的数字成长档案，从容拥抱智能时代
+        以“学思践悟”四维框架，系统学习AI通识知识，深化反思练习，动手实践创作，在公益行动中感悟价值。
       </p>
 
       <div class="hero-actions">
         <button class="btn-primary" @click="router.push('/learn')">
-          <span>开始探索</span>
+          <span>开始学习</span>
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2"
                   stroke-linecap="round" stroke-linejoin="round"/>
@@ -113,7 +112,7 @@ onMounted(() => {
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span>探 · 学</span>
+          <span>学</span>
         </div>
         <div class="module-chip" @click="router.push('/practice')">
           <span class="chip-icon chip-practice">
@@ -122,7 +121,7 @@ onMounted(() => {
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span>练 · 用</span>
+          <span>思</span>
         </div>
         <div class="module-chip" @click="router.push('/create')">
           <span class="chip-icon chip-create">
@@ -131,7 +130,7 @@ onMounted(() => {
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span>造 · 创</span>
+          <span>践</span>
         </div>
         <div class="module-chip" @click="router.push('/act')">
           <span class="chip-icon chip-act">
@@ -140,7 +139,7 @@ onMounted(() => {
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </span>
-          <span>行 · 悟</span>
+          <span>悟</span>
         </div>
       </div>
     </div>

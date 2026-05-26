@@ -9,10 +9,10 @@ interface Stat {
 }
 
 const stats: Stat[] = [
-  { value: 6, label: '核心章节', suffix: '章', desc: '从概述到伦理的完整 AI 知识体系' },
-  { value: 100, label: '在线题库', suffix: '+', desc: '选择题、填空题，自动化批改' },
-  { value: 50, label: '学生作品', suffix: '+', desc: 'AI + 硬件的创意项目展示' },
-  { value: 20, label: '社区行动', suffix: '+', desc: '走进社区与中小学的 AI 公益课' },
+  { value: 6, label: '章节课程', suffix: '章', desc: '系统知识体系' },
+  { value: 100, label: '练习题目', suffix: '+', desc: '强化思维反思' },
+  { value: 50, label: '学生作品', suffix: '+', desc: '践行创作成果' },
+  { value: 20, label: '公益行动', suffix: '+', desc: '感悟社会价值' },
 ]
 
 const counters = ref<number[]>(stats.map(() => 0))

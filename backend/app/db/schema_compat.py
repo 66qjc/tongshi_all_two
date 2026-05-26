@@ -9,7 +9,8 @@ def ensure_schema_compatibility(engine) -> None:
         table_names = set(inspector.get_table_names())
 
         if "chapters" in table_names:
-            columns = {column["name"] for column in inspector.get_columns("chapters")}
+            columns = {column["name"]
+                       for column in inspector.get_columns("chapters")}
             required_columns = [
                 ("day_of_week", "VARCHAR(16)", "''"),
                 ("class_periods", "VARCHAR(32)", "''"),
@@ -106,10 +107,18 @@ def ensure_schema_compatibility(engine) -> None:
         table_names = set(inspector.get_table_names())
 
         # ── 为业务表补齐 file_id 列 ─────────────────────────────────────
-        _add_column_if_missing(conn, inspector, "materials", "file_id", "INTEGER")
-        _add_column_if_missing(conn, inspector, "projects", "report_file_id", "INTEGER")
-        _add_column_if_missing(conn, inspector, "projects", "cover_file_id", "INTEGER")
-        _add_column_if_missing(conn, inspector, "project_images", "file_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "materials", "file_id", "INTEGER")
+        _add_column_if_missing(conn, inspector, "projects",
+                               "report_file_id", "INTEGER")
+        _add_column_if_missing(conn, inspector, "projects",
+                               "cover_file_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "project_images", "file_id", "INTEGER")
+
+        # ── users 表新增 needs_password_change 列 ────────────────────────
+        _add_column_if_missing(
+            conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:
@@ -119,4 +128,5 @@ def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: s
         return
     existing = {c["name"] for c in inspector.get_columns(table)}
     if column not in existing:
-        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+        conn.execute(
+            text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))

@@ -1,7 +1,36 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { getShowcase } from '../api/showcase'
+import type { ShowcaseItemOut } from '../api/showcase'
+import { getProjects } from '../api/project'
+import type { Project } from '../api/project'
 
 const router = useRouter()
+
+// ── 动态展示数据 ────────────────────────────────────
+const loading = ref(false)
+const loadError = ref(false)
+const showcaseData = ref<Record<string, ShowcaseItemOut[]>>({})
+const studentProjects = ref<Project[]>([])
+
+// 页面挂载时并行加载展示内容与学生作品
+onMounted(async () => {
+  loading.value = true
+  loadError.value = false
+  try {
+    const [showcase, projects] = await Promise.all([getShowcase(), getProjects()])
+    showcaseData.value = showcase || {}
+    // 仅展示前 6 条已通过审核的作品
+    studentProjects.value = (projects || [])
+      .filter((p) => p.status === 'approved')
+      .slice(0, 6)
+  } catch {
+    loadError.value = true
+  } finally {
+    loading.value = false
+  }
+})
 
 const actionSteps = [
   {
@@ -51,59 +80,7 @@ const outcomeCards = [
   },
 ]
 
-const outcomeDetails = [
-  {
-    id: 'public-class',
-    badge: '公益课',
-    title: 'AI 公益课：把 AI 知识讲清楚',
-    intro: '学生团队走进社区与中小学，将 AI 概念、工具体验和安全意识设计成适合不同年龄段的课程。重点是让听众听得懂、能体验、知道基本使用边界。',
-    stats: [
-      { value: '20+', label: '累计课程' },
-      { value: '600+', label: '覆盖听众' },
-      { value: '4', label: '课程主题' },
-    ],
-    highlights: [
-      '面向小学生设计“AI 是什么”“如何安全使用 AI”等启蒙内容。',
-      '面向社区居民设计手机 AI 助手、常见风险识别和生活工具体验。',
-      '课后收集听众反馈，复盘讲解节奏、案例选择和互动方式。',
-    ],
-    cases: ['AI 启蒙小课堂', '社区 AI 科普活动', '家长数字素养微课'],
-  },
-  {
-    id: 'reading-club',
-    badge: '读书会',
-    title: '读书会：在阅读和讨论中形成观点',
-    intro: '读书会围绕 AI、社会、教育和职业发展展开。学生需要摘录观点、提出问题、参与讨论，并把讨论内容整理成读书笔记或分享材料。',
-    stats: [
-      { value: '12', label: '读书会' },
-      { value: '36', label: '主题分享' },
-      { value: '5', label: '核心议题' },
-    ],
-    highlights: [
-      '围绕《生命 3.0》《智能时代》等书目组织章节共读。',
-      '用“观点卡片 + 问题清单”的方式引导学生发言。',
-      '将讨论结论沉淀为读书笔记、展示海报和课堂分享。',
-    ],
-    cases: ['AI 与职业发展讨论', '技术伦理主题讨论', 'AI 主题读书分享'],
-  },
-  {
-    id: 'field-project',
-    badge: '落地项目',
-    title: '落地项目：把课堂学习做成项目成果',
-    intro: '落地项目要求学生从一个具体问题出发，完成调研、方案设计、原型制作和成果展示。项目强调过程清楚、材料完整、后续可以继续改进。',
-    stats: [
-      { value: '8', label: '落地项目' },
-      { value: '3', label: '合作场景' },
-      { value: '100%', label: '复盘记录' },
-    ],
-    highlights: [
-      '从校园活动、社区服务和学习支持中选择具体问题。',
-      '使用 AI 辅助调研、内容生成、数据整理或交互原型设计。',
-      '通过项目展示和反馈记录，形成下一轮优化建议。',
-    ],
-    cases: ['社区问答助手原型', '校园活动海报生成', '学习资料整理工具'],
-  },
-]
+// outcomeDetails 静态数据已替换为动态展示，详见下方模板内的三个板块
 
 const portfolioFeatures = [
   { label: '学习时长', color: 'var(--color-learn)' },
@@ -203,45 +180,113 @@ function startAction() {
       </div>
     </section>
 
-    <section class="outcome-details-section">
+    <!-- ── 板块二：公益课社会价值 ──────────────── -->
+    <section id="public-class" class="welfare-section">
       <div class="container">
-        <article
-          v-for="detail in outcomeDetails"
-          :id="detail.id"
-          :key="detail.id"
-          class="detail-panel"
-        >
-          <div class="detail-main">
-            <span class="detail-badge">{{ detail.badge }}</span>
-            <h2>{{ detail.title }}</h2>
-            <p>{{ detail.intro }}</p>
-
-            <div class="detail-highlights">
-              <h3>主要内容</h3>
-              <ul>
-                <li v-for="item in detail.highlights" :key="item">{{ item }}</li>
-              </ul>
+        <div class="section-header">
+          <span class="section-kicker">公益课</span>
+          <h2>AI 公益课：社会价值实践</h2>
+          <p>学生团队走进社区与中小学，将 AI 知识带给更多人。</p>
+        </div>
+        <div v-if="loading" class="dynamic-state">加载中...</div>
+        <div v-else-if="loadError" class="dynamic-state dynamic-error">加载失败，请刷新页面重试</div>
+        <div v-else-if="(showcaseData['welfare'] || []).length === 0" class="dynamic-state">内容建设中，敬请期待</div>
+        <div v-else class="showcase-grid">
+          <div
+            v-for="item in (showcaseData['welfare'] || [])"
+            :key="item.id"
+            class="showcase-card"
+          >
+            <div v-if="item.cover_url" class="showcase-cover">
+              <img :src="item.cover_url" :alt="item.title" />
+            </div>
+            <div class="showcase-body">
+              <div class="showcase-title">{{ item.title }}</div>
+              <div v-if="item.content" class="showcase-content">{{ item.content }}</div>
+              <a
+                v-if="item.link_url"
+                :href="item.link_url"
+                target="_blank"
+                rel="noopener"
+                class="showcase-link"
+              >了解详情 →</a>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
 
-          <aside class="detail-side">
-            <div class="detail-stats">
-              <div v-for="stat in detail.stats" :key="stat.label" class="detail-stat">
-                <strong>{{ stat.value }}</strong>
-                <span>{{ stat.label }}</span>
+    <!-- ── 板块三：读书会活动 ────────────────── -->
+    <section id="reading-club" class="reading-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-kicker">读书会</span>
+          <h2>读书会：阅读与讨论</h2>
+          <p>围绕 AI 主题展开共读，训练提问、表达和观点形成能力。</p>
+        </div>
+        <div v-if="loading" class="dynamic-state">加载中...</div>
+        <div v-else-if="loadError" class="dynamic-state dynamic-error">加载失败，请刷新页面重试</div>
+        <div v-else-if="(showcaseData['reading_club'] || []).length === 0" class="dynamic-state">内容建设中，敬请期待</div>
+        <div v-else class="showcase-grid">
+          <div
+            v-for="item in (showcaseData['reading_club'] || [])"
+            :key="item.id"
+            class="showcase-card"
+          >
+            <div v-if="item.cover_url" class="showcase-cover">
+              <img :src="item.cover_url" :alt="item.title" />
+            </div>
+            <div class="showcase-body">
+              <div class="showcase-title">{{ item.title }}</div>
+              <div v-if="item.content" class="showcase-content">{{ item.content }}</div>
+              <a
+                v-if="item.link_url"
+                :href="item.link_url"
+                target="_blank"
+                rel="noopener"
+                class="showcase-link"
+              >了解详情 →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 板块一：实践作品展示 ───────────────── -->
+    <section id="field-project" class="projects-showcase-section">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-kicker">落地项目</span>
+          <h2>同学们的实践成果</h2>
+          <p>完成大作业的同学，他们的作品在这里展示。</p>
+        </div>
+        <div v-if="loading" class="dynamic-state">加载中...</div>
+        <div v-else-if="loadError" class="dynamic-state dynamic-error">加载失败，请刷新页面重试</div>
+        <div v-else-if="studentProjects.length === 0" class="dynamic-state">暂无作品，快去提交你的大作业吧！</div>
+        <div v-else class="project-grid">
+          <div
+            v-for="project in studentProjects"
+            :key="project.id"
+            class="project-card"
+            @click="router.push(`/create/project/${project.id}`)"
+          >
+            <div class="project-cover">
+              <img v-if="project.image_url" :src="project.image_url" :alt="project.title" />
+              <div v-else class="project-cover-placeholder"></div>
+            </div>
+            <div class="project-body">
+              <div class="project-title">{{ project.title }}</div>
+              <div class="project-author">{{ project.author_name }}</div>
+              <div class="project-desc">
+                {{
+                  project.description
+                    ? project.description.slice(0, 80) + (project.description.length > 80 ? '...' : '')
+                    : ''
+                }}
               </div>
             </div>
-
-            <div class="case-box">
-              <h3>案例方向</h3>
-              <div class="case-list">
-                <span v-for="item in detail.cases" :key="item" class="case-item">
-                  {{ item }}
-                </span>
-              </div>
-            </div>
-          </aside>
-        </article>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -663,6 +708,187 @@ function startAction() {
   .portfolio-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* ── 三个动态内容板块 ─────────────────────────── */
+.welfare-section,
+.reading-section,
+.projects-showcase-section {
+  padding: var(--space-3xl) 0;
+  scroll-margin-top: 96px;
+}
+
+/* 交替背景色 */
+.welfare-section {
+  background: var(--color-bg-alt);
+}
+.reading-section {
+  background: var(--color-bg-card);
+}
+.projects-showcase-section {
+  background: var(--color-bg-alt);
+}
+
+/* 加载/错误/空状态文本 */
+.dynamic-state {
+  text-align: center;
+  padding: var(--space-2xl) 0;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+.dynamic-error {
+  color: #f56c6c;
+}
+
+/* 公益课 / 读书会 展示卡片 */
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-lg);
+}
+
+.showcase-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow var(--duration-fast);
+}
+
+.welfare-section .showcase-card {
+  background: var(--color-bg-card);
+}
+.reading-section .showcase-card {
+  background: var(--color-bg-alt);
+}
+
+.showcase-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.showcase-cover {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.showcase-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.showcase-body {
+  padding: var(--space-lg);
+}
+
+.showcase-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-sm);
+}
+
+.showcase-content {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+  margin-bottom: var(--space-md);
+}
+
+.showcase-link {
+  display: inline-block;
+  color: var(--color-act);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: opacity var(--duration-fast);
+}
+
+.showcase-link:hover {
+  opacity: 0.75;
+}
+
+/* 实践作品展示 */
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+}
+
+.project-card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.project-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-act-light);
+  box-shadow: var(--shadow-md);
+}
+
+.project-cover {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--color-act-bg);
+}
+
+.project-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.project-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--color-act-bg), var(--color-act-light));
+  opacity: 0.6;
+}
+
+.project-body {
+  padding: var(--space-md);
+}
+
+.project-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-author {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-xs);
+}
+
+.project-desc {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .project-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .project-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

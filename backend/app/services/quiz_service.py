@@ -35,14 +35,16 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
     total = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.question_id.in_(
-            db.query(Question.id).filter(Question.chapter_id == question.chapter_id)
+            db.query(Question.id).filter(
+                Question.chapter_id == question.chapter_id)
         ),
     ).count()
     correct_count = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.is_correct == True,
         QuizAttempt.question_id.in_(
-            db.query(Question.id).filter(Question.chapter_id == question.chapter_id)
+            db.query(Question.id).filter(
+                Question.chapter_id == question.chapter_id)
         ),
     ).count()
     sp.questions_done = total
@@ -84,7 +86,8 @@ def get_quiz_history(db: Session, user_id: str, limit: int = 10):
 
 def get_quiz_stats(db: Session, user_id: str):
     total_questions = db.query(Question).count()
-    questions_done = db.query(QuizAttempt).filter(QuizAttempt.user_id == user_id).count()
+    questions_done = db.query(QuizAttempt).filter(
+        QuizAttempt.user_id == user_id).count()
     correct = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id, QuizAttempt.is_correct == True,
     ).count()
@@ -115,3 +118,41 @@ def get_chapter_quiz_stats(db: Session, user_id: str, chapter_id: int):
         "questions_done": sp.questions_done if sp else 0,
         "accuracy": sp.accuracy if sp else 0,
     }
+
+
+def get_wrong_questions(db: Session, user_id: str):
+    """错题本：每道题取最近一次答题记录，仅保留仍答错的题"""
+    from sqlalchemy import func as sa_func
+
+    # 子查询：每道题的最新答题记录 id
+    latest_sub = (
+        db.query(sa_func.max(QuizAttempt.id).label("max_id"))
+        .filter(QuizAttempt.user_id == user_id)
+        .group_by(QuizAttempt.question_id)
+        .subquery()
+    )
+
+    attempts = (
+        db.query(QuizAttempt)
+        .join(latest_sub, QuizAttempt.id == latest_sub.c.max_id)
+        .filter(QuizAttempt.is_correct == False)  # noqa: E712
+        .options(joinedload(QuizAttempt.question))
+        .all()
+    )
+
+    result = []
+    for a in attempts:
+        q = a.question
+        if not q:
+            continue
+        result.append({
+            "question_id": q.id,
+            "chapter_id": q.chapter_id,
+            "stem": q.stem,
+            "options": q.options,
+            "answer": q.answer,
+            "explanation": q.explanation,
+            "user_answer": a.user_answer,
+            "answered_at": a.answered_at.isoformat() if a.answered_at else "",
+        })
+    return result

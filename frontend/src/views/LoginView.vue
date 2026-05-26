@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { forgotPassword as apiForgotPassword } from '@/api/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -12,6 +13,16 @@ const form = reactive({
   password: '',
 })
 const loading = ref(false)
+
+// 忘记密码弹窗
+const showForgotDialog = ref(false)
+const forgotForm = reactive({ id: '', newPassword: '', confirmPassword: '' })
+const forgotLoading = ref(false)
+
+// 首次登录强制改密弹窗
+const showChangePasswordDialog = ref(false)
+const changeForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const changeLoading = ref(false)
 
 const rules = {
   id: [{ required: true, message: '请输入学号或工号', trigger: 'blur' }],
@@ -30,12 +41,86 @@ async function handleLogin() {
   const success = await authStore.login(form.id.trim(), form.password)
   loading.value = false
   if (success) {
-    ElMessage.success(`欢迎回来，${authStore.user!.name}`)
-    if (authStore.user!.role === 'teacher') {
-      router.push('/teacher')
+    if (authStore.user?.needs_password_change) {
+      // 弹出强制改密弹窗，不跳转
+      showChangePasswordDialog.value = true
     } else {
-      router.push('/')
+      ElMessage.success(`欢迎回来，${authStore.user!.name}`)
+      if (authStore.user!.role === 'admin') {
+        router.push('/admin/teachers')
+      } else if (authStore.user!.role === 'teacher') {
+        router.push('/teacher')
+      } else {
+        router.push('/')
+      }
     }
+  } else {
+    ElMessageBox.alert('密码错误，请重试', '登录失败', {
+      confirmButtonText: '确定',
+      type: 'error',
+    })
+  }
+}
+
+async function handleForgotPassword() {
+  if (!forgotForm.id.trim()) {
+    ElMessage.warning('请输入学号或工号')
+    return
+  }
+  if (!forgotForm.newPassword) {
+    ElMessage.warning('请输入新密码')
+    return
+  }
+  const pwdReg = /^(?=.*[A-Za-z])(?=.*\d).{6,}$/
+  if (!pwdReg.test(forgotForm.newPassword)) {
+    ElMessage.warning('密码至少 6 位，且必须包含字母和数字')
+    return
+  }
+  if (forgotForm.newPassword !== forgotForm.confirmPassword) {
+    ElMessage.warning('两次密码不一致')
+    return
+  }
+  forgotLoading.value = true
+  try {
+    await apiForgotPassword({ id: forgotForm.id.trim(), new_password: forgotForm.newPassword })
+    ElMessage.success('密码重置成功，请用新密码登录')
+    showForgotDialog.value = false
+    forgotForm.id = ''
+    forgotForm.newPassword = ''
+    forgotForm.confirmPassword = ''
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || '重置失败，请检查学号是否正确')
+  } finally {
+    forgotLoading.value = false
+  }
+}
+
+async function handleFirstLoginChange() {
+  if (!changeForm.oldPassword) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  const pwdReg = /^(?=.*[A-Za-z])(?=.*\d).{6,}$/
+  if (!pwdReg.test(changeForm.newPassword)) {
+    ElMessage.warning('新密码至少 6 位，且必须包含字母和数字')
+    return
+  }
+  if (changeForm.newPassword !== changeForm.confirmPassword) {
+    ElMessage.warning('两次密码不一致')
+    return
+  }
+  changeLoading.value = true
+  const ok = await authStore.changePassword(changeForm.oldPassword, changeForm.newPassword)
+  changeLoading.value = false
+  if (ok) {
+    ElMessage.success('密码修改成功')
+    showChangePasswordDialog.value = false
+    const role = authStore.user?.role
+    if (role === 'admin') router.push('/admin/teachers')
+    else if (role === 'teacher') router.push('/teacher')
+    else router.push('/')
+  } else {
+    ElMessage.error('修改失败，请检查当前密码是否正确')
   }
 }
 </script>
@@ -93,9 +178,10 @@ async function handleLogin() {
           </el-button>
 
           <div class="form-footer">
-            <span>没有账号？</span>
-            <router-link to="/register" class="link">去注册</router-link>
+            <a class="link" style="cursor:pointer" @click="showForgotDialog = true">忘记密码？</a>
           </div>
+
+          <p class="admin-hint">教师账号请联系系统管理员分配</p>
 
           <div class="demo-hint">
             <p>测试账号：</p>
@@ -106,6 +192,53 @@ async function handleLogin() {
       </div>
     </div>
   </div>
+
+  <!-- 忘记密码弹窗 -->
+  <el-dialog v-model="showForgotDialog" title="重置密码" width="400px" :close-on-click-modal="false">
+    <div class="form-group">
+      <label>学号 / 工号</label>
+      <el-input v-model="forgotForm.id" placeholder="请输入学号或工号" size="large" />
+    </div>
+    <div class="form-group">
+      <label>新密码</label>
+      <el-input v-model="forgotForm.newPassword" type="password" placeholder="至少 6 位，包含字母和数字" size="large" show-password />
+    </div>
+    <div class="form-group">
+      <label>确认密码</label>
+      <el-input v-model="forgotForm.confirmPassword" type="password" placeholder="再次输入新密码" size="large" show-password />
+    </div>
+    <template #footer>
+      <el-button @click="showForgotDialog = false">取消</el-button>
+      <el-button type="primary" :loading="forgotLoading" @click="handleForgotPassword">重置密码</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 首次登录强制改密弹窗 -->
+  <el-dialog
+    v-model="showChangePasswordDialog"
+    title="首次登录，请修改密码"
+    width="400px"
+    :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    :show-close="false"
+  >
+    <p style="color:#666;margin-bottom:16px;font-size:0.9rem;">为了账号安全，请修改初始密码后再使用。</p>
+    <div class="form-group">
+      <label>当前密码</label>
+      <el-input v-model="changeForm.oldPassword" type="password" size="large" show-password />
+    </div>
+    <div class="form-group">
+      <label>新密码</label>
+      <el-input v-model="changeForm.newPassword" type="password" placeholder="至少 6 位，包含字母和数字" size="large" show-password />
+    </div>
+    <div class="form-group">
+      <label>确认密码</label>
+      <el-input v-model="changeForm.confirmPassword" type="password" placeholder="再次输入新密码" size="large" show-password />
+    </div>
+    <template #footer>
+      <el-button type="primary" :loading="changeLoading" @click="handleFirstLoginChange">确认修改</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -216,17 +349,11 @@ async function handleLogin() {
   font-weight: 600;
 }
 
-.form-footer {
+.admin-hint {
   text-align: center;
-  margin-top: var(--space-xl);
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-}
-
-.link {
-  color: var(--color-primary);
-  font-weight: 600;
-  margin-left: var(--space-xs);
+  margin-top: var(--space-lg);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .demo-hint {
@@ -237,6 +364,22 @@ async function handleLogin() {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   line-height: 1.6;
+}
+
+.form-footer {
+  text-align: right;
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-xs);
+  font-size: 0.82rem;
+}
+
+.link {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {

@@ -16,6 +16,7 @@ class AuthUser(BaseModel):
     name: str
     role: str
     major: Optional[str] = None
+    needs_password_change: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -73,6 +74,7 @@ class ClassImportResult(BaseModel):
 
 class ClassEnrollRequest(BaseModel):
     student_id: str = Field(min_length=1)
+    name: str = ""  # 姓名，为空时仅添加已存在账号；非空时可自动创建账号
 
 
 class AnnouncementCreate(BaseModel):
@@ -182,6 +184,9 @@ class QuestionOut(BaseModel):
     id: int
     type: str
     chapter_id: int
+    chapter_name: str = ""
+    course_id: Optional[int] = None
+    course_name: str = ""
     stem: str
     options: List[str] = []
     answer: str
@@ -347,3 +352,89 @@ class UploadOut(BaseModel):
     size: int
     content_type: str = ""
     storage_provider: str = ""
+
+
+# ── Admin ───────────────────────────────────────────────────────────────────
+class CreateTeacherRequest(BaseModel):
+    """管理员手动创建教师账号请求"""
+    id: str = Field(..., description="工号")
+    name: str = Field(..., description="姓名")
+    major: Optional[str] = Field(None, description="专业")
+
+
+class ChangePasswordRequest(BaseModel):
+    """修改密码请求"""
+    old_password: str = Field(..., description="旧密码")
+    new_password: str = Field(..., min_length=6,
+                              description="新密码（至少6位，含字母和数字）")
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        import re
+        if not re.search(r"[a-zA-Z]", v):
+            raise ValueError("新密码必须包含至少一个字母")
+        if not re.search(r"\d", v):
+            raise ValueError("新密码必须包含至少一个数字")
+        return v
+
+
+class TeacherInfo(BaseModel):
+    """教师信息（管理员列表用）"""
+    id: str
+    name: str
+    major: Optional[str] = None
+    created_at: Optional[str] = None
+    needs_password_change: bool = False
+
+
+class ForgotPasswordRequest(BaseModel):
+    """忘记密码请求：直接通过学号/工号重置密码"""
+    id: str
+    new_password: str = Field(min_length=6)
+
+    @field_validator("new_password")
+    @classmethod
+    def password_complexity(cls, v: str) -> str:
+        import re
+        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+            raise ValueError("密码必须包含至少一个字母和一个数字")
+        return v
+
+
+# ===== Showcase（悟页面图文内容）=====
+
+class ShowcaseItemCreate(BaseModel):
+    """管理员新增图文内容"""
+    section: str
+    title: str = Field(min_length=1, max_length=128)
+    content: str = ""
+    cover_file_id: Optional[int] = None
+    link_url: str = ""
+    sort_order: int = 0
+
+
+class ShowcaseItemUpdate(BaseModel):
+    """管理员修改图文内容"""
+    title: Optional[str] = None
+    content: Optional[str] = None
+    cover_file_id: Optional[int] = None
+    link_url: Optional[str] = None
+    sort_order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class ShowcaseItemOut(BaseModel):
+    """图文内容输出"""
+    id: int
+    section: str
+    title: str
+    content: str
+    cover_url: str = ""
+    link_url: str = ""
+    sort_order: int = 0
+    is_active: bool = True
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

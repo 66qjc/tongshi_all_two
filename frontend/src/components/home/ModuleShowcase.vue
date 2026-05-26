@@ -8,16 +8,15 @@ const activeModule = ref(0)
 const modules = [
   {
     key: 'learn',
-    icon: '探',
-    tagline: '学无止境',
-    title: '探 · 学无止境',
-    subtitle: '从零构建 AI 知识体系',
-    desc: '六大核心章节覆盖人工智能全景：从概述、计算机基础、深度学习理论，到大模型与智能体工具应用、专业前沿探索以及 AI 伦理思辨。视频课程配合课件，让知识触手可及。',
+    icon: '📚',
+    tagline: '积累知识',
+    title: '学·积累知识',
+    subtitle: '系统学习，循序渐进',
+    desc: '系统学习AI通识六章课程，从概念到工具，循序渐进掌握人工智能基础知识体系。',
     features: [
-      { icon: '&#9678;', text: '六大核心章节，系统构建 AI 知识图谱' },
-      { icon: '&#9670;', text: 'HLS 自适应码率视频，校园网流畅播放' },
-      { icon: '&#9679;', text: '学习进度智能追踪，断点续播' },
-      { icon: '&#9632;', text: '课件资料随时下载，离线也能学' },
+      { icon: '&#9678;', text: '6章核心课程，系统构建 AI 知识图谱' },
+      { icon: '&#9670;', text: '视频+图文配合，多层次学习体验' },
+      { icon: '&#9679;', text: '随时复习，断点续播学习进度' },
     ],
     gradient: 'var(--gradient-card-learn)',
     color: 'var(--color-learn)',
@@ -26,16 +25,15 @@ const modules = [
   },
   {
     key: 'practice',
-    icon: '练',
-    tagline: '学以致用',
-    title: '练 · 学以致用',
-    subtitle: '以题促学，巩固知识',
-    desc: '告别纸质作业，在线即练即批。选择题与填空题覆盖六大章节核心知识点，实时反馈答题结果与解析。按章节分类练习，智能追踪学习进度，让每一次练习都有收获。',
+    icon: '🧠',
+    tagline: '深化理解',
+    title: '思·深化理解',
+    subtitle: '在线题库，检验成果',
+    desc: '通过在线题库和专项练习，检验学习成果，反思知识盲点，强化对AI核心概念的理解。',
     features: [
-      { icon: '&#9632;', text: '选择题 + 填空题，覆盖全章节知识点' },
-      { icon: '&#9670;', text: '即时批改反馈，错题自动归类' },
-      { icon: '&#9679;', text: '按章节分类练习，精准查漏补缺' },
-      { icon: '&#9733;', text: '练习进度与正确率可视化追踪' },
+      { icon: '&#9632;', text: '100+题目，覆盖全章节知识点' },
+      { icon: '&#9670;', text: '即时反馈，错题自动归类' },
+      { icon: '&#9679;', text: '错题回顾，精准查漏补缺' },
     ],
     gradient: 'var(--gradient-card-practice)',
     color: 'var(--color-practice)',
@@ -44,16 +42,15 @@ const modules = [
   },
   {
     key: 'create',
-    icon: '造',
-    tagline: '智创未来',
-    title: '造 · 智创未来',
-    subtitle: '软硬融合，做中学',
-    desc: '打破"AI 只是聊天框"的思维局限。每位学生将 AI 功能与物理硬件相结合——机器视觉分类、大模型驱动的机器人、智能传感器系统。上传课程报告、演示视频，展示你的创意作品。',
+    icon: '🛠️',
+    tagline: '动手创作',
+    title: '践·动手创作',
+    subtitle: '将所学付诸实践',
+    desc: '将所学付诸实践，运用AI工具完成创意项目，展示个人作品，在动手中将知识内化为能力。',
     features: [
-      { icon: '&#9733;', text: 'AI + 硬件项目，虚实交融的创造体验' },
-      { icon: '&#9670;', text: '优秀作品画廊，瀑布流沉浸式浏览' },
-      { icon: '&#9679;', text: '教师一键打包下载，高效归档' },
-      { icon: '&#9632;', text: '文件安全上传，魔数校验防恶意文件' },
+      { icon: '&#9733;', text: '项目实践，AI工具应用实战' },
+      { icon: '&#9670;', text: '作品展示，瀑布流沉浸式浏览' },
+      { icon: '&#9679;', text: 'AI工具应用，虚实交融创造体验' },
     ],
     gradient: 'var(--gradient-card-create)',
     color: 'var(--color-create)',
@@ -62,16 +59,15 @@ const modules = [
   },
   {
     key: 'act',
-    icon: '行',
-    tagline: '知行合一',
-    title: '行 · 知行合一',
-    subtitle: '用 AI 温暖社会',
-    desc: '将技术学习升华为社会责任。走进社区和中小学开展 AI 公益课，参与读书会研讨，记录成长轨迹。AI 成长档案汇聚学习时长、练习正确率、创意作品评价，生成多维能力画像。',
+    icon: '🌱',
+    tagline: '感悟价值',
+    title: '悟·感悟价值',
+    subtitle: '公益行动，感悟意义',
+    desc: '参与AI公益课程与社区行动，思考技术的社会价值与伦理责任，在服务中感悟AI对人类的意义。',
     features: [
-      { icon: '&#9830;', text: 'AI 公益课行动记录，走进社区与中小学' },
-      { icon: '&#9670;', text: '读书会研讨，思想碰撞激发灵感' },
-      { icon: '&#9679;', text: '电子成长档案（E-Portfolio），能力可视化' },
-      { icon: '&#9632;', text: '雷达图 + 时间轴，看见自己的成长轨迹' },
+      { icon: '&#9830;', text: '公益行动，走进社区与中小学' },
+      { icon: '&#9670;', text: '社会价值，思考AI伦理与责任' },
+      { icon: '&#9679;', text: '成长档案，能力可视化留存' },
     ],
     gradient: 'var(--gradient-card-act)',
     color: 'var(--color-act)',
@@ -97,10 +93,10 @@ onUnmounted(() => {
       <!-- Section header -->
       <div class="section-header fade-up">
         <span class="section-tag">核心模块</span>
-        <h2 class="section-title">学 · 练 · 创 · 行 四位一体</h2>
+        <h2 class="section-title">学 · 思 · 践 · 悟 四维并进</h2>
         <p class="section-desc">
-          从知识学习到练习巩固，从创意创造到行动传播<br />
-          构建完整的 AI 素养成长闭环
+          从知识学习到深化反思，从实践创作到感悟价值<br />
+          构建完整的 AI 通识成长闭环
         </p>
       </div>
 

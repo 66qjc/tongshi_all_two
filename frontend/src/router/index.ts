@@ -1,6 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
+const AdminLayout = () => import('../views/admin/AdminLayout.vue')
+const AdminTeachers = () => import('../views/admin/AdminTeachers.vue')
+const ChangePasswordView = () => import('../views/ChangePasswordView.vue')
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -8,7 +12,7 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('../views/HomeView.vue'),
-      meta: { title: '探 · 练 · 创 · 行 — AI 通识课平台' },
+      meta: { title: '学 · 思 · 践 · 悟 — AI 通识课平台' },
     },
     {
       path: '/login',
@@ -83,6 +87,12 @@ const router = createRouter({
       meta: { title: '我的成长档案' },
     },
     {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('../views/ProfileView.vue'),
+      meta: { title: '个人中心' },
+    },
+    {
       path: '/inbox',
       name: 'inbox',
       component: () => import('../views/InboxView.vue'),
@@ -118,6 +128,12 @@ const router = createRouter({
           meta: { title: '题库管理' },
         },
         {
+          path: 'courses',
+          name: 'teacher-courses',
+          component: () => import('../views/teacher/TeacherCourses.vue'),
+          meta: { title: '课程管理' },
+        },
+        {
           path: 'announcements',
           name: 'teacher-announcements',
           component: () => import('../views/teacher/TeacherAnnouncements.vue'),
@@ -136,6 +152,25 @@ const router = createRouter({
           meta: { title: '作品审核' },
         },
       ],
+    },
+    {
+      path: '/admin',
+      component: AdminLayout,
+      meta: { role: 'admin' },
+      children: [
+        { path: '', redirect: '/admin/teachers' },
+        { path: 'teachers', component: AdminTeachers, meta: { title: '教师管理', role: 'admin' } },
+        {
+          path: 'showcase',
+          component: () => import('../views/admin/AdminShowcase.vue'),
+          meta: { title: '内容管理', role: 'admin' },
+        },
+      ],
+    },
+    {
+      path: '/change-password',
+      component: ChangePasswordView,
+      meta: { title: '修改密码' },
     },
     {
       path: '/about',
@@ -169,7 +204,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  document.title = (to.meta.title as string) || '探 · 练 · 创 · 行 — AI 通识课平台'
+  document.title = (to.meta.title as string) || '学 · 思 · 践 · 悟 — AI 通识课平台'
 
   const authStore = useAuthStore()
 
@@ -180,7 +215,24 @@ router.beforeEach((to) => {
     return '/login'
   }
 
+  // 已登录且需要修改密码：强制跳转到改密页（改密页本身除外）
+  if (
+    authStore.isLoggedIn &&
+    authStore.user?.needs_password_change &&
+    to.path !== '/change-password'
+  ) {
+    return '/change-password'
+  }
+
+  // 管理员访问首页时自动跳转到后台
+  if (to.path === '/' && authStore.isLoggedIn && authStore.user?.role === 'admin') {
+    return '/admin'
+  }
+
   if (to.meta.role === 'teacher' && authStore.user?.role !== 'teacher') {
+    return '/'
+  }
+  if (to.meta.role === 'admin' && authStore.user?.role !== 'admin') {
     return '/'
   }
 

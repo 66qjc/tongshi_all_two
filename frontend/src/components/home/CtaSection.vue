@@ -16,40 +16,39 @@ const router = useRouter()
 
         <div class="cta-content">
           <h2 class="cta-title">
-            在做中学，在行中悟
+            在学中思，在践中悟
           </h2>
           <p class="cta-desc">
-            加入 AI 通识课，构建你的数字成长档案<br />
-            用技术温暖社会，从容拥抱智能时代
+            学思践悟，四维并进，让AI知识真正内化为你的能力与价值观。
           </p>
           <div class="cta-actions">
             <button class="cta-btn primary" @click="router.push('/learn')">
               开始学习之旅
             </button>
             <button class="cta-btn secondary" @click="router.push('/act')">
-              了解社区行动
+              了解公益行动
             </button>
           </div>
 
           <div class="cta-modules">
             <div class="cta-module" @click="router.push('/learn')">
-              <span class="cta-module-icon t">探</span>
-              <span>学无止境</span>
+              <span class="cta-module-icon t">学</span>
+              <span>积累知识</span>
             </div>
             <div class="cta-sep">·</div>
             <div class="cta-module" @click="router.push('/practice')">
-              <span class="cta-module-icon p">练</span>
-              <span>学以致用</span>
+              <span class="cta-module-icon p">思</span>
+              <span>深化理解</span>
             </div>
             <div class="cta-sep">·</div>
             <div class="cta-module" @click="router.push('/create')">
-              <span class="cta-module-icon c">造</span>
-              <span>智创未来</span>
+              <span class="cta-module-icon c">践</span>
+              <span>动手创作</span>
             </div>
             <div class="cta-sep">·</div>
             <div class="cta-module" @click="router.push('/act')">
-              <span class="cta-module-icon a">行</span>
-              <span>知行合一</span>
+              <span class="cta-module-icon a">悟</span>
+              <span>感悟价值</span>
             </div>
           </div>
         </div>

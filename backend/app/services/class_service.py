@@ -35,10 +35,12 @@ def _now_iso(value: datetime | None) -> str:
 
 
 def list_classes(db: Session):
-    classes = db.query(Class).order_by(Class.created_at.desc(), Class.id.desc()).all()
+    classes = db.query(Class).order_by(
+        Class.created_at.desc(), Class.id.desc()).all()
     result = []
     for cls in classes:
-        student_count = db.query(StudentClassEnrollment).filter(StudentClassEnrollment.class_id == cls.id).count()
+        student_count = db.query(StudentClassEnrollment).filter(
+            StudentClassEnrollment.class_id == cls.id).count()
         result.append({
             "id": cls.id,
             "name": cls.name,
@@ -50,7 +52,8 @@ def list_classes(db: Session):
 
 
 def create_class(db: Session, name: str, major: str):
-    existing = db.query(Class).filter(Class.name == name, Class.major == major).first()
+    existing = db.query(Class).filter(
+        Class.name == name, Class.major == major).first()
     if existing:
         raise BusinessException(400, "班级已存在")
     cls = Class(name=name, major=major)
@@ -66,17 +69,27 @@ def create_class(db: Session, name: str, major: str):
 
 
 def _delete_student_data(db: Session, student_id: str):
-    project_ids = [row.id for row in db.query(Project.id).filter(Project.author_id == student_id).all()]
+    project_ids = [row.id for row in db.query(Project.id).filter(
+        Project.author_id == student_id).all()]
     if project_ids:
-        db.query(ProjectLike).filter(ProjectLike.project_id.in_(project_ids)).delete(synchronize_session=False)
-    db.query(ProjectLike).filter(ProjectLike.user_id == student_id).delete(synchronize_session=False)
-    db.query(Project).filter(Project.author_id == student_id).delete(synchronize_session=False)
-    db.query(QuizAttempt).filter(QuizAttempt.user_id == student_id).delete(synchronize_session=False)
-    db.query(StudentProgress).filter(StudentProgress.user_id == student_id).delete(synchronize_session=False)
-    db.query(AnnouncementRead).filter(AnnouncementRead.user_id == student_id).delete(synchronize_session=False)
-    db.query(TaskCompletion).filter(TaskCompletion.user_id == student_id).delete(synchronize_session=False)
-    db.query(StudentClassEnrollment).filter(StudentClassEnrollment.user_id == student_id).delete(synchronize_session=False)
-    db.query(User).filter(User.id == student_id, User.role == "student").delete(synchronize_session=False)
+        db.query(ProjectLike).filter(ProjectLike.project_id.in_(
+            project_ids)).delete(synchronize_session=False)
+    db.query(ProjectLike).filter(ProjectLike.user_id ==
+                                 student_id).delete(synchronize_session=False)
+    db.query(Project).filter(Project.author_id ==
+                             student_id).delete(synchronize_session=False)
+    db.query(QuizAttempt).filter(QuizAttempt.user_id ==
+                                 student_id).delete(synchronize_session=False)
+    db.query(StudentProgress).filter(StudentProgress.user_id ==
+                                     student_id).delete(synchronize_session=False)
+    db.query(AnnouncementRead).filter(AnnouncementRead.user_id ==
+                                      student_id).delete(synchronize_session=False)
+    db.query(TaskCompletion).filter(TaskCompletion.user_id ==
+                                    student_id).delete(synchronize_session=False)
+    db.query(StudentClassEnrollment).filter(
+        StudentClassEnrollment.user_id == student_id).delete(synchronize_session=False)
+    db.query(User).filter(User.id == student_id, User.role ==
+                          "student").delete(synchronize_session=False)
 
 
 def delete_class(db: Session, class_id: int):
@@ -117,7 +130,8 @@ def delete_class(db: Session, class_id: int):
             db.query(TaskCompletion).filter(
                 TaskCompletion.announcement_id.in_(class_announcement_ids)
             ).delete(synchronize_session=False)
-        db.query(Announcement).filter(Announcement.class_id == class_id).delete(synchronize_session=False)
+        db.query(Announcement).filter(Announcement.class_id ==
+                                      class_id).delete(synchronize_session=False)
         db.delete(cls)
         db.commit()
         logger.info(f"班级删除: class_id={class_id}, name={cls.name}")
@@ -151,15 +165,34 @@ def list_class_students(db: Session, class_id: int):
     return result
 
 
-def enroll_student(db: Session, class_id: int, student_id: str):
+def enroll_student(db: Session, class_id: int, student_id: str, name: str = ""):
+    # 查找班级是否存在
     cls = db.query(Class).filter(Class.id == class_id).first()
     if not cls:
-        return None, "班级不存在"
+        raise BusinessException(404, "班级不存在")
+
     student = db.query(User).filter(User.id == student_id).first()
     if not student:
-        return None, "学生不存在"
+        if not name:
+            raise BusinessException(404, "学生不存在，请提供姓名以自动创建账号")
+        # 自动创建学生账号，默认密码含字母+数字满足复杂度
+        DEFAULT_PASSWORD = "a123456"
+        student = User(
+            id=student_id,
+            name=name,
+            hashed_password=get_password_hash(DEFAULT_PASSWORD),
+            role="student",
+            major=cls.major if hasattr(cls, "major") and cls.major else "",
+            needs_password_change=True,
+        )
+        db.add(student)
+        db.flush()
+        logger.info(
+            f"自动创建学生账号: student_id={student_id}, name={name}, class_id={class_id}")
+
     if student.role != "student":
         raise BusinessException(400, "仅可添加学生账号")
+
     existing = db.query(StudentClassEnrollment).filter(
         StudentClassEnrollment.class_id == class_id,
         StudentClassEnrollment.user_id == student_id,
@@ -209,13 +242,15 @@ def import_students_from_excel(db: Session, file_bytes: bytes):
     except Exception:
         raise BusinessException(400, "Excel 文件解析失败")
 
-    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+    headers = [str(cell.value).strip() if cell.value is not None else "" for cell in next(
+        ws.iter_rows(min_row=1, max_row=1))]
     required = {"student_id", "name", "major", "class_name"}
     if not required.issubset(set(headers)):
         raise BusinessException(400, "Excel 表头不完整")
 
     header_map = {h: idx for idx, h in enumerate(headers)}
-    result = {"success_count": 0, "skip_count": 0, "fail_count": 0, "errors": []}
+    result = {"success_count": 0, "skip_count": 0,
+              "fail_count": 0, "errors": []}
 
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         row_data = {
@@ -238,7 +273,8 @@ def import_students_from_excel(db: Session, file_bytes: bytes):
                     student = User(
                         id=student_id,
                         name=name,
-                        hashed_password=get_password_hash(DEFAULT_STUDENT_PASSWORD),
+                        hashed_password=get_password_hash(
+                            DEFAULT_STUDENT_PASSWORD),
                         role="student",
                         major=major,
                     )
@@ -262,7 +298,8 @@ def import_students_from_excel(db: Session, file_bytes: bytes):
                     result["skip_count"] += 1
                     continue
 
-                db.add(StudentClassEnrollment(user_id=student_id, class_id=cls.id))
+                db.add(StudentClassEnrollment(
+                    user_id=student_id, class_id=cls.id))
             result["success_count"] += 1
         except (SQLAlchemyError, IntegrityError) as exc:
             result["fail_count"] += 1

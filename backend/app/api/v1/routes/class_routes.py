@@ -44,13 +44,10 @@ def get_students(class_id: int, db: Session = Depends(get_db), _: AuthUser = Dep
     return success(students)
 
 
-@router.post("/{class_id}/enroll", summary="添加学生", description="教师端：将学生手动添加到班级")
+@router.post("/{class_id}/enroll", summary="添加学生", description="教师端：将学生手动添加到班级；学号不存在时若提供姓名则自动建号")
 def add_student(class_id: int, data: ClassEnrollRequest, db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    enrollment, status = enroll_student(db, class_id, data.student_id)
-    if enrollment is None and status == "班级不存在":
-        raise BusinessException(404, status)
-    if enrollment is None and status == "学生不存在":
-        raise BusinessException(404, status)
+    enrollment, status = enroll_student(
+        db, class_id, data.student_id, data.name)
     return success({"status": status})
 
 
@@ -65,7 +62,8 @@ def remove_enrollment(class_id: int, student_id: str, db: Session = Depends(get_
 @router.post("/import", summary="Excel 批量导入", description="教师端：上传 Excel 文件批量导入学生、班级和注册关系（.xlsx，表头：student_id/name/major/class_name）")
 def import_class_students(file: UploadFile = File(...), db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
     content = file.file.read()
-    err = validate_upload(file.filename, len(content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
+    err = validate_upload(file.filename, len(
+        content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
     if err:
         raise BusinessException(400, err)
     result = import_students_from_excel(db, content)

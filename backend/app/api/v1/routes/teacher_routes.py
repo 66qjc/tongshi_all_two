@@ -1,9 +1,12 @@
-﻿"""Teacher routes"""
+"""Teacher routes"""
+import io
 import os
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
+from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
@@ -18,7 +21,8 @@ from app.schemas.common import AuthUser, ProjectReviewAction
 from app.services.teacher_service import get_teacher_stats, list_students, list_all_projects
 from app.services.project_service import approve_project, reject_project
 from app.services.file_service import resolve_file_stream
-from app.models.entities import User, Project
+from app.models.entities import User, Project, Class
+from openpyxl import Workbook
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 
@@ -26,7 +30,8 @@ router = APIRouter(prefix="/teacher", tags=["teacher"])
 def _format_project(db: Session, p):
     author = db.query(User).filter(User.id == p.author_id).first()
     images = [
-        {"id": image.id, "image_url": image.image_url, "sort_order": image.sort_order, "file_id": image.file_id}
+        {"id": image.id, "image_url": image.image_url,
+            "sort_order": image.sort_order, "file_id": image.file_id}
         for image in sorted(p.images, key=lambda item: (item.sort_order, item.id))
     ]
     if not images and p.image_url:
@@ -137,7 +142,8 @@ def _get_project_file_content(db: Session, p: Project) -> tuple[bytes | None, st
         if record and stream:
             try:
                 content = stream.read()
-                ext = record.extension or Path(record.original_name).suffix or ".pdf"
+                ext = record.extension or Path(
+                    record.original_name).suffix or ".pdf"
                 inner_name = f"{author_name}_{safe_title}{ext}"
                 return content, inner_name
             finally:
@@ -243,3 +249,116 @@ def batch_download_projects(
             except OSError:
                 pass
         raise
+
+
+# ──────────────────────────────────────────────────────────────
+# 学生数据 Excel 导出
+# ──────────────────────────────────────────────────────────────
+
+def _write_student_sheet(ws, students: list) -> None:
+    """向工作表写入学生数据：表头行、数据行、末尾汇总行"""
+    # 表头行
+    headers = ["序号", "学号", "姓名", "专业", "班级", "学习进度(%)", "练习题数", "正确率(%)"]
+    ws.append(headers)
+
+    # 数据行，每个学生一行
+    for idx, s in enumerate(students, start=1):
+        ws.append([
+            idx,
+            s["id"],
+            s["name"],
+            s["major"] or "",
+            s["class_name"] or "未分班",
+            s["progress"],
+            s["exercises"],
+            s["accuracy"],
+        ])
+
+    # 汇总行（仅当有数据时追加）
+    if students:
+        count = len(students)
+        avg_progress = round(sum(s["progress"] for s in students) / count, 1)
+        avg_exercises = round(sum(s["exercises"] for s in students) / count, 1)
+        avg_accuracy = round(sum(s["accuracy"] for s in students) / count, 1)
+        ws.append(["平均", "—", "—", "—", "—", avg_progress,
+                  avg_exercises, avg_accuracy])
+
+
+@router.get("/students/export", summary="导出学生数据", description="教师端：将学生数据导出为 Excel 文件，支持按班级筛选")
+def export_students_excel(
+    class_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    """导出学生数据为 Excel。指定 class_id 时单 Sheet，否则全部班级多 Sheet"""
+    # 复用现有 service 获取学生数据
+    students = list_students(db, class_id=class_id)
+    today = date.today().strftime("%Y-%m-%d")
+    wb = Workbook()
+
+    if class_id is not None:
+        # 情况 A：指定班级——单 Sheet 导出
+        # 优先从学生数据获取班级名，兜底查数据库
+        class_name = ""
+        if students:
+            class_name = students[0]["class_name"] or ""
+        if not class_name:
+            cls = db.query(Class).filter(Class.id == class_id).first()
+            class_name = cls.name if cls else f"班级{class_id}"
+
+        ws = wb.active
+        ws.title = class_name[:31]  # openpyxl 限制 Sheet 名最长 31 字符
+        _write_student_sheet(ws, students)
+
+        filename = f"学生数据_{class_name}_{today}.xlsx"
+    else:
+        # 情况 B：全部学生——多 Sheet 导出
+        # Sheet 1：全部学生汇总
+        ws_all = wb.active
+        ws_all.title = "全部学生"
+        _write_student_sheet(ws_all, students)
+
+        # 按班级分组，无班级归入"未分班"
+        class_groups: dict[str, list] = {}
+        for s in students:
+            cn = s["class_name"] or "未分班"
+            if cn not in class_groups:
+                class_groups[cn] = []
+            class_groups[cn].append(s)
+
+        # 每个班级一个 Sheet，同时收集摘要数据
+        summary_rows = []
+        for cn, group in class_groups.items():
+            ws_cls = wb.create_sheet(title=cn[:31])
+            _write_student_sheet(ws_cls, group)
+            count = len(group)
+            avg_p = round(sum(s["progress"]
+                          for s in group) / count, 1) if count else 0.0
+            avg_e = round(sum(s["exercises"]
+                          for s in group) / count, 1) if count else 0.0
+            avg_a = round(sum(s["accuracy"]
+                          for s in group) / count, 1) if count else 0.0
+            summary_rows.append([cn, count, avg_p, avg_e, avg_a])
+
+        # 最后一个 Sheet：数据摘要（各班级汇总）
+        ws_summary = wb.create_sheet(title="数据摘要")
+        ws_summary.append(["班级名称", "学生人数", "平均学习进度(%)", "平均练习题数", "平均正确率(%)"])
+        for row in summary_rows:
+            ws_summary.append(row)
+
+        filename = f"学生数据_全部班级_{today}.xlsx"
+
+    # 将工作簿写入内存缓冲区，避免落盘
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    # RFC 5987 编码，支持中文文件名
+    encoded_filename = quote(filename, encoding="utf-8")
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )

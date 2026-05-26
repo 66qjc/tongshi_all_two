@@ -8,11 +8,14 @@ from app.core.exceptions import BusinessException
 from app.models.entities import Chapter, Course, Material, Question, StudentProgress
 
 
-def list_questions(db: Session, chapter_id: int = None, type_: str = None):
-    query = db.query(Question)
-    if chapter_id:
+def list_questions(db: Session, chapter_id: int = None, type_: str = None, course_id: int = None):
+    # 始终 JOIN Chapter，支持 course 维度筛选及读取课程信息
+    query = db.query(Question).join(Chapter)
+    if course_id is not None:
+        query = query.filter(Chapter.course_id == course_id)
+    if chapter_id is not None:
         query = query.filter(Question.chapter_id == chapter_id)
-    if type_:
+    if type_ is not None:
         query = query.filter(Question.type == type_)
     return query.order_by(Question.id).all()
 
@@ -72,7 +75,8 @@ def update_course(db: Session, course_id: int, name: str):
     if not course:
         return None
     if name != course.name:
-        duplicate = db.query(Course).filter(Course.name == name, Course.id != course_id).first()
+        duplicate = db.query(Course).filter(
+            Course.name == name, Course.id != course_id).first()
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
@@ -84,11 +88,15 @@ def delete_course(db: Session, course_id: int):
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         return None
-    chapter_ids = [item.id for item in db.query(Chapter.id).filter(Chapter.course_id == course_id).all()]
+    chapter_ids = [item.id for item in db.query(
+        Chapter.id).filter(Chapter.course_id == course_id).all()]
     if chapter_ids:
-        has_materials = db.query(Material).filter(Material.chapter_id.in_(chapter_ids)).count() > 0
-        has_questions = db.query(Question).filter(Question.chapter_id.in_(chapter_ids)).count() > 0
-        has_progress = db.query(StudentProgress).filter(StudentProgress.chapter_id.in_(chapter_ids)).count() > 0
+        has_materials = db.query(Material).filter(
+            Material.chapter_id.in_(chapter_ids)).count() > 0
+        has_questions = db.query(Question).filter(
+            Question.chapter_id.in_(chapter_ids)).count() > 0
+        has_progress = db.query(StudentProgress).filter(
+            StudentProgress.chapter_id.in_(chapter_ids)).count() > 0
         if has_materials or has_questions or has_progress:
             raise BusinessException(400, "课程下仍有章节关联资料、题目或学习记录，不能直接删除")
     db.delete(course)
@@ -122,7 +130,8 @@ def import_questions_from_excel(db: Session, rows: list[dict]):
     for idx, row in enumerate(rows, start=2):
         try:
             chapter_key = str(row.get("chapter", "")).strip()
-            ch = db.query(Chapter).filter((Chapter.num == chapter_key) | (Chapter.title == chapter_key)).first()
+            ch = db.query(Chapter).filter((Chapter.num == chapter_key) | (
+                Chapter.title == chapter_key)).first()
             if not ch:
                 raise BusinessException(400, f"未找到章节: {chapter_key}")
             q_type = str(row.get("type", "")).strip()
@@ -130,10 +139,12 @@ def import_questions_from_excel(db: Session, rows: list[dict]):
             if not stem:
                 raise BusinessException(400, "题干为空")
             options = str(row.get("options", "")).strip()
-            option_list = [x.strip() for x in options.split("|") if x.strip()] if options else []
+            option_list = [x.strip() for x in options.split("|")
+                           if x.strip()] if options else []
             answer = str(row.get("answer", "")).strip()
             explanation = str(row.get("explanation", "")).strip()
-            q = Question(type=q_type, chapter_id=ch.id, stem=stem, options=option_list, answer=answer, explanation=explanation)
+            q = Question(type=q_type, chapter_id=ch.id, stem=stem,
+                         options=option_list, answer=answer, explanation=explanation)
             db.add(q)
             success_count += 1
         except Exception as exc:

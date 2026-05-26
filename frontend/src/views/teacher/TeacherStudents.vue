@@ -70,6 +70,39 @@ function handleAnnouncementChange(val: number | null) {
   if (val) loadReport(val)
   else reportData.value = null
 }
+
+// 导出 loading 状态
+const exporting = ref(false)
+
+// 导出学生数据为 Excel
+async function exportExcel() {
+  if (exporting.value) return
+  exporting.value = true
+  try {
+    // 从 localStorage 获取认证 token（与现有下载逻辑保持一致）
+    const token = localStorage.getItem('auth_token')
+    const url = selectedClassId.value
+      ? `/api/v1/teacher/students/export?class_id=${selectedClassId.value}`
+      : '/api/v1/teacher/students/export'
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error('导出失败')
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') ?? ''
+    const match = disposition.match(/filename\*=UTF-8''(.+)/)
+    const filename = match?.[1] ? decodeURIComponent(match[1]) : '学生数据.xlsx'
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = filename
+    link.click()
+    URL.revokeObjectURL(link.href)
+  } catch {
+    ElMessage.error('导出失败，请稍后重试')
+  } finally {
+    exporting.value = false
+  }
+}
 </script>
 
 <template>
@@ -103,6 +136,12 @@ function handleAnnouncementChange(val: number | null) {
           clearable
         />
         <span class="filter-count">共 {{ filteredStudents.length }} 名学生</span>
+        <el-button
+          type="primary"
+          :loading="exporting"
+          style="margin-left: auto"
+          @click="exportExcel"
+        >{{ selectedClassId ? '导出当前班级' : '导出全部学生' }}</el-button>
       </div>
 
       <el-table :data="filteredStudents" stripe style="width: 100%" v-loading="loading">

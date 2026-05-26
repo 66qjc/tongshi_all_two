@@ -31,8 +31,8 @@ export function getClassStudents(classId: number) {
   return http.get<any, ClassStudent[]>(`/classes/${classId}/students`)
 }
 
-export function enrollStudent(classId: number, studentId: string) {
-  return http.post<any, any>(`/classes/${classId}/enroll`, { student_id: studentId })
+export function enrollStudent(classId: number, studentId: string, name: string = '') {
+  return http.post<any, any>(`/classes/${classId}/enroll`, { student_id: studentId, name })
 }
 
 export function unenrollStudent(classId: number, studentId: string) {

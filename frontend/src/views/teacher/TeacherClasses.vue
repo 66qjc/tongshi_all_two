@@ -20,6 +20,7 @@ const studentLoading = ref(false)
 
 const enrollDialogVisible = ref(false)
 const enrollStudentId = ref('')
+const enrollStudentName = ref('')
 
 const importDialogVisible = ref(false)
 const importFile = ref<File | null>(null)
@@ -94,16 +95,17 @@ async function openStudents(cls: ClassInfo) {
 
 function openEnroll() {
   enrollStudentId.value = ''
+  enrollStudentName.value = ''
   enrollDialogVisible.value = true
 }
 
 async function handleEnroll() {
-  if (!selectedClass.value || !enrollStudentId.value.trim()) {
-    ElMessage.warning('请输入学号')
+  if (!selectedClass.value || !enrollStudentId.value.trim() || !enrollStudentName.value.trim()) {
+    ElMessage.warning('请输入学号和姓名')
     return
   }
   try {
-    await enrollStudent(selectedClass.value.id, enrollStudentId.value.trim())
+    await enrollStudent(selectedClass.value.id, enrollStudentId.value.trim(), enrollStudentName.value.trim())
     ElMessage.success('添加成功')
     enrollDialogVisible.value = false
     classStudents.value = await getClassStudents(selectedClass.value.id)
@@ -233,6 +235,11 @@ async function handleImport() {
         <label>学号</label>
         <el-input v-model="enrollStudentId" placeholder="输入学生学号" size="large" />
       </div>
+      <div class="form-group">
+        <label>姓名</label>
+        <el-input v-model="enrollStudentName" placeholder="输入学生姓名" size="large" />
+      </div>
+      <p class="enroll-hint">若该学号不存在，系统将自动创建学生账号（默认密码 a123456）</p>
       <template #footer>
         <el-button @click="enrollDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleEnroll">添加</el-button>
@@ -384,5 +391,11 @@ async function handleImport() {
 .file-name {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.enroll-hint {
+  font-size: 0.8rem;
+  color: #999;
+  margin-top: 8px;
 }
 </style>

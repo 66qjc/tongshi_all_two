@@ -2,16 +2,33 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getChapters, type Chapter } from '@/api/chapter'
-import { getQuestions, createQuestion, updateQuestion, deleteQuestion as apiDeleteQuestion, importQuestions, type Question } from '@/api/question'
+import {
+  getQuestions, getCourses, createQuestion, updateQuestion,
+  deleteQuestion as apiDeleteQuestion, importQuestions,
+  type Question, type Course,
+} from '@/api/question'
 
+// ────────────── 数据状态 ──────────────
+const courses = ref<Course[]>([])
 const chapters = ref<Chapter[]>([])
 const questions = ref<Question[]>([])
 const loading = ref(true)
 
+// ────────────── 筛选条件 ──────────────
+const filterCourse = ref<number | ''>('')
 const filterChapter = ref<number | ''>('')
 const filterType = ref<'' | 'choice' | 'fill'>('')
+
+// 筛选栏：根据所选课程过滤章节下拉
+const filterChapterOptions = computed(() => {
+  if (!filterCourse.value) return chapters.value
+  return chapters.value.filter(c => c.course_id === filterCourse.value)
+})
+
+// ────────────── 表单状态 ──────────────
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
+const formCourse = ref<number | ''>('')
 
 const newQuestion = reactive({
   chapter: '' as number | '',
@@ -22,40 +39,78 @@ const newQuestion = reactive({
   explanation: '',
 })
 
-onMounted(async () => {
+// 表单中：根据所选课程过滤章节下拉
+const formChapterOptions = computed(() => {
+  if (!formCourse.value) return []
+  return chapters.value.filter(c => c.course_id === formCourse.value)
+})
+
+// ────────────── 数据加载 ──────────────
+async function fetchCourses() {
   try {
-    const [questionList, chapterList] = await Promise.all([getQuestions(), getChapters()])
-    questions.value = questionList
-    chapters.value = chapterList
+    courses.value = await getCourses()
   } catch {
-    ElMessage.error('题库数据加载失败，请稍后重试')
+    ElMessage.error('课程列表加载失败')
+  }
+}
+
+async function fetchChapters() {
+  try {
+    chapters.value = await getChapters()
+  } catch {
+    ElMessage.error('章节列表加载失败')
+  }
+}
+
+async function fetchQuestions() {
+  loading.value = true
+  try {
+    const params: { chapter_id?: number; type?: string; course_id?: number } = {}
+    if (filterCourse.value) params.course_id = filterCourse.value as number
+    if (filterChapter.value) params.chapter_id = filterChapter.value as number
+    if (filterType.value) params.type = filterType.value
+    questions.value = await getQuestions(params)
+  } catch {
+    ElMessage.error('题目加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
-})
-
-const filteredQuestions = computed(() => {
-  return questions.value.filter(q => {
-    if (filterChapter.value && q.chapter_id !== filterChapter.value) return false
-    if (filterType.value && q.type !== filterType.value) return false
-    return true
-  })
-})
-
-function getChapterLabel(chapterId: number) {
-  const chapter = chapters.value.find(item => item.id === chapterId)
-  if (!chapter) return `章节 ${chapterId}`
-  return `${chapter.num} ${chapter.title}`
 }
 
-function getDefaultChapterId() {
-  return chapters.value[0]?.id || ''
+onMounted(async () => {
+  await Promise.all([fetchCourses(), fetchChapters()])
+  await fetchQuestions()
+})
+
+// ────────────── 筛选处理 ──────────────
+// 课程变化时，联动重置章节筛选
+function handleFilterCourseChange() {
+  filterChapter.value = ''
+  fetchQuestions()
+}
+
+function handleFilterChange() {
+  fetchQuestions()
+}
+
+function resetFilter() {
+  filterCourse.value = ''
+  filterChapter.value = ''
+  filterType.value = ''
+  fetchQuestions()
+}
+
+// ────────────── 表单处理 ──────────────
+// 表单中课程变化时，联动重置章节选择
+function handleFormCourseChange() {
+  newQuestion.chapter = ''
 }
 
 function openNew() {
   editingId.value = null
+  formCourse.value = ''
   Object.assign(newQuestion, {
-    chapter: getDefaultChapterId(),
+    chapter: '',
     type: 'choice',
     stem: '',
     options: ['', '', '', ''],
@@ -67,6 +122,8 @@ function openNew() {
 
 function openEdit(q: Question) {
   editingId.value = q.id
+  // 先设置课程（不触发 formCourse watch，直接赋值后再设章节）
+  formCourse.value = q.course_id ?? ''
   Object.assign(newQuestion, {
     chapter: q.chapter_id,
     type: q.type,
@@ -79,8 +136,12 @@ function openEdit(q: Question) {
 }
 
 async function handleSave() {
+  if (!formCourse.value) {
+    ElMessage.warning('请选择所属课程')
+    return
+  }
   if (typeof newQuestion.chapter !== 'number') {
-    ElMessage.warning('请先创建章节')
+    ElMessage.warning('请选择所属章节')
     return
   }
   if (!newQuestion.stem.trim() || !newQuestion.answer.trim()) {
@@ -105,16 +166,20 @@ async function handleSave() {
       await createQuestion(payload)
       ElMessage.success('已添加')
     }
-    questions.value = await getQuestions()
+    await fetchQuestions()
     dialogVisible.value = false
   } catch {
-    ElMessage.error('保存失败')
+    ElMessage.error('保存失败，请稍后重试')
   }
 }
 
 async function handleDelete(id: number) {
   try {
-    await ElMessageBox.confirm('确定删除该题目？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm('确定删除该题目？删除后不可恢复。', '确认删除', {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+    })
     await apiDeleteQuestion(id)
     questions.value = questions.value.filter(q => q.id !== id)
     ElMessage.success('已删除')
@@ -125,6 +190,7 @@ async function handleDelete(id: number) {
   }
 }
 
+// ────────────── Excel 批量导入 ──────────────
 const importDialogVisible = ref(false)
 const importFile = ref<File | null>(null)
 const importInput = ref<HTMLInputElement | null>(null)
@@ -152,9 +218,9 @@ async function handleImport() {
     const result = await importQuestions(importFile.value)
     ElMessage.success(`导入完成：成功 ${result.success_count} 题，失败 ${result.fail_count} 题`)
     importDialogVisible.value = false
-    questions.value = await getQuestions()
+    await fetchQuestions()
   } catch {
-    ElMessage.error('导入失败')
+    ElMessage.error('导入失败，请检查文件格式后重试')
   } finally {
     importing.value = false
   }
@@ -163,6 +229,7 @@ async function handleImport() {
 
 <template>
   <div class="questions-page">
+    <!-- 页面标题 -->
     <div class="page-header">
       <h1>题库管理</h1>
       <div class="header-actions">
@@ -171,39 +238,79 @@ async function handleImport() {
       </div>
     </div>
 
+    <!-- 三级联动筛选栏 -->
     <div class="filter-bar">
-      <el-select v-model="filterChapter" placeholder="全部章节" clearable size="default" style="width: 180px">
+      <!-- 课程筛选 -->
+      <el-select
+        v-model="filterCourse"
+        placeholder="全部课程"
+        clearable
+        size="default"
+        style="width: 160px"
+        @change="handleFilterCourseChange"
+      >
         <el-option
-          v-for="chapter in chapters"
+          v-for="course in courses"
+          :key="course.id"
+          :label="course.name"
+          :value="course.id"
+        />
+      </el-select>
+      <!-- 章节筛选（联动课程） -->
+      <el-select
+        v-model="filterChapter"
+        placeholder="全部章节"
+        clearable
+        size="default"
+        style="width: 180px"
+        @change="handleFilterChange"
+      >
+        <el-option
+          v-for="chapter in filterChapterOptions"
           :key="chapter.id"
           :label="`${chapter.num} ${chapter.title}`"
           :value="chapter.id"
         />
       </el-select>
-      <el-select v-model="filterType" placeholder="全部题型" clearable size="default" style="width: 140px">
+      <!-- 题型筛选 -->
+      <el-select
+        v-model="filterType"
+        placeholder="全部题型"
+        clearable
+        size="default"
+        style="width: 130px"
+        @change="handleFilterChange"
+      >
         <el-option label="选择题" value="choice" />
         <el-option label="填空题" value="fill" />
       </el-select>
-      <span class="filter-count">共 {{ filteredQuestions.length }} 题</span>
+      <el-button @click="resetFilter">重置</el-button>
+      <span class="filter-count">共 {{ questions.length }} 题</span>
     </div>
 
-    <el-table :data="filteredQuestions" stripe style="width: 100%" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column label="题干" min-width="250">
+    <!-- 题目列表 -->
+    <el-table :data="questions" stripe style="width: 100%" v-loading="loading">
+      <el-table-column type="index" label="序号" width="60" />
+      <el-table-column label="题干" min-width="240">
         <template #default="{ row }">
-          {{ row.stem.length > 40 ? row.stem.slice(0, 40) + '...' : row.stem }}
+          {{ row.stem.length > 40 ? row.stem.slice(0, 40) + '…' : row.stem }}
         </template>
       </el-table-column>
-      <el-table-column label="题型" width="80">
+      <el-table-column label="题型" width="90">
         <template #default="{ row }">
           <el-tag :type="row.type === 'choice' ? '' : 'success'" size="small" effect="plain">
-            {{ row.type === 'choice' ? '选择' : '填空' }}
+            {{ row.type === 'choice' ? '选择题' : '填空题' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="章节" width="140">
+      <el-table-column label="所属课程" width="140">
         <template #default="{ row }">
-          {{ getChapterLabel(row.chapter_id) }}
+          <span>{{ row.course_name || '—' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="所属章节" width="160">
+        <template #default="{ row }">
+          <span>{{ row.chapter_name || `章节 ${row.chapter_id}` }}</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
@@ -214,23 +321,56 @@ async function handleImport() {
       </el-table-column>
     </el-table>
 
-    <div v-if="!loading && filteredQuestions.length === 0" class="empty-state">
+    <!-- 空状态 -->
+    <div v-if="!loading && questions.length === 0" class="empty-state">
       <p>暂无题目，点击「新增题目」或「导入题目」开始维护题库。</p>
     </div>
 
-    <!-- Edit dialog -->
+    <!-- 新增/编辑题目弹窗 -->
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑题目' : '新增题目'" width="560px">
+      <!-- 1. 所属课程 -->
       <div class="form-group">
-        <label>章节</label>
-        <el-select v-model="newQuestion.chapter" size="large" style="width: 100%">
+        <label>所属课程 <span class="required">*</span></label>
+        <el-select
+          v-model="formCourse"
+          size="large"
+          style="width: 100%"
+          placeholder="请选择课程"
+          @change="handleFormCourseChange"
+        >
           <el-option
-            v-for="chapter in chapters"
+            v-for="course in courses"
+            :key="course.id"
+            :label="course.name"
+            :value="course.id"
+          />
+        </el-select>
+        <p v-if="courses.length === 0" class="form-hint warn">
+          暂无课程，请先前往课程管理页面创建课程。
+        </p>
+      </div>
+      <!-- 2. 所属章节（联动课程） -->
+      <div class="form-group">
+        <label>所属章节 <span class="required">*</span></label>
+        <el-select
+          v-model="newQuestion.chapter"
+          size="large"
+          style="width: 100%"
+          placeholder="请先选择课程"
+          :disabled="!formCourse"
+        >
+          <el-option
+            v-for="chapter in formChapterOptions"
             :key="chapter.id"
             :label="`${chapter.num} ${chapter.title}`"
             :value="chapter.id"
           />
         </el-select>
+        <p v-if="formCourse && formChapterOptions.length === 0" class="form-hint">
+          该课程下暂无章节。
+        </p>
       </div>
+      <!-- 3. 题型 -->
       <div class="form-group">
         <label>题型</label>
         <el-radio-group v-model="newQuestion.type" size="large">
@@ -238,10 +378,12 @@ async function handleImport() {
           <el-radio-button value="fill">填空题</el-radio-button>
         </el-radio-group>
       </div>
+      <!-- 4. 题干 -->
       <div class="form-group">
-        <label>题干</label>
+        <label>题干 <span class="required">*</span></label>
         <el-input v-model="newQuestion.stem" type="textarea" :rows="3" placeholder="请输入题目内容" />
       </div>
+      <!-- 5. 选项（仅选择题） -->
       <div v-if="newQuestion.type === 'choice'" class="form-group">
         <label>选项</label>
         <div v-for="(_, i) in newQuestion.options" :key="i" class="option-row">
@@ -249,13 +391,15 @@ async function handleImport() {
           <el-input v-model="newQuestion.options[i]" :placeholder="`选项 ${['A', 'B', 'C', 'D'][i]}`" size="large" />
         </div>
       </div>
+      <!-- 6. 答案 -->
       <div class="form-group">
-        <label>答案</label>
+        <label>答案 <span class="required">*</span></label>
         <el-input v-model="newQuestion.answer" placeholder="选择题填 A/B/C/D，填空题填关键词" size="large" />
       </div>
+      <!-- 7. 解析 -->
       <div class="form-group">
         <label>解析</label>
-        <el-input v-model="newQuestion.explanation" type="textarea" :rows="2" placeholder="答案解析" />
+        <el-input v-model="newQuestion.explanation" type="textarea" :rows="2" placeholder="答案解析（选填）" />
       </div>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -263,13 +407,17 @@ async function handleImport() {
       </template>
     </el-dialog>
 
-    <!-- Import dialog -->
+    <!-- Excel 批量导入弹窗 -->
     <el-dialog v-model="importDialogVisible" title="Excel 批量导入题目" width="500px">
       <div class="import-info">
         <p>请上传 .xlsx 文件，表头格式：</p>
         <table class="format-table">
-          <thead><tr><th>type</th><th>chapter</th><th>stem</th><th>options</th><th>answer</th><th>explanation</th></tr></thead>
-          <tbody><tr><td>choice</td><td>01</td><td>图灵测试由谁提出？</td><td>A. xxx|B. xxx|C. xxx|D. xxx</td><td>A</td><td>解析内容</td></tr></tbody>
+          <thead>
+            <tr><th>type</th><th>chapter</th><th>stem</th><th>options</th><th>answer</th><th>explanation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>choice</td><td>01</td><td>图灵测试由谁提出？</td><td>A. xxx|B. xxx|C. xxx|D. xxx</td><td>A</td><td>解析内容</td></tr>
+          </tbody>
         </table>
         <p class="import-note">type 为 choice 或 fill，chapter 填章节编号或章节标题，填空题 options 留空。</p>
       </div>
@@ -332,6 +480,21 @@ async function handleImport() {
   font-weight: 600;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+}
+
+.required {
+  color: #f56c6c;
+  margin-left: 2px;
+}
+
+.form-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+}
+
+.form-hint.warn {
+  color: #e6a23c;
 }
 
 .option-row {
