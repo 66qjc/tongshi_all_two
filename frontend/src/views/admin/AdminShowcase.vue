@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../../stores/auth'
+import { resolveFileUrl } from '../../utils/url'
 import {
   getShowcaseAdmin,
   createShowcaseItem,
@@ -216,7 +217,7 @@ onMounted(fetchItems)
               <div v-for="item in welfareItems" :key="item.id" class="item-card">
                 <!-- 封面缩略图 -->
                 <div class="item-cover">
-                  <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                  <img v-if="item.cover_url" :src="resolveFileUrl(item.cover_url)" :alt="item.title" />
                   <div v-else class="cover-placeholder">
                     <span>无图</span>
                   </div>
@@ -271,7 +272,7 @@ onMounted(fetchItems)
               <div v-for="item in readingItems" :key="item.id" class="item-card">
                 <!-- 封面缩略图 -->
                 <div class="item-cover">
-                  <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                  <img v-if="item.cover_url" :src="resolveFileUrl(item.cover_url)" :alt="item.title" />
                   <div v-else class="cover-placeholder">
                     <span>无图</span>
                   </div>
@@ -346,7 +347,7 @@ onMounted(fetchItems)
         <el-form-item label="封面图片">
           <!-- 已有封面预览 -->
           <div v-if="coverPreviewUrl" class="cover-preview">
-            <img :src="coverPreviewUrl" alt="封面预览" />
+            <img :src="resolveFileUrl(coverPreviewUrl)" alt="封面预览" />
             <span class="cover-preview-tip">当前封面（上传新图后替换）</span>
           </div>
           <!-- 上传控件：直接提交至后端，带 Authorization 请求头 -->
