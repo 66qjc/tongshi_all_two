@@ -59,20 +59,17 @@ function formatDate(dateStr: string) {
     <template v-if="latestAnnouncement">
       <div class="popup-content">
         <div class="popup-type">
-          <el-tag :type="latestAnnouncement.type === 'announcement' ? '' : 'success'" size="small" effect="plain">
-            {{ latestAnnouncement.type === 'announcement' ? '公告' : '任务' }}
-          </el-tag>
+          <el-tag type="success" size="small" effect="plain">题目</el-tag>
         </div>
         <h3 class="popup-title">{{ latestAnnouncement.title }}</h3>
         <div class="popup-meta">
           <span>{{ latestAnnouncement.teacher_name }}</span>
           <span class="sep">·</span>
-          <span>{{ latestAnnouncement.class_name }}</span>
+          <span>{{ latestAnnouncement.class_names?.join('、') || latestAnnouncement.course_name }}</span>
           <span class="sep">·</span>
           <span>{{ formatDate(latestAnnouncement.created_at) }}</span>
         </div>
-        <p v-if="latestAnnouncement.content" class="popup-body">{{ latestAnnouncement.content }}</p>
-        <p v-if="latestAnnouncement.type === 'quiz'" class="popup-quiz">
+        <p class="popup-quiz">
           包含 {{ latestAnnouncement.question_ids.length }} 道题目
         </p>
       </div>

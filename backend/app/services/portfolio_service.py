@@ -1,6 +1,6 @@
 """Portfolio service"""
 from sqlalchemy.orm import Session
-from app.models.entities import User, QuizAttempt, Project, StudentProgress
+from app.models.entities import User, QuizAttempt, Project, StudentProgress, StudentClassEnrollment, Class
 
 
 def get_portfolio(db: Session, user_id: str):
@@ -16,7 +16,16 @@ def get_portfolio(db: Session, user_id: str):
 
     progresses = db.query(StudentProgress).filter(StudentProgress.user_id == user_id).all()
     total_progress = sum(p.learn_progress for p in progresses)
-    avg_progress = int(total_progress / 6) if progresses else 0  # 6 chapters
+    visible_course_ids = {
+        row.course_id
+        for row in db.query(Class.course_id)
+        .join(StudentClassEnrollment, StudentClassEnrollment.class_id == Class.id)
+        .filter(StudentClassEnrollment.user_id == user_id)
+        .all()
+    }
+    progress_course_ids = {p.course_id for p in progresses}
+    denominator = len(visible_course_ids or progress_course_ids)
+    avg_progress = int(total_progress / denominator) if denominator else 0
 
     projects = db.query(Project).filter(
         Project.author_id == user_id, Project.status == "approved",

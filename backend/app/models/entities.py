@@ -33,9 +33,10 @@ class Class(Base):
     __tablename__ = "classes"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)
-    major = Column(String(64), nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    course = relationship("Course", back_populates="classes")
     enrollments = relationship(
         "StudentClassEnrollment", back_populates="class_", cascade="all, delete-orphan")
 
@@ -58,41 +59,28 @@ class StudentClassEnrollment(Base):
 
 class Course(Base):
     __tablename__ = "courses"
+    __table_args__ = (UniqueConstraint("name", "created_by", name="uq_course_name_created_by"),)
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(128), nullable=False, unique=True)
+    name = Column(String(128), nullable=False)
+    created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    chapters = relationship(
-        "Chapter", back_populates="course", cascade="all, delete-orphan")
-
-
-class Chapter(Base):
-    __tablename__ = "chapters"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    num = Column(String(8), unique=True, nullable=False)
-    title = Column(String(64), nullable=False)
-    desc = Column(String(256), default="")
-    topics = Column(JSON, default=list)
-    status = Column(String(16), default="已发布")
-    sort_order = Column(Integer, default=0)
-    course_id = Column(Integer, ForeignKey(
-        "courses.id"), nullable=True, index=True)
-    day_of_week = Column(String(16), default="")
-    class_periods = Column(String(32), default="")
-    schedule_note = Column(String(128), default="")
-
-    course = relationship("Course", back_populates="chapters")
+    creator = relationship("User", foreign_keys=[created_by])
+    classes = relationship("Class", back_populates="course", cascade="all, delete-orphan")
     materials = relationship(
-        "Material", back_populates="chapter", cascade="all, delete-orphan")
+        "Material", back_populates="course", cascade="all, delete-orphan")
     questions = relationship(
-        "Question", back_populates="chapter", cascade="all, delete-orphan")
+        "Question", back_populates="course", cascade="all, delete-orphan")
+    progress = relationship(
+        "StudentProgress", back_populates="course", cascade="all, delete-orphan")
 
 
 class Material(Base):
     __tablename__ = "materials"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    chapter_id = Column(Integer, ForeignKey(
-        "chapters.id"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id"), nullable=False, index=True)
     type = Column(String(16), nullable=False)
     title = Column(String(128), nullable=False)
     url = Column(String(512), default="")
@@ -103,21 +91,21 @@ class Material(Base):
     file_id = Column(Integer, ForeignKey(
         "stored_files.id"), nullable=True, index=True)
 
-    chapter = relationship("Chapter", back_populates="materials")
+    course = relationship("Course", back_populates="materials")
 
 
 class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     type = Column(String(16), nullable=False)
-    chapter_id = Column(Integer, ForeignKey(
-        "chapters.id"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id"), nullable=False, index=True)
     stem = Column(Text, nullable=False)
     options = Column(JSON, default=list)
     answer = Column(String(128), nullable=False)
     explanation = Column(Text, default="")
 
-    chapter = relationship("Chapter", back_populates="questions")
+    course = relationship("Course", back_populates="questions")
 
 
 class QuizAttempt(Base):
@@ -140,13 +128,14 @@ class StudentProgress(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(32), ForeignKey(
         "users.id"), nullable=False, index=True)
-    chapter_id = Column(Integer, ForeignKey(
-        "chapters.id"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id"), nullable=False, index=True)
     learn_progress = Column(Integer, default=0)
     questions_done = Column(Integer, default=0)
     accuracy = Column(Integer, default=0)
 
     user = relationship("User", back_populates="progress")
+    course = relationship("Course", back_populates="progress")
 
 
 class Project(Base):
@@ -213,7 +202,9 @@ class Announcement(Base):
     __tablename__ = "announcements"
     id = Column(Integer, primary_key=True, autoincrement=True)
     class_id = Column(Integer, ForeignKey(
-        "classes.id", ondelete="CASCADE"), nullable=False, index=True)
+        "classes.id", ondelete="CASCADE"), nullable=True, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id", ondelete="CASCADE"), nullable=False, index=True)
     teacher_id = Column(String(32), ForeignKey(
         "users.id"), nullable=False, index=True)
     type = Column(String(16), nullable=False)
@@ -225,11 +216,29 @@ class Announcement(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     class_ = relationship("Class")
+    course = relationship("Course")
     teacher = relationship("User")
+    target_classes = relationship(
+        "AnnouncementClass", back_populates="announcement", cascade="all, delete-orphan")
     reads = relationship(
         "AnnouncementRead", back_populates="announcement", cascade="all, delete-orphan")
     completions = relationship(
         "TaskCompletion", back_populates="announcement", cascade="all, delete-orphan")
+
+
+class AnnouncementClass(Base):
+    __tablename__ = "announcement_classes"
+    __table_args__ = (UniqueConstraint(
+        "announcement_id", "class_id", name="uq_announcement_class"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    announcement_id = Column(Integer, ForeignKey(
+        "announcements.id", ondelete="CASCADE"), nullable=False, index=True)
+    class_id = Column(Integer, ForeignKey(
+        "classes.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    announcement = relationship("Announcement", back_populates="target_classes")
+    class_ = relationship("Class")
 
 
 class AnnouncementRead(Base):

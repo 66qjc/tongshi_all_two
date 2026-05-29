@@ -3,7 +3,7 @@ import type { Project } from './project'
 
 export interface TeacherStats {
   total_students: number
-  published_chapters: number
+  my_courses: number
   pending_reviews: number
   weekly_exercises: number
 }

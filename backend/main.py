@@ -52,10 +52,10 @@ def _seed_if_empty():
     try:
         from seed_data import seed
         from app.db.session import SessionLocal
-        from app.models.entities import Chapter
+        from app.models.entities import Course
         db = SessionLocal()
         try:
-            count = db.query(Chapter).count()
+            count = db.query(Course).count()
             if count == 0:
                 logger.info("Empty database, running seed...")
                 seed()

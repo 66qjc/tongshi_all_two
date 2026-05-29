@@ -62,7 +62,7 @@ function formatDate(dateStr: string) {
             </svg>
           </div>
           <h1>消息通知</h1>
-          <p>查看老师发布的公告和任务</p>
+          <p>查看老师发布的题目任务</p>
         </div>
       </div>
     </section>
@@ -88,22 +88,21 @@ function formatDate(dateStr: string) {
               <div class="item-header">
                 <span class="item-title">{{ item.title }}</span>
                 <el-tag
-                  :type="item.type === 'announcement' ? '' : 'success'"
+                  type="success"
                   size="small"
                   effect="plain"
                 >
-                  {{ item.type === 'announcement' ? '公告' : '任务' }}
+                  题目
                 </el-tag>
               </div>
               <div class="item-meta">
                 <span>{{ item.teacher_name }}</span>
                 <span class="meta-sep">·</span>
-                <span>{{ item.class_name }}</span>
+                <span>{{ item.class_names?.join('、') || item.course_name }}</span>
                 <span class="meta-sep">·</span>
                 <span>{{ formatDate(item.created_at) }}</span>
               </div>
-              <div v-if="item.content" class="item-body">{{ item.content }}</div>
-              <div v-if="item.type === 'quiz' && item.question_ids.length > 0" class="item-quiz">
+              <div v-if="item.question_ids.length > 0" class="item-quiz">
                 <span>包含 {{ item.question_ids.length }} 道题目</span>
                 <router-link :to="`/practice`" class="quiz-link">去练习</router-link>
               </div>
@@ -112,10 +111,8 @@ function formatDate(dateStr: string) {
                   {{ isExpired(item) ? '已截止' : '截止' }}: {{ formatDate(item.end_time) }}
                 </span>
               </div>
-              <div v-if="item.type === 'announcement' && item.is_read" class="item-actions">
-                <el-button size="small" type="primary" plain round @click.stop="handleComplete(item)">
-                  已知晓
-                </el-button>
+              <div v-if="item.is_read" class="item-actions">
+                <el-button size="small" type="primary" plain round @click.stop="handleComplete(item)">标记完成</el-button>
               </div>
             </div>
           </div>

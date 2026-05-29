@@ -3,7 +3,8 @@ import http from './http'
 export interface ClassInfo {
   id: number
   name: string
-  major: string
+  course_id: number
+  course_name: string
   student_count: number
   created_at: string
 }
@@ -15,11 +16,11 @@ export interface ClassStudent {
   enrolled_at?: string
 }
 
-export function getClasses() {
-  return http.get<any, ClassInfo[]>('/classes')
+export function getClasses(params?: { course_id?: number; keyword?: string }) {
+  return http.get<any, ClassInfo[]>('/classes', { params })
 }
 
-export function createClass(data: { name: string; major: string }) {
+export function createClass(data: { name: string; course_id: number }) {
   return http.post<any, ClassInfo>('/classes', data)
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const chapters = [
+const modules = [
   { num: '01', title: '人工智能概述', desc: '从图灵测试到深度学习，AI 发展全景扫描', tag: '基础' },
   { num: '02', title: '计算机基础知识', desc: '办公软件使用基础与计算思维入门', tag: '入门' },
   { num: '03', title: 'AI 理论基础', desc: '深度学习、大模型原理与核心算法', tag: '核心' },
@@ -29,7 +29,7 @@ const chapters = [
             <div class="phil-card">
               <div class="phil-icon" style="color: var(--color-learn)">探</div>
               <h3>学</h3>
-              <p>六大核心章节，从 AI 概述到伦理思辨，系统构建知识体系</p>
+              <p>六大核心模块，从 AI 概述到伦理思辨，系统构建知识体系</p>
             </div>
             <div class="phil-card">
               <div class="phil-icon" style="color: var(--color-practice)">练</div>
@@ -51,8 +51,8 @@ const chapters = [
 
         <div class="about-block">
           <h2>课程概览</h2>
-          <div class="chapters-grid">
-            <div v-for="ch in chapters" :key="ch.num" class="chapter-item">
+          <div class="modules-grid">
+            <div v-for="ch in modules" :key="ch.num" class="module-item">
               <span class="ch-num">{{ ch.num }}</span>
               <div class="ch-info">
                 <div class="ch-top">
@@ -163,13 +163,13 @@ const chapters = [
   line-height: 1.6;
 }
 
-.chapters-grid {
+.modules-grid {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
 }
 
-.chapter-item {
+.module-item {
   display: flex;
   gap: var(--space-lg);
   padding: var(--space-lg);
@@ -179,7 +179,7 @@ const chapters = [
   transition: all var(--duration-normal) var(--ease-out);
 }
 
-.chapter-item:hover {
+.module-item:hover {
   border-color: var(--color-primary-light);
   box-shadow: var(--shadow-sm);
 }

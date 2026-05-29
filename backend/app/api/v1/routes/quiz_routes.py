@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.core.security import get_current_user
 from app.core.response import success
 from app.schemas.common import AuthUser, QuizSubmitRequest
-from app.services.quiz_service import submit_answer, get_quiz_history, get_quiz_stats, get_chapter_quiz_stats
+from app.services.quiz_service import submit_answer, get_quiz_history, get_quiz_stats, get_course_quiz_stats
 
 router = APIRouter(prefix="/quiz", tags=["quiz"])
 
@@ -38,10 +38,10 @@ def stats(
     return success(get_quiz_stats(db, current_user.id))
 
 
-@router.get("/stats/{chapter_id}", summary="章节答题统计", description="学生端：返回指定章节的答题完成数和正确率")
-def chapter_stats(
-    chapter_id: int,
+@router.get("/stats/{course_id}", summary="课程答题统计", description="学生端：返回指定课程的答题完成数和正确率")
+def course_stats(
+    course_id: int,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    return success(get_chapter_quiz_stats(db, current_user.id, chapter_id))
+    return success(get_course_quiz_stats(db, current_user.id, course_id))

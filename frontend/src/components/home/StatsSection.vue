@@ -9,7 +9,7 @@ interface Stat {
 }
 
 const stats: Stat[] = [
-  { value: 6, label: '章节课程', suffix: '章', desc: '系统知识体系' },
+  { value: 6, label: '课程模块', suffix: '个', desc: '系统知识体系' },
   { value: 100, label: '练习题目', suffix: '+', desc: '强化思维反思' },
   { value: 50, label: '学生作品', suffix: '+', desc: '践行创作成果' },
   { value: 20, label: '公益行动', suffix: '+', desc: '感悟社会价值' },

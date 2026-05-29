@@ -9,23 +9,51 @@ from app.db.schema_compat import ensure_schema_compatibility
 from app.services.storage_s3 import S3StorageAdapter
 
 
-def test_ensure_schema_compatibility_adds_chapter_schedule_columns():
+def test_ensure_schema_compatibility_adds_course_anchor_columns():
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:
         conn.execute(text("""
-            CREATE TABLE chapters (
+            CREATE TABLE courses (
                 id INTEGER PRIMARY KEY,
-                num VARCHAR(8) NOT NULL,
-                title VARCHAR(64) NOT NULL
+                name VARCHAR(128) NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(64) NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE materials (
+                id INTEGER PRIMARY KEY,
+                type VARCHAR(16) NOT NULL,
+                title VARCHAR(128) NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE questions (
+                id INTEGER PRIMARY KEY,
+                type VARCHAR(16) NOT NULL,
+                stem TEXT NOT NULL,
+                answer VARCHAR(128) NOT NULL
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE student_progress (
+                id INTEGER PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL
             )
         """))
 
     ensure_schema_compatibility(engine)
 
     inspector = inspect(engine)
-    columns = {column["name"] for column in inspector.get_columns("chapters")}
-
-    assert {"day_of_week", "class_periods", "schedule_note"}.issubset(columns)
+    assert "created_by" in {column["name"] for column in inspector.get_columns("courses")}
+    assert "course_id" in {column["name"] for column in inspector.get_columns("classes")}
+    assert "course_id" in {column["name"] for column in inspector.get_columns("materials")}
+    assert "course_id" in {column["name"] for column in inspector.get_columns("questions")}
+    assert "course_id" in {column["name"] for column in inspector.get_columns("student_progress")}
 
 
 def test_ensure_schema_compatibility_creates_project_images_table():
@@ -143,16 +171,9 @@ def test_ensure_schema_compatibility_adds_file_columns_to_business_tables():
             )
         """))
         conn.execute(text("""
-            CREATE TABLE chapters (
-                id INTEGER PRIMARY KEY,
-                num VARCHAR(8) NOT NULL,
-                title VARCHAR(64) NOT NULL
-            )
-        """))
-        conn.execute(text("""
             CREATE TABLE materials (
                 id INTEGER PRIMARY KEY,
-                chapter_id INTEGER NOT NULL,
+                course_id INTEGER NOT NULL,
                 type VARCHAR(16) NOT NULL,
                 title VARCHAR(128) NOT NULL
             )
@@ -183,3 +204,27 @@ def test_ensure_schema_compatibility_adds_file_columns_to_business_tables():
     assert "report_file_id" in proj_cols
     assert "cover_file_id" in proj_cols
     assert "file_id" in img_cols
+
+
+def test_ensure_schema_compatibility_creates_announcement_classes_table():
+    """兼容脚本应自动创建发布题目与班级的关联表"""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE announcements (
+                id INTEGER PRIMARY KEY,
+                course_id INTEGER,
+                teacher_id VARCHAR(32) NOT NULL,
+                type VARCHAR(16) NOT NULL,
+                title VARCHAR(128) NOT NULL
+            )
+        """))
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    columns = {column["name"] for column in inspector.get_columns("announcement_classes")}
+
+    assert "announcement_classes" in table_names
+    assert {"id", "announcement_id", "class_id"}.issubset(columns)

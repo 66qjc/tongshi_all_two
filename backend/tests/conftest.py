@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.session import Base, get_db
 from app.core.security import get_password_hash
-from app.models.entities import User, Chapter, Question, Class, StudentClassEnrollment, Course
+from app.models.entities import User, Question, Class, StudentClassEnrollment, Course
 
 
 @pytest.fixture(scope="function")
@@ -34,27 +34,27 @@ def _seed_test_data(session):
     """插入测试所需的最小种子数据"""
     # 用户
     student = User(id="2025001", name="测试学生", hashed_password=get_password_hash("abc123"), role="student", major="自动化专业")
+    other_student = User(id="2025002", name="其它学生", hashed_password=get_password_hash("abc123"), role="student", major="人工智能")
     teacher = User(id="T001", name="测试教师", hashed_password=get_password_hash("abc123"), role="teacher", major="")
-    session.add_all([student, teacher])
+    other_teacher = User(id="T002", name="其它教师", hashed_password=get_password_hash("abc123"), role="teacher", major="")
+    session.add_all([student, other_student, teacher, other_teacher])
 
     # 课程
-    course = Course(name="测试课程")
-    session.add(course)
-    session.flush()
-
-    # 章节
-    chapter = Chapter(num="01", title="测试章节", desc="测试", status="已发布", sort_order=1, course_id=course.id)
-    session.add(chapter)
+    course = Course(name="测试课程", created_by="T001")
+    other_course = Course(name="其它课程", created_by="T002")
+    session.add_all([course, other_course])
     session.flush()
 
     # 班级 + 注册
-    cls = Class(name="2025级1班", major="自动化专业")
-    session.add(cls)
+    cls = Class(name="2025级1班", course_id=course.id)
+    other_cls = Class(name="2025级2班", course_id=other_course.id)
+    session.add_all([cls, other_cls])
     session.flush()
     session.add(StudentClassEnrollment(user_id="2025001", class_id=cls.id))
+    session.add(StudentClassEnrollment(user_id="2025002", class_id=other_cls.id))
 
     # 题目
-    q = Question(type="choice", chapter_id=chapter.id, stem="1+1=?", options=["A. 1", "B. 2", "C. 3", "D. 4"], answer="B", explanation="基础加法")
+    q = Question(type="choice", course_id=course.id, stem="1+1=?", options=["A. 1", "B. 2", "C. 3", "D. 4"], answer="B", explanation="基础加法")
     session.add(q)
 
     session.commit()
@@ -85,6 +85,13 @@ def student_token(client):
 def teacher_token(client):
     """教师登录获取 token"""
     resp = client.post("/api/token", json={"id": "T001", "password": "abc123"})
+    return resp.json()["data"]["access_token"]
+
+
+@pytest.fixture(scope="function")
+def other_teacher_token(client):
+    """其它教师登录获取 token"""
+    resp = client.post("/api/token", json={"id": "T002", "password": "abc123"})
     return resp.json()["data"]["access_token"]
 
 

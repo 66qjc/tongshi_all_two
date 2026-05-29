@@ -8,21 +8,6 @@ def ensure_schema_compatibility(engine) -> None:
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
 
-        if "chapters" in table_names:
-            columns = {column["name"]
-                       for column in inspector.get_columns("chapters")}
-            required_columns = [
-                ("day_of_week", "VARCHAR(16)", "''"),
-                ("class_periods", "VARCHAR(32)", "''"),
-                ("schedule_note", "VARCHAR(128)", "''"),
-            ]
-
-            for name, column_type, default_value in required_columns:
-                if name not in columns:
-                    conn.execute(text(
-                        f"ALTER TABLE chapters ADD COLUMN {name} {column_type} DEFAULT {default_value}"
-                    ))
-
         if "projects" in table_names and "project_images" not in table_names:
             dialect_name = conn.dialect.name
             if dialect_name == "sqlite":
@@ -109,6 +94,18 @@ def ensure_schema_compatibility(engine) -> None:
         # ── 为业务表补齐 file_id 列 ─────────────────────────────────────
         _add_column_if_missing(
             conn, inspector, "materials", "file_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "courses", "created_by", "VARCHAR(32) NOT NULL DEFAULT 'T001'")
+        _add_column_if_missing(
+            conn, inspector, "classes", "course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "materials", "course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "questions", "course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "student_progress", "course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "announcements", "course_id", "INTEGER")
         _add_column_if_missing(conn, inspector, "projects",
                                "report_file_id", "INTEGER")
         _add_column_if_missing(conn, inspector, "projects",
@@ -119,6 +116,41 @@ def ensure_schema_compatibility(engine) -> None:
         # ── users 表新增 needs_password_change 列 ────────────────────────
         _add_column_if_missing(
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "announcements" in table_names and "announcement_classes" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE announcement_classes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        announcement_id INTEGER NOT NULL,
+                        class_id INTEGER NOT NULL,
+                        UNIQUE(announcement_id, class_id),
+                        FOREIGN KEY(announcement_id) REFERENCES announcements(id) ON DELETE CASCADE,
+                        FOREIGN KEY(class_id) REFERENCES classes(id) ON DELETE CASCADE
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE announcement_classes (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        announcement_id INTEGER NOT NULL,
+                        class_id INTEGER NOT NULL,
+                        UNIQUE KEY uq_announcement_class (announcement_id, class_id),
+                        CONSTRAINT fk_announcement_classes_announcement_id
+                            FOREIGN KEY (announcement_id) REFERENCES announcements(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_announcement_classes_class_id
+                            FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_announcement_classes_announcement_id ON announcement_classes (announcement_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_announcement_classes_class_id ON announcement_classes (class_id)"
+            ))
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:

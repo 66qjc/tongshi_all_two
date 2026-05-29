@@ -12,7 +12,5 @@ export interface UploadResult {
 export function uploadFile(file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return http.post<any, UploadResult>('/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  })
+  return http.post<any, UploadResult>('/upload', formData)
 }

@@ -2,11 +2,13 @@ import http from './http'
 
 export interface Announcement {
   id: number
-  class_id: number
-  class_name: string
+  course_id: number
+  course_name: string
+  class_ids: number[]
+  class_names: string[]
   teacher_id: string
   teacher_name: string
-  type: 'announcement' | 'quiz'
+  type: 'quiz'
   title: string
   content: string
   question_ids: number[]
@@ -19,10 +21,13 @@ export interface Announcement {
 export interface CompletionReport {
   announcement_id: number
   announcement_title: string
-  class_name: string
+  course_id: number
+  class_names: string[]
   total_students: number
-  completed_students: number
-  incomplete_students: { id: string; name: string }[]
+  completed_count: number
+  completed_students: { id: string; name: string; class_id: number; class_name: string }[]
+  incomplete_students: { id: string; name: string; class_id: number; class_name: string }[]
+  per_class: { class_id: number; class_name: string; total: number; completed: number }[]
   is_expired: boolean
 }
 
@@ -35,10 +40,9 @@ export function getAnnouncement(id: number) {
 }
 
 export function createAnnouncement(data: {
-  class_id: number
-  type: string
+  course_id: number
+  class_ids: number[]
   title: string
-  content?: string
   question_ids?: number[]
   start_time?: string
   end_time?: string
