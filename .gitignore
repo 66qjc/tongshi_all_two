@@ -39,6 +39,7 @@ backend/exports/
 # 6. Claude 本机配置
 .claude/settings.local.json
 AGENTS.md
+CLAUDE.md
 111.txt
 222.txt
 技术方案分析.txt
