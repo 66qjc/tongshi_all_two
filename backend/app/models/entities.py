@@ -293,6 +293,24 @@ class StoredFile(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class UserNotification(Base):
+    """用户个人通知"""
+    __tablename__ = "user_notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(32), ForeignKey(
+        "users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(32), nullable=False, default="")
+    title = Column(String(128), nullable=False, default="")
+    content = Column(Text, default="")
+    related_type = Column(String(32), default="")
+    related_id = Column(Integer, nullable=True, index=True)
+    is_read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User")
+
+
 class ShowcaseItem(Base):
     """悟页面图文展示内容"""
     __tablename__ = "showcase_items"

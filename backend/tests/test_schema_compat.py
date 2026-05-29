@@ -131,6 +131,30 @@ def test_ensure_schema_compatibility_creates_stored_files_table():
             "created_at"}.issubset(columns)
 
 
+def test_ensure_schema_compatibility_creates_user_notifications_table():
+    """兼容脚本应自动创建个人通知表"""
+    engine = create_engine("sqlite:///:memory:")
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    columns = {column["name"] for column in inspector.get_columns("user_notifications")}
+
+    assert "user_notifications" in table_names
+    assert {
+        "id",
+        "user_id",
+        "type",
+        "title",
+        "content",
+        "related_type",
+        "related_id",
+        "is_read",
+        "created_at",
+    }.issubset(columns)
+
+
 def test_ensure_schema_compatibility_adds_file_columns_to_business_tables():
     """兼容脚本应为 materials、projects、project_images 补齐 file_id 列"""
     engine = create_engine("sqlite:///:memory:")

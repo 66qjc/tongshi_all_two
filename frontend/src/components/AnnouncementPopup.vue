@@ -2,12 +2,19 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getUnreadCount, getAnnouncements, markAsRead, type Announcement } from '@/api/announcement'
+import {
+  getNotificationUnreadCount,
+  getNotifications,
+  markNotificationAsRead,
+  type UserNotification,
+} from '@/api/notification'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const visible = ref(false)
 const latestAnnouncement = ref<Announcement | null>(null)
+const latestNotification = ref<UserNotification | null>(null)
 
 onMounted(async () => {
   if (!authStore.isLoggedIn || authStore.user?.role !== 'student') return
@@ -15,6 +22,18 @@ onMounted(async () => {
   if (sessionStorage.getItem('announcement_popup_shown')) return
 
   try {
+    const notificationCount = await getNotificationUnreadCount()
+    if (notificationCount.count > 0) {
+      const list = await getNotifications()
+      const unread = list.filter(item => !item.is_read)
+      if (unread.length > 0) {
+        latestNotification.value = unread[0] ?? null
+        visible.value = true
+        sessionStorage.setItem('announcement_popup_shown', '1')
+        return
+      }
+    }
+
     const { count } = await getUnreadCount()
     if (count > 0) {
       const list = await getAnnouncements()
@@ -33,8 +52,21 @@ function goToInbox() {
   router.push('/inbox')
 }
 
+function goToNotificationAction() {
+  if (latestNotification.value?.type === 'project_rejected' && latestNotification.value.related_id) {
+    visible.value = false
+    router.push(`/create/upload?projectId=${latestNotification.value.related_id}`)
+    return
+  }
+  goToInbox()
+}
+
 async function dismiss() {
-  if (latestAnnouncement.value) {
+  if (latestNotification.value) {
+    try {
+      await markNotificationAsRead(latestNotification.value.id)
+    } catch {}
+  } else if (latestAnnouncement.value) {
     try {
       await markAsRead(latestAnnouncement.value.id)
     } catch {}
@@ -52,11 +84,25 @@ function formatDate(dateStr: string) {
 <template>
   <el-dialog
     v-model="visible"
-    title="新消息通知"
+    :title="latestNotification?.type === 'project_rejected' ? '作品被驳回，请修改' : '新消息通知'"
     width="420px"
     :close-on-click-modal="false"
   >
-    <template v-if="latestAnnouncement">
+    <template v-if="latestNotification">
+      <div class="popup-content">
+        <div class="popup-type">
+          <el-tag type="warning" size="small" effect="plain">作品</el-tag>
+        </div>
+        <h3 class="popup-title">{{ latestNotification.title }}</h3>
+        <div class="popup-meta">
+          <span>个人通知</span>
+          <span class="sep">·</span>
+          <span>{{ formatDate(latestNotification.created_at) }}</span>
+        </div>
+        <p v-if="latestNotification.content" class="popup-body">{{ latestNotification.content }}</p>
+      </div>
+    </template>
+    <template v-else-if="latestAnnouncement">
       <div class="popup-content">
         <div class="popup-type">
           <el-tag :type="latestAnnouncement.type === 'announcement' ? '' : 'success'" size="small" effect="plain">
@@ -79,7 +125,9 @@ function formatDate(dateStr: string) {
     </template>
     <template #footer>
       <el-button @click="dismiss">我知道了</el-button>
-      <el-button type="primary" @click="goToInbox">查看详情</el-button>
+      <el-button type="primary" @click="latestNotification ? goToNotificationAction() : goToInbox()">
+        {{ latestNotification?.type === 'project_rejected' ? '去修改' : '查看详情' }}
+      </el-button>
     </template>
   </el-dialog>
 </template>

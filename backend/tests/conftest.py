@@ -10,6 +10,15 @@ from app.core.security import get_password_hash
 from app.models.entities import User, Chapter, Question, Class, StudentClassEnrollment, Course
 
 
+@pytest.fixture(autouse=True)
+def force_local_storage_for_tests(monkeypatch):
+    """测试中固定使用本地存储，避免依赖外部 S3/SeaweedFS 服务"""
+    from app.services import file_service
+
+    monkeypatch.setattr(file_service.settings, "storage_backend", "local")
+    monkeypatch.setattr(file_service, "_s3_adapter", None)
+
+
 @pytest.fixture(scope="function")
 def db_session():
     """创建独立的 SQLite 内存数据库会话"""

@@ -47,6 +47,7 @@
 | `src/api/admin.ts` | 管理员：教师账号 CRUD + 批量导入 + 密码重置 |
 | `src/api/profile.ts` | 个人中心：错题本 + 收藏作品 |
 | `src/api/showcase.ts` | 悟页面图文内容：管理员增删改查 + 公开只读 |
+| `src/api/notification.ts` | 个人通知：列表、未读数、标记已读 |
 
 课程体系的前端关系：
 

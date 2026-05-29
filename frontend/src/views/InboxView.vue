@@ -1,29 +1,75 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   getAnnouncements, markAsRead, recordCompletion,
   type Announcement,
 } from '@/api/announcement'
+import {
+  getNotifications,
+  markNotificationAsRead,
+  type UserNotification,
+} from '@/api/notification'
 
 const router = useRouter()
 const announcements = ref<Announcement[]>([])
+const notifications = ref<UserNotification[]>([])
 const loading = ref(true)
+
+type InboxItem =
+  | { source: 'announcement'; id: number; title: string; content: string; created_at: string; is_read: boolean; tag: string; raw: Announcement }
+  | { source: 'notification'; id: number; title: string; content: string; created_at: string; is_read: boolean; tag: string; raw: UserNotification }
+
+const inboxItems = computed<InboxItem[]>(() => {
+  const annItems: InboxItem[] = announcements.value.map(item => ({
+    source: 'announcement',
+    id: item.id,
+    title: item.title,
+    content: item.content,
+    created_at: item.created_at,
+    is_read: item.is_read,
+    tag: item.type === 'announcement' ? '公告' : '任务',
+    raw: item,
+  }))
+  const notificationItems: InboxItem[] = notifications.value.map(item => ({
+    source: 'notification',
+    id: item.id,
+    title: item.title,
+    content: item.content,
+    created_at: item.created_at,
+    is_read: item.is_read,
+    tag: item.type === 'project_rejected' ? '作品' : '通知',
+    raw: item,
+  }))
+  return [...notificationItems, ...annItems].sort((a, b) => {
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  })
+})
 
 onMounted(async () => {
   try {
-    announcements.value = await getAnnouncements()
+    const [announcementList, notificationList] = await Promise.all([
+      getAnnouncements(),
+      getNotifications(),
+    ])
+    announcements.value = announcementList
+    notifications.value = notificationList
   } finally {
     loading.value = false
   }
 })
 
-async function handleRead(item: Announcement) {
+async function handleRead(item: InboxItem) {
   if (item.is_read) return
   try {
-    await markAsRead(item.id)
-    item.is_read = true
+    if (item.source === 'announcement') {
+      await markAsRead(item.id)
+      item.raw.is_read = true
+    } else {
+      await markNotificationAsRead(item.id)
+      item.raw.is_read = true
+    }
   } catch {}
 }
 
@@ -48,6 +94,12 @@ function formatDate(dateStr: string) {
   const d = new Date(dateStr)
   return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+
+function goNotificationAction(item: UserNotification) {
+  if (item.type === 'project_rejected' && item.related_id) {
+    router.push(`/create/upload?projectId=${item.related_id}`)
+  }
+}
 </script>
 
 <template>
@@ -71,14 +123,14 @@ function formatDate(dateStr: string) {
       <div class="container">
         <div v-if="loading" class="loading-state">加载中...</div>
 
-        <div v-else-if="announcements.length === 0" class="empty-state">
+        <div v-else-if="inboxItems.length === 0" class="empty-state">
           <p>暂无消息通知</p>
         </div>
 
         <div v-else class="inbox-list">
           <div
-            v-for="item in announcements"
-            :key="item.id"
+            v-for="item in inboxItems"
+            :key="`${item.source}-${item.id}`"
             class="inbox-item"
             :class="{ unread: !item.is_read }"
             @click="handleRead(item)"
@@ -88,32 +140,43 @@ function formatDate(dateStr: string) {
               <div class="item-header">
                 <span class="item-title">{{ item.title }}</span>
                 <el-tag
-                  :type="item.type === 'announcement' ? '' : 'success'"
+                  :type="item.source === 'notification' ? 'warning' : item.raw.type === 'announcement' ? '' : 'success'"
                   size="small"
                   effect="plain"
                 >
-                  {{ item.type === 'announcement' ? '公告' : '任务' }}
+                  {{ item.tag }}
                 </el-tag>
               </div>
               <div class="item-meta">
-                <span>{{ item.teacher_name }}</span>
-                <span class="meta-sep">·</span>
-                <span>{{ item.class_name }}</span>
-                <span class="meta-sep">·</span>
+                <template v-if="item.source === 'announcement'">
+                  <span>{{ item.raw.teacher_name }}</span>
+                  <span class="meta-sep">·</span>
+                  <span>{{ item.raw.class_name }}</span>
+                  <span class="meta-sep">·</span>
+                </template>
+                <template v-else>
+                  <span>个人通知</span>
+                  <span class="meta-sep">·</span>
+                </template>
                 <span>{{ formatDate(item.created_at) }}</span>
               </div>
               <div v-if="item.content" class="item-body">{{ item.content }}</div>
-              <div v-if="item.type === 'quiz' && item.question_ids.length > 0" class="item-quiz">
-                <span>包含 {{ item.question_ids.length }} 道题目</span>
+              <div v-if="item.source === 'announcement' && item.raw.type === 'quiz' && item.raw.question_ids.length > 0" class="item-quiz">
+                <span>包含 {{ item.raw.question_ids.length }} 道题目</span>
                 <router-link :to="`/practice`" class="quiz-link">去练习</router-link>
               </div>
-              <div v-if="item.end_time" class="item-time">
-                <span :class="{ expired: isExpired(item) }">
-                  {{ isExpired(item) ? '已截止' : '截止' }}: {{ formatDate(item.end_time) }}
+              <div v-if="item.source === 'announcement' && item.raw.end_time" class="item-time">
+                <span :class="{ expired: isExpired(item.raw) }">
+                  {{ isExpired(item.raw) ? '已截止' : '截止' }}: {{ formatDate(item.raw.end_time) }}
                 </span>
               </div>
-              <div v-if="item.type === 'announcement' && item.is_read" class="item-actions">
-                <el-button size="small" type="primary" plain round @click.stop="handleComplete(item)">
+              <div v-if="item.source === 'notification' && item.raw.type === 'project_rejected'" class="item-actions">
+                <el-button size="small" type="warning" plain round @click.stop="goNotificationAction(item.raw)">
+                  去修改
+                </el-button>
+              </div>
+              <div v-if="item.source === 'announcement' && item.raw.type === 'announcement' && item.raw.is_read" class="item-actions">
+                <el-button size="small" type="primary" plain round @click.stop="handleComplete(item.raw)">
                   已知晓
                 </el-button>
               </div>

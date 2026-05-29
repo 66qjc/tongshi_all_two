@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getProjects, type Project } from '@/api/project'
+import { getMyProjects, getProjects, type Project } from '@/api/project'
 import { resolveFileUrl } from '@/utils/url'
 
 const router = useRouter()
@@ -12,6 +12,15 @@ const loading = ref(true)
 const currentPage = ref(1)
 const pageSize = ref(12)
 const total = ref(0)
+const myProjects = ref<Project[]>([])
+const mySubmissionsVisible = ref(false)
+const mySubmissionsLoading = ref(false)
+
+const statusMap: Record<string, { label: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
+  pending: { label: '待审核', type: 'warning' },
+  approved: { label: '已通过', type: 'success' },
+  rejected: { label: '已驳回', type: 'danger' },
+}
 
 onMounted(async () => {
   await loadProjects()
@@ -32,6 +41,33 @@ function handlePageChange(page: number) {
   currentPage.value = page
   loadProjects()
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function getProjectStatus(project: Project) {
+  return statusMap[project.status] || { label: project.status || '未知状态', type: 'info' as const }
+}
+
+async function openMySubmissions() {
+  mySubmissionsVisible.value = true
+  await loadMySubmissions()
+}
+
+async function loadMySubmissions() {
+  mySubmissionsLoading.value = true
+  try {
+    const res = await getMyProjects(1, 50)
+    myProjects.value = res.items
+  } finally {
+    mySubmissionsLoading.value = false
+  }
+}
+
+function goProject(project: Project) {
+  router.push(`/create/project/${project.id}`)
+}
+
+function goResubmit(project: Project) {
+  router.push(`/create/upload?projectId=${project.id}`)
 }
 </script>
 
@@ -142,9 +178,45 @@ function handlePageChange(page: number) {
           <el-button type="warning" size="large" round @click="router.push('/create/upload')">
             上传作品
           </el-button>
+          <el-button size="large" round @click="openMySubmissions">
+            我的提交
+          </el-button>
         </div>
       </div>
     </section>
+
+    <el-drawer v-model="mySubmissionsVisible" title="我的提交" size="620px">
+      <div v-loading="mySubmissionsLoading" class="submissions-panel">
+        <div v-if="!mySubmissionsLoading && myProjects.length === 0" class="my-empty-state">
+          <p>你还没有提交作品。</p>
+          <el-button type="warning" round @click="router.push('/create/upload')">上传作品</el-button>
+        </div>
+
+        <div v-else class="submission-list">
+          <div v-for="project in myProjects" :key="project.id" class="submission-item">
+            <div class="submission-main" @click="goProject(project)">
+              <div class="submission-head">
+                <h3>{{ project.title }}</h3>
+                <el-tag :type="getProjectStatus(project).type" size="small" effect="plain">
+                  {{ getProjectStatus(project).label }}
+                </el-tag>
+              </div>
+              <p class="submission-desc">{{ project.description || '暂无作品描述' }}</p>
+              <p v-if="project.status === 'pending'" class="submission-note">作品正在等待教师审核。</p>
+              <p v-if="project.status === 'rejected'" class="submission-reject">
+                驳回原因：{{ project.reject_reason || '请根据教师意见修改后重新提交。' }}
+              </p>
+            </div>
+            <div class="submission-actions">
+              <el-button v-if="project.status === 'rejected'" type="warning" round @click="goResubmit(project)">
+                修改后重新提交
+              </el-button>
+              <el-button v-else round @click="goProject(project)">查看详情</el-button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -353,6 +425,10 @@ function handlePageChange(page: number) {
   border-radius: var(--radius-lg);
 }
 
+.upload-card :deep(.el-button + .el-button) {
+  margin-left: var(--space-sm);
+}
+
 .upload-content h3 {
   font-size: 1.1rem;
   font-weight: 700;
@@ -369,6 +445,82 @@ function handlePageChange(page: number) {
   font-size: 0.8rem !important;
   color: var(--color-text-muted) !important;
   margin-top: var(--space-xs);
+}
+
+.submissions-panel {
+  min-height: 240px;
+}
+
+.my-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-3xl) 0;
+  color: var(--color-text-muted);
+}
+
+.submission-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.submission-item {
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+}
+
+.submission-main {
+  cursor: pointer;
+}
+
+.submission-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.submission-head h3 {
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.submission-desc,
+.submission-note,
+.submission-reject {
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.submission-desc {
+  color: var(--color-text-secondary);
+}
+
+.submission-note {
+  margin-top: var(--space-xs);
+  color: var(--color-text-muted);
+}
+
+.submission-reject {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--radius-sm);
+}
+
+.submission-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-md);
 }
 
 @media (max-width: 1024px) {

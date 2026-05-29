@@ -354,6 +354,22 @@ class UploadOut(BaseModel):
     storage_provider: str = ""
 
 
+# ── Notification ────────────────────────────────────────────────────────────
+class NotificationOut(BaseModel):
+    id: int
+    user_id: str
+    type: str
+    title: str
+    content: str = ""
+    related_type: str = ""
+    related_id: Optional[int] = None
+    is_read: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ── Admin ───────────────────────────────────────────────────────────────────
 class CreateTeacherRequest(BaseModel):
     """管理员手动创建教师账号请求"""

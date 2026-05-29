@@ -120,6 +120,49 @@ def ensure_schema_compatibility(engine) -> None:
         _add_column_if_missing(
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
 
+        # ── user_notifications 表 ───────────────────────────────────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "user_notifications" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE user_notifications (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id VARCHAR(32) NOT NULL,
+                        type VARCHAR(32) NOT NULL DEFAULT '',
+                        title VARCHAR(128) NOT NULL DEFAULT '',
+                        content TEXT DEFAULT '',
+                        related_type VARCHAR(32) DEFAULT '',
+                        related_id INTEGER,
+                        is_read BOOLEAN NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE user_notifications (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        user_id VARCHAR(32) NOT NULL,
+                        type VARCHAR(32) NOT NULL DEFAULT '',
+                        title VARCHAR(128) NOT NULL DEFAULT '',
+                        content TEXT,
+                        related_type VARCHAR(32) DEFAULT '',
+                        related_id INTEGER NULL,
+                        is_read BOOLEAN NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_user_notifications_user_id
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    )
+                """))
+
+            conn.execute(text(
+                "CREATE INDEX ix_user_notifications_user_id ON user_notifications (user_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_user_notifications_related_id ON user_notifications (related_id)"
+            ))
+
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:
     """如果表存在且缺少指定列，则 ALTER TABLE ADD COLUMN。"""

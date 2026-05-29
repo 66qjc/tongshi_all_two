@@ -43,6 +43,7 @@
 - `admin_routes.py`：管理员教师账号 CRUD、批量导入、密码重置
 - `profile_routes.py`：个人中心错题本、收藏作品
 - `showcase_routes.py`：悟页面图文内容，管理员 CRUD，公开只读
+- `notification_routes.py`：个人通知列表、未读数、标记已读
 
 ## 核心后端服务
 
@@ -58,6 +59,7 @@
 - `portfolio_service.py`
 - `task_service.py`
 - `file_service.py`
+- `notification_service.py`
 
 ## 存储服务
 

@@ -9,7 +9,7 @@ from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, ProjectCreate, ProjectUpdate
 from app.services.project_service import (
     list_approved_projects, get_project, get_user_projects,
-    create_project, toggle_like, update_project,
+    can_view_project, create_project, toggle_like, update_project,
 )
 from app.models.entities import User
 
@@ -61,9 +61,15 @@ def get_my_projects(
 
 
 @router.get("/{project_id}", summary="作品详情", description="查看指定作品的完整信息")
-def get_project_detail(project_id: int, db: Session = Depends(get_db), _: AuthUser = Depends(get_current_user)):
+def get_project_detail(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
     p = get_project(db, project_id)
     if not p:
+        raise BusinessException(404, "作品不存在")
+    if not can_view_project(p, current_user.id, current_user.role):
         raise BusinessException(404, "作品不存在")
     return success(_format_project(db, p))
 

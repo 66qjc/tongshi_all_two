@@ -32,7 +32,8 @@ backend/
 │   │       ├── file_routes.py   # 统一文件访问 GET /api/files/{file_id}
 │   │       ├── admin_routes.py  # 管理员：教师账号 CRUD + 批量导入 + 密码重置
 │   │       ├── profile_routes.py# 个人中心：错题本 + 收藏作品
-│   │       └── showcase_routes.py # 悟页面图文内容：管理员 CRUD + 公开只读
+│   │       ├── showcase_routes.py # 悟页面图文内容：管理员 CRUD + 公开只读
+│   │       └── notification_routes.py # 个人通知：列表、未读数、标记已读
 │   │
 │   ├── services/                 # 业务逻辑层
 │   │   ├── auth_service.py       # 登录认证、注册、忘记密码
@@ -49,7 +50,8 @@ backend/
 │   │   ├── storage_service.py    # 存储抽象协议 + StoredObject
 │   │   ├── storage_local.py      # 本地文件适配器
 │   │   ├── storage_s3.py         # SeaweedFS S3 适配器
-│   │   └── file_service.py       # 文件元数据写入、URL 构建、记录解析
+│   │   ├── file_service.py       # 文件元数据写入、URL 构建、记录解析
+│   │   └── notification_service.py # 个人通知创建、查询、已读状态
 │   │
 │   ├── models/
 │   │   └── entities.py           # 所有 SQLAlchemy ORM 模型集中定义（18 张表，含 StoredFile、ShowcaseItem）
@@ -169,7 +171,7 @@ Client 请求
 - 角色：`student`（学生）、`teacher`（教师）、`admin`（管理员），通过 `require_role()` 依赖注入控制
 - 首次登录教师强制修改密码（`needs_password_change` 标记）
 
-### 数据库表（18 张）
+### 数据库表（19 张）
 
 | 表名 | 用途 |
 |------|------|
@@ -191,6 +193,7 @@ Client 请求
 | `activity_events` | 课程活动时间线 |
 | `stored_files` | 文件元数据（存储后端、桶、路径、原始名称） |
 | `showcase_items` | 悟页面图文展示内容（section、标题、封面、排序） |
+| `user_notifications` | 用户个人通知（作品驳回等单人消息） |
 
 ### 开发约定
 

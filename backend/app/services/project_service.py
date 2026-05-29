@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.models.entities import Project, ProjectImage, ProjectLike, User
+from app.services.notification_service import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,14 @@ def list_approved_projects(db: Session, page: int = None, page_size: int = None)
 
 def get_project(db: Session, project_id: int):
     return db.query(Project).filter(Project.id == project_id).first()
+
+
+def can_view_project(project: Project, user_id: str, role: str) -> bool:
+    if project.status == "approved":
+        return True
+    if role in {"teacher", "admin"}:
+        return True
+    return project.author_id == user_id
 
 
 def get_user_projects(db: Session, user_id: str, page: int = None, page_size: int = None):
@@ -116,6 +125,8 @@ def toggle_like(db: Session, user_id: str, project_id: int):
     project = get_project(db, project_id)
     if not project:
         return None
+    if project.status != "approved":
+        raise BusinessException(400, "作品未通过审核，暂不能点赞")
     existing = db.query(ProjectLike).filter(
         ProjectLike.user_id == user_id, ProjectLike.project_id == project_id).first()
     if existing:
@@ -145,6 +156,15 @@ def reject_project(db: Session, project_id: int, reason: str):
         return None
     project.status = "rejected"
     project.reject_reason = reason
+    create_notification(
+        db,
+        user_id=project.author_id,
+        type_="project_rejected",
+        title="作品被驳回，请修改",
+        content=f"你的作品「{project.title}」被驳回，原因：{reason or '请根据教师意见修改后重新提交'}",
+        related_type="project",
+        related_id=project.id,
+    )
     db.commit()
     logger.info("作品驳回: project_id=%s, title=%s, reason=%s",
                 project_id, project.title, reason)

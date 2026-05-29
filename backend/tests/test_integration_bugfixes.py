@@ -2,7 +2,8 @@
 import io
 from pathlib import Path
 
-from app.models.entities import Project, StoredFile
+from app.core.security import create_access_token, get_password_hash
+from app.models.entities import Project, StoredFile, User
 from tests.conftest import auth_header
 
 
@@ -593,6 +594,85 @@ class TestIntegrationBugfixes:
         detail = client.get(f"/api/projects/{project_id}", headers=auth_header(student_token))
         data = detail.json()["data"]
         assert data["report_file_id"] == file_id
+
+    def test_reject_project_creates_student_notification(self, client, db_session, teacher_token, student_token):
+        """教师驳回作品后，作者应收到个人通知"""
+        project = Project(
+            title="待审作品",
+            author_id="2025001",
+            major="自动化专业",
+            description="测试描述",
+            status="pending",
+        )
+        db_session.add(project)
+        db_session.commit()
+
+        resp = client.post(
+            f"/api/teacher/projects/{project.id}/reject",
+            json={"reason": "报告缺少说明"},
+            headers=auth_header(teacher_token),
+        )
+        assert resp.json()["code"] == 0
+
+        notices_resp = client.get("/api/notifications", headers=auth_header(student_token))
+        notices_data = notices_resp.json()
+
+        assert notices_data["code"] == 0
+        assert len(notices_data["data"]) == 1
+        notice = notices_data["data"][0]
+        assert notice["type"] == "project_rejected"
+        assert notice["title"] == "作品被驳回，请修改"
+        assert notice["related_type"] == "project"
+        assert notice["related_id"] == project.id
+        assert notice["is_read"] is False
+        assert "待审作品" in notice["content"]
+        assert "报告缺少说明" in notice["content"]
+
+    def test_student_can_read_own_rejected_project_but_other_student_cannot(self, client, db_session, student_token):
+        """驳回作品仅作者本人、教师或管理员可查看"""
+        other = User(
+            id="2025002",
+            name="其他学生",
+            hashed_password=get_password_hash("abc123"),
+            role="student",
+            major="自动化专业",
+        )
+        project = Project(
+            title="作者自己的驳回作品",
+            author_id="2025001",
+            major="自动化专业",
+            description="测试描述",
+            status="rejected",
+            reject_reason="需要补充报告",
+        )
+        db_session.add_all([other, project])
+        db_session.commit()
+        other_token = create_access_token({"sub": "2025002"})
+
+        owner_resp = client.get(f"/api/projects/{project.id}", headers=auth_header(student_token))
+        other_resp = client.get(f"/api/projects/{project.id}", headers=auth_header(other_token))
+
+        assert owner_resp.json()["code"] == 0
+        assert owner_resp.json()["data"]["reject_reason"] == "需要补充报告"
+        assert other_resp.json()["code"] in {403, 404}
+
+    def test_rejected_project_cannot_be_liked(self, client, db_session, student_token):
+        """未通过审核的作品不能被点赞"""
+        project = Project(
+            title="不可点赞驳回作品",
+            author_id="2025001",
+            major="自动化专业",
+            description="测试描述",
+            status="rejected",
+        )
+        db_session.add(project)
+        db_session.commit()
+
+        resp = client.post(f"/api/projects/{project.id}/like", headers=auth_header(student_token))
+        data = resp.json()
+
+        assert data["code"] == 400
+        assert "未通过审核" in data["message"]
 
     def test_batch_download_returns_zip_for_approved_projects(self, client, db_session, teacher_token):
         """批量下载应返回 ZIP 格式"""
