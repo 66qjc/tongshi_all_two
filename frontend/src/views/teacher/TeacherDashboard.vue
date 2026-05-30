@@ -8,7 +8,7 @@ const router = useRouter()
 
 const stats = ref([
   { label: '总学生数', value: '0', color: 'var(--color-learn)' },
-  { label: '已发布章节', value: '0 / 0', color: 'var(--color-primary)' },
+  { label: '我的课程数', value: '0', color: 'var(--color-primary)' },
   { label: '待审作品', value: '0', color: 'var(--color-create)' },
   { label: '本周练习量', value: '0', color: 'var(--color-act)' },
 ])
@@ -24,7 +24,7 @@ onMounted(async () => {
     const data = await getTeacherStats()
     stats.value = [
       { label: '总学生数', value: String(data.total_students), color: 'var(--color-learn)' },
-      { label: '已发布章节', value: `${data.published_chapters} / 6`, color: 'var(--color-primary)' },
+      { label: '我的课程数', value: String(data.my_courses), color: 'var(--color-primary)' },
       { label: '待审作品', value: String(data.pending_reviews), color: 'var(--color-create)' },
       { label: '本周练习量', value: String(data.weekly_exercises), color: 'var(--color-act)' },
     ]

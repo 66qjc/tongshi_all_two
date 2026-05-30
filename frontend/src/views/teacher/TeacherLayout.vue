@@ -7,14 +7,15 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const navItems = [
-  { name: '概览', path: '/teacher', icon: '&#9673;' },
-  { name: '班级管理', path: '/teacher/classes', icon: '&#9881;' },
-  { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
-  { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
+  { name: '概述', path: '/teacher', icon: '&#9673;' },
   { name: '课程管理', path: '/teacher/courses', icon: '&#9670;' },
-  { name: '任务发布', path: '/teacher/announcements', icon: '&#9993;' },
-  { name: '学生数据', path: '/teacher/students', icon: '&#9783;' },
+  { name: '班级管理', path: '/teacher/classes', icon: '&#9881;' },
+  { name: '发布题目', path: '/teacher/publish', icon: '&#9993;' },
+  { name: '学生成绩', path: '/teacher/grades', icon: '&#9783;' },
   { name: '作品审核', path: '/teacher/reviews', icon: '&#10003;' },
+  { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
+  { name: '学生管理', path: '/teacher/student-admin', icon: '&#9782;' },
+  { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
 ]
 
 function isActive(path: string) {

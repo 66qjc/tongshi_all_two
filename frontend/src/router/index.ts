@@ -51,12 +51,6 @@ const router = createRouter({
       meta: { title: '课程详情' },
     },
     {
-      path: '/learn/:chapterId',
-      name: 'chapter-detail',
-      component: () => import('../views/ChapterView.vue'),
-      meta: { title: '章节学习' },
-    },
-    {
       path: '/practice',
       name: 'practice',
       component: () => import('../views/PracticeView.vue'),
@@ -75,7 +69,7 @@ const router = createRouter({
       meta: { title: '行 · 知行合一' },
     },
     {
-      path: '/practice/quiz/:chapterId',
+      path: '/practice/quiz/:courseId',
       name: 'practice-quiz',
       component: () => import('../views/PracticeQuizView.vue'),
       meta: { title: '练 · 在线练习' },
@@ -146,16 +140,22 @@ const router = createRouter({
           meta: { title: '课程管理' },
         },
         {
-          path: 'announcements',
-          name: 'teacher-announcements',
+          path: 'publish',
+          name: 'teacher-publish',
           component: () => import('../views/teacher/TeacherAnnouncements.vue'),
-          meta: { title: '任务发布' },
+          meta: { title: '发布题目' },
         },
         {
-          path: 'students',
-          name: 'teacher-students',
+          path: 'grades',
+          name: 'teacher-grades',
           component: () => import('../views/teacher/TeacherStudents.vue'),
-          meta: { title: '学生数据' },
+          meta: { title: '学生成绩' },
+        },
+        {
+          path: 'student-admin',
+          name: 'teacher-student-admin',
+          component: () => import('../views/teacher/TeacherStudentAdmin.vue'),
+          meta: { title: '学生管理' },
         },
         {
           path: 'reviews',

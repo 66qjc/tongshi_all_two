@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getCourses,
@@ -12,6 +13,7 @@ import {
 // ── 列表状态 ──────────────────────────────────────────────
 const courses = ref<Course[]>([])
 const loading = ref(true)
+const router = useRouter()
 
 // ── 弹窗状态 ──────────────────────────────────────────────
 const dialogVisible = ref(false)
@@ -80,7 +82,7 @@ async function handleSave() {
 async function handleDelete(course: Course) {
   try {
     await ElMessageBox.confirm(
-      `确定删除课程「${course.name}」？删除后相关章节和题目将无法通过该课程访问。`,
+      `确定删除课程「${course.name}」？存在资料、题目、学习记录或班级时系统会拒绝删除。`,
       '确认删除',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
     )
@@ -92,6 +94,10 @@ async function handleDelete(course: Course) {
       ElMessage.error('删除失败，请稍后重试')
     }
   }
+}
+
+function openMaterials(course: Course) {
+  router.push({ path: '/teacher/materials', query: { course_id: course.id } })
 }
 
 // ── 格式化创建时间 ─────────────────────────────────────────
@@ -113,9 +119,9 @@ function formatDate(dateStr: string) {
     <el-table :data="courses" stripe style="width: 100%" v-loading="loading">
       <el-table-column type="index" label="序号" width="70" align="center" />
       <el-table-column prop="name" label="课程名称" min-width="200" />
-      <el-table-column label="章节数" width="100" align="center">
+      <el-table-column label="资料数" width="100" align="center">
         <template #default="{ row }">
-          <span class="count-badge">{{ row.chapter_count ?? 0 }}</span>
+          <span class="count-badge">{{ row.material_count ?? 0 }}</span>
         </template>
       </el-table-column>
       <el-table-column label="题目数" width="100" align="center">
@@ -128,8 +134,9 @@ function formatDate(dateStr: string) {
           {{ formatDate(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
+          <el-button text size="small" @click="openMaterials(row)">查看资料</el-button>
           <el-button text size="small" @click="openEdit(row)">编辑</el-button>
           <el-button type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
         </template>

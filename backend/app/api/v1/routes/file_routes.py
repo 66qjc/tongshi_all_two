@@ -7,7 +7,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.core.security import get_current_user
 from app.db.session import get_db
 from app.services.file_service import resolve_file_stream
 
@@ -77,9 +76,8 @@ def get_file(
     file_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
 ):
-    """通过 file_id 统一访问文件，自动分发到本地或 S3 存储"""
+    """通过 file_id 统一访问文件，自动分发到本地或 S3 存储。"""
     record, stream = resolve_file_stream(db, file_id)
 
     if record is None:

@@ -20,13 +20,13 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
     )
     db.add(attempt)
 
-    # Update per-chapter progress
+    # 更新课程维度进度
     sp = db.query(StudentProgress).filter(
         StudentProgress.user_id == user_id,
-        StudentProgress.chapter_id == question.chapter_id,
+        StudentProgress.course_id == question.course_id,
     ).first()
     if not sp:
-        sp = StudentProgress(user_id=user_id, chapter_id=question.chapter_id)
+        sp = StudentProgress(user_id=user_id, course_id=question.course_id)
         db.add(sp)
 
     # 先 flush 确保新增的 attempt 对后续查询可见（session 设置了 autoflush=False）
@@ -36,7 +36,7 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
         QuizAttempt.user_id == user_id,
         QuizAttempt.question_id.in_(
             db.query(Question.id).filter(
-                Question.chapter_id == question.chapter_id)
+                Question.course_id == question.course_id)
         ),
     ).count()
     correct_count = db.query(QuizAttempt).filter(
@@ -44,7 +44,7 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str)
         QuizAttempt.is_correct == True,
         QuizAttempt.question_id.in_(
             db.query(Question.id).filter(
-                Question.chapter_id == question.chapter_id)
+                Question.course_id == question.course_id)
         ),
     ).count()
     sp.questions_done = total
@@ -108,13 +108,13 @@ def get_quiz_stats(db: Session, user_id: str):
     }
 
 
-def get_chapter_quiz_stats(db: Session, user_id: str, chapter_id: int):
+def get_course_quiz_stats(db: Session, user_id: str, course_id: int):
     sp = db.query(StudentProgress).filter(
         StudentProgress.user_id == user_id,
-        StudentProgress.chapter_id == chapter_id,
+        StudentProgress.course_id == course_id,
     ).first()
     return {
-        "chapter_id": chapter_id,
+        "course_id": course_id,
         "questions_done": sp.questions_done if sp else 0,
         "accuracy": sp.accuracy if sp else 0,
     }
@@ -147,7 +147,7 @@ def get_wrong_questions(db: Session, user_id: str):
             continue
         result.append({
             "question_id": q.id,
-            "chapter_id": q.chapter_id,
+            "course_id": q.course_id,
             "stem": q.stem,
             "options": q.options,
             "answer": q.answer,

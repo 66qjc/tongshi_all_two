@@ -59,20 +59,20 @@ def _format_project(db: Session, p):
     }
 
 
-@router.get("/stats", summary="工作台概览", description="教师端：返回总学生数、已发布章节数、待审核作品数、练习题量等教学数据")
-def teacher_stats(db: Session = Depends(get_db), _: AuthUser = Depends(require_role("teacher"))):
-    return success(get_teacher_stats(db))
+@router.get("/stats", summary="工作台概览", description="教师端：返回总学生数、我的课程数、待审核作品数、练习题量等教学数据")
+def teacher_stats(db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
+    return success(get_teacher_stats(db, current_user.id))
 
 
-@router.get("/students", summary="学生数据", description="教师端：返回所有学生的学号、姓名、专业、班级、学习进度和练习统计")
+@router.get("/students", summary="学生成绩", description="教师端：返回所有学生的学号、姓名、专业、班级、学习进度和练习统计")
 def get_students(
     class_id: int = None,
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("teacher")),
+    current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    items, total = list_students(db, class_id, page, page_size)
+    items, total = list_students(db, current_user.id, class_id, page, page_size)
     return paginated_success(items, total, page, page_size)
 
 
@@ -82,9 +82,9 @@ def get_all_projects(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("teacher")),
+    current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    projects, total = list_all_projects(db, status, page, page_size)
+    projects, total = list_all_projects(db, status, page, page_size, current_user.id)
     return paginated_success([_format_project(db, p) for p in projects], total, page, page_size)
 
 
@@ -101,7 +101,7 @@ def reject(
     project_id: int,
     data: ProjectReviewAction,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("teacher")),
+    current_user: AuthUser = Depends(require_role("teacher")),
 ):
     p = reject_project(db, project_id, data.reason or "")
     if not p:
@@ -174,18 +174,14 @@ def _get_project_file_content(db: Session, p: Project) -> tuple[bytes | None, st
 def batch_download_projects(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("teacher")),
+    current_user: AuthUser = Depends(require_role("teacher")),
 ):
     # 查询已通过的作品（同时支持新 report_file_id 和旧 report_url）
-    projects = (
-        db.query(Project)
-        .filter(Project.status == "approved")
-        .filter(
-            (Project.report_file_id.isnot(None)) |
-            ((Project.report_url != "") & (Project.report_url.isnot(None)))
-        )
-        .all()
-    )
+    projects, _ = list_all_projects(db, "approved", teacher_id=current_user.id)
+    projects = [
+        p for p in projects
+        if getattr(p, "report_file_id", None) or getattr(p, "report_url", "")
+    ]
 
     if not projects:
         raise BusinessException(404, "没有可下载的作品报告")
@@ -257,11 +253,11 @@ def batch_download_projects(
 
 
 # ──────────────────────────────────────────────────────────────
-# 学生数据 Excel 导出
+# 学生成绩 Excel 导出
 # ──────────────────────────────────────────────────────────────
 
 def _write_student_sheet(ws, students: list) -> None:
-    """向工作表写入学生数据：表头行、数据行、末尾汇总行"""
+    """向工作表写入学生成绩：表头行、数据行、末尾汇总行"""
     # 表头行
     headers = ["序号", "学号", "姓名", "专业", "班级", "学习进度(%)", "练习题数", "正确率(%)"]
     ws.append(headers)
@@ -289,21 +285,21 @@ def _write_student_sheet(ws, students: list) -> None:
                   avg_exercises, avg_accuracy])
 
 
-@router.get("/students/export", summary="导出学生数据", description="教师端：将学生数据导出为 Excel 文件，支持按班级筛选")
+@router.get("/students/export", summary="导出学生成绩", description="教师端：将学生成绩导出为 Excel 文件，支持按班级筛选")
 def export_students_excel(
     class_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("teacher")),
+    current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    """导出学生数据为 Excel。指定 class_id 时单 Sheet，否则全部班级多 Sheet"""
-    # 复用现有 service 获取学生数据（不分页，全量导出）
-    students, _ = list_students(db, class_id=class_id)
+    """导出学生成绩为 Excel。指定 class_id 时单 Sheet，否则全部班级多 Sheet"""
+    # 复用现有 service 获取学生成绩（不分页，全量导出）
+    students, _ = list_students(db, current_user.id, class_id=class_id)
     today = date.today().strftime("%Y-%m-%d")
     wb = Workbook()
 
     if class_id is not None:
         # 情况 A：指定班级——单 Sheet 导出
-        # 优先从学生数据获取班级名，兜底查数据库
+        # 优先从学生成绩获取班级名，兜底查数据库
         class_name = ""
         if students:
             class_name = students[0]["class_name"] or ""
@@ -315,7 +311,7 @@ def export_students_excel(
         ws.title = class_name[:31]  # openpyxl 限制 Sheet 名最长 31 字符
         _write_student_sheet(ws, students)
 
-        filename = f"学生数据_{class_name}_{today}.xlsx"
+        filename = f"学生成绩_{class_name}_{today}.xlsx"
     else:
         # 情况 B：全部学生——多 Sheet 导出
         # Sheet 1：全部学生汇总
@@ -351,7 +347,7 @@ def export_students_excel(
         for row in summary_rows:
             ws_summary.append(row)
 
-        filename = f"学生数据_全部班级_{today}.xlsx"
+        filename = f"学生成绩_全部班级_{today}.xlsx"
 
     # 将工作簿写入内存缓冲区，避免落盘
     buffer = io.BytesIO()

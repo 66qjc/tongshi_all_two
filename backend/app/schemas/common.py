@@ -45,7 +45,8 @@ class RegisterRequest(BaseModel):
 class ClassOut(BaseModel):
     id: int
     name: str
-    major: str
+    course_id: int
+    course_name: str = ""
     student_count: int = 0
     created_at: Optional[str] = None
 
@@ -55,7 +56,7 @@ class ClassOut(BaseModel):
 
 class ClassCreate(BaseModel):
     name: str = Field(min_length=1)
-    major: str = Field(min_length=1)
+    course_id: int
 
 
 class ClassStudentOut(BaseModel):
@@ -78,10 +79,9 @@ class ClassEnrollRequest(BaseModel):
 
 
 class AnnouncementCreate(BaseModel):
-    class_id: int
-    type: str = Field(min_length=1)
+    course_id: int
+    class_ids: List[int] = Field(default_factory=list)
     title: str = Field(min_length=1)
-    content: str = ""
     question_ids: List[int] = []
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -95,68 +95,11 @@ class CourseUpdateRequest(BaseModel):
     name: str = Field(min_length=1)
 
 
-# ── Chapter ─────────────────────────────────────────────────────────────────
-class ChapterOut(BaseModel):
-    id: int
-    num: str
-    title: str
-    desc: str
-    topics: List[str]
-    status: str
-    videos: int = 0
-    docs: int = 0
-    progress: int = 0
-    course_id: Optional[int] = None
-    day_of_week: str = ""
-    class_periods: str = ""
-    schedule_note: str = ""
-
-    class Config:
-        from_attributes = True
-
-
-class ChapterUpdate(BaseModel):
-    status: Optional[str] = None
-
-
-class ChapterCreate(BaseModel):
-    num: str = Field(min_length=1)
-    title: str = Field(min_length=1)
-    desc: str = ""
-    topics: List[str] = []
-    status: str = "即将发布"
-    sort_order: int = 0
-    course_id: Optional[int] = None
-    day_of_week: str = ""
-    class_periods: str = ""
-    schedule_note: str = ""
-
-
-class ChapterManageUpdate(BaseModel):
-    num: str = Field(min_length=1)
-    title: str = Field(min_length=1)
-    desc: str = ""
-    topics: List[str] = []
-    status: str = "即将发布"
-    sort_order: int = 0
-    course_id: Optional[int] = None
-    day_of_week: str = ""
-    class_periods: str = ""
-    schedule_note: str = ""
-
-
-class ChapterScheduleUpdate(BaseModel):
-    course_id: Optional[int] = None
-    day_of_week: Optional[str] = None
-    class_periods: Optional[str] = None
-    schedule_note: Optional[str] = None
-
-
 # ── Material ────────────────────────────────────────────────────────────────
 class MaterialOut(BaseModel):
     id: int
-    chapter_id: int
-    chapter: str = ""
+    course_id: int
+    course_name: str = ""
     type: str
     title: str
     url: str
@@ -171,7 +114,7 @@ class MaterialOut(BaseModel):
 
 
 class MaterialCreate(BaseModel):
-    chapter_id: int
+    course_id: int
     type: str = "video"
     title: str = Field(min_length=1)
     url: str = ""
@@ -183,9 +126,7 @@ class MaterialCreate(BaseModel):
 class QuestionOut(BaseModel):
     id: int
     type: str
-    chapter_id: int
-    chapter_name: str = ""
-    course_id: Optional[int] = None
+    course_id: int
     course_name: str = ""
     stem: str
     options: List[str] = []
@@ -198,7 +139,7 @@ class QuestionOut(BaseModel):
 
 class QuestionCreate(BaseModel):
     type: str = "choice"
-    chapter_id: int
+    course_id: int
     stem: str
     options: List[str] = []
     answer: str
@@ -235,8 +176,8 @@ class QuizStatsOut(BaseModel):
     today_count: int
 
 
-class ChapterQuizStatsOut(BaseModel):
-    chapter_id: int
+class CourseQuizStatsOut(BaseModel):
+    course_id: int
     questions_done: int
     accuracy: int
 
@@ -323,7 +264,7 @@ class StudentOut(BaseModel):
 
 class TeacherStatsOut(BaseModel):
     total_students: int
-    published_chapters: int
+    my_courses: int
     pending_reviews: int
     weekly_exercises: int
 

@@ -1,4 +1,4 @@
-"""File upload routes"""
+"""文件上传路由"""
 from fastapi import APIRouter, Depends, UploadFile, File
 
 from app.core.security import get_current_user
@@ -17,7 +17,7 @@ from app.services.file_service import (
 router = APIRouter(tags=["upload"])
 
 
-@router.post("/upload", summary="文件上传", description="上传图片、文档、视频或压缩包文件（最大 50MB），返回访问 URL")
+@router.post("/upload", summary="文件上传", description="上传图片、文档、视频或压缩包文件，返回访问 URL")
 async def upload_file(
     file: UploadFile = File(...),
     current_user: AuthUser = Depends(get_current_user),

@@ -47,39 +47,35 @@ class TestAuth:
         assert data["data"]["name"] == "测试学生"
 
 
-class TestChapter:
-    """章节接口测试"""
+class TestCourseContent:
+    """课程内容接口测试"""
 
-    def test_list_chapters(self, client, student_token):
-        resp = client.get("/api/chapters", headers=auth_header(student_token))
+    def test_list_courses(self, client, student_token):
+        resp = client.get("/api/questions/courses", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 0
         assert len(data["data"]) >= 1
-        ch = data["data"][0]
-        assert ch["num"] == "01"
-        assert ch["title"] == "测试章节"
-        # 新字段存在
-        assert "schedule_note" in ch
-        assert "course_id" in ch
-        assert "course_name" in ch
-        assert ch["course_name"] == "测试课程"
+        course = data["data"][0]
+        assert course["name"] == "测试课程"
+        assert "material_count" in course
+        assert "question_count" in course
 
-    def test_chapter_detail(self, client, student_token):
-        resp = client.get("/api/chapters/01", headers=auth_header(student_token))
+    def test_course_detail(self, client, student_token):
+        resp = client.get("/api/questions/courses/1", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 0
-        assert data["data"]["num"] == "01"
-        assert "day_of_week" in data["data"]
+        assert data["data"]["name"] == "测试课程"
+        assert "class_count" in data["data"]
 
-    def test_chapter_detail_not_found(self, client, student_token):
-        resp = client.get("/api/chapters/99", headers=auth_header(student_token))
+    def test_course_detail_not_found(self, client, student_token):
+        resp = client.get("/api/questions/courses/99", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 404
 
-    def test_update_schedule_requires_teacher(self, client, student_token):
-        """学生无权更新排课"""
-        resp = client.put("/api/chapters/1/schedule",
-                          json={"day_of_week": "周一"},
+    def test_create_question_requires_teacher(self, client, student_token):
+        """学生无权新增题目"""
+        resp = client.post("/api/questions",
+                          json={"course_id": 1, "type": "choice", "stem": "测试", "options": [], "answer": "A"},
                           headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 403

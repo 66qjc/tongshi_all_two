@@ -1,29 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getChapterQuestions, type Question } from '@/api/question'
+import { getCourseQuestions, type Question } from '@/api/question'
 import { submitAnswer as apiSubmitAnswer } from '@/api/quiz'
 
 const route = useRoute()
 const router = useRouter()
-const chapterId = computed(() => Number(route.params.chapterId) || 1)
-
-const chapterNames: Record<number, string> = {
-  1: '人工智能概述',
-  2: '计算机基础知识',
-  3: 'AI 理论基础',
-  4: 'AI 工具使用',
-  5: 'AI 前沿与应用',
-  6: 'AI 伦理与未来',
-}
+const courseId = computed(() => Number(route.params.courseId) || 1)
 
 const mockQuestions = ref<Question[]>([])
 const loading = ref(true)
 
-watch(chapterId, async () => {
+watch(courseId, async () => {
   loading.value = true
   try {
-    mockQuestions.value = await getChapterQuestions(chapterId.value)
+    mockQuestions.value = await getCourseQuestions(courseId.value)
   } finally {
     loading.value = false
   }
@@ -115,7 +106,7 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
             退出练习
           </button>
           <div class="quiz-info">
-            <h2>第 {{ String(chapterId).padStart(2, '0') }} 章 · {{ chapterNames[chapterId] || '未知章节' }}</h2>
+            <h2>课程练习</h2>
             <span class="quiz-progress-text">{{ currentIndex + 1 }} / {{ totalQuestions }} 题</span>
           </div>
         </div>

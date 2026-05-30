@@ -2,8 +2,8 @@
 
 export interface Material {
   id: number
-  chapter_id: number
-  chapter: string
+  course_id: number
+  course_name: string
   type: 'video' | 'pdf'
   title: string
   url: string
@@ -15,7 +15,7 @@ export interface Material {
 }
 
 export interface MaterialCreatePayload {
-  chapter_id: number
+  course_id: number
   type: 'video' | 'pdf'
   title: string
   url: string
@@ -23,8 +23,12 @@ export interface MaterialCreatePayload {
   file_id?: number
 }
 
-export function getAllMaterials() {
-  return http.get<any, Material[]>('/materials')
+export function getAllMaterials(params?: { course_id?: number }) {
+  return http.get<any, Material[]>('/materials', { params })
+}
+
+export function getCourseContents(courseId: number) {
+  return http.get<any, Material[]>(`/courses/${courseId}/contents`)
 }
 
 export function createMaterial(data: MaterialCreatePayload) {

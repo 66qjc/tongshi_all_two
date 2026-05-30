@@ -1,28 +1,67 @@
 """Teacher service"""
 from sqlalchemy.orm import Session
-from app.models.entities import User, Chapter, Project, QuizAttempt, StudentProgress, StudentClassEnrollment, Class
+from app.models.entities import User, Course, Project, QuizAttempt, StudentProgress, StudentClassEnrollment, Class
 
 
-def get_teacher_stats(db: Session):
-    total_students = db.query(User).filter(User.role == "student").count()
-    published_chapters = db.query(Chapter).filter(Chapter.status == "已发布").count()
-    pending_reviews = db.query(Project).filter(Project.status == "pending").count()
-    weekly_exercises = db.query(QuizAttempt).count()  # simplified: total instead of weekly
+def _teacher_class_ids(db: Session, teacher_id: str) -> list[int]:
+    return [
+        row.id for row in db.query(Class.id)
+        .join(Course, Course.id == Class.course_id)
+        .filter(Course.created_by == teacher_id)
+        .all()
+    ]
+
+
+def _teacher_student_ids(db: Session, teacher_id: str) -> list[str]:
+    class_ids = _teacher_class_ids(db, teacher_id)
+    if not class_ids:
+        return []
+    return [
+        row.user_id for row in db.query(StudentClassEnrollment.user_id)
+        .filter(StudentClassEnrollment.class_id.in_(class_ids))
+        .distinct()
+        .all()
+    ]
+
+
+def get_teacher_stats(db: Session, teacher_id: str):
+    student_ids = _teacher_student_ids(db, teacher_id)
+    total_students = len(student_ids)
+    my_courses = db.query(Course).filter(Course.created_by == teacher_id).count()
+    pending_reviews_query = db.query(Project).filter(Project.status == "pending")
+    if student_ids:
+        pending_reviews_query = pending_reviews_query.filter(Project.author_id.in_(student_ids))
+    else:
+        pending_reviews_query = pending_reviews_query.filter(False)
+    pending_reviews = pending_reviews_query.count()
+    weekly_exercises_query = db.query(QuizAttempt)
+    if student_ids:
+        weekly_exercises_query = weekly_exercises_query.filter(QuizAttempt.user_id.in_(student_ids))
+    else:
+        weekly_exercises_query = weekly_exercises_query.filter(False)
+    weekly_exercises = weekly_exercises_query.count()  # simplified: total instead of weekly
     return {
         "total_students": total_students,
-        "published_chapters": published_chapters,
+        "my_courses": my_courses,
         "pending_reviews": pending_reviews,
         "weekly_exercises": weekly_exercises,
     }
 
 
-def list_students(db: Session, class_id: int = None, page: int = None, page_size: int = None):
-    query = db.query(User).filter(User.role == "student")
+def list_students(db: Session, teacher_id: str, class_id: int = None, page: int = None, page_size: int = None):
+    class_ids = _teacher_class_ids(db, teacher_id)
     if class_id:
-        query = (
-            query.join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
-            .filter(StudentClassEnrollment.class_id == class_id)
-        )
+        if class_id not in class_ids:
+            return [], 0
+        class_ids = [class_id]
+    if not class_ids:
+        return [], 0
+    query = (
+        db.query(User)
+        .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
+        .filter(User.role == "student", StudentClassEnrollment.class_id.in_(class_ids))
+        .distinct()
+    )
     query = query.order_by(User.id)
     total = query.count()
     if page and page_size:
@@ -31,7 +70,12 @@ def list_students(db: Session, class_id: int = None, page: int = None, page_size
         students = query.all()
     result = []
     for s in students:
-        progresses = db.query(StudentProgress).filter(StudentProgress.user_id == s.id).all()
+        progresses = (
+            db.query(StudentProgress)
+            .join(Course, Course.id == StudentProgress.course_id)
+            .filter(StudentProgress.user_id == s.id, Course.created_by == teacher_id)
+            .all()
+        )
         total_progress = sum(p.learn_progress for p in progresses)
         avg_progress = int(total_progress / len(progresses)) if progresses else 0
 
@@ -42,7 +86,7 @@ def list_students(db: Session, class_id: int = None, page: int = None, page_size
         enrollment_query = (
             db.query(StudentClassEnrollment, Class)
             .join(Class, Class.id == StudentClassEnrollment.class_id)
-            .filter(StudentClassEnrollment.user_id == s.id)
+            .filter(StudentClassEnrollment.user_id == s.id, Class.id.in_(class_ids))
         )
         if class_id:
             enrollment_query = enrollment_query.filter(StudentClassEnrollment.class_id == class_id)
@@ -63,8 +107,14 @@ def list_students(db: Session, class_id: int = None, page: int = None, page_size
     return result, total
 
 
-def list_all_projects(db: Session, status: str = None, page: int = None, page_size: int = None):
+def list_all_projects(db: Session, status: str = None, page: int = None, page_size: int = None, teacher_id: str | None = None):
     query = db.query(Project)
+    if teacher_id:
+        student_ids = _teacher_student_ids(db, teacher_id)
+        if student_ids:
+            query = query.filter(Project.author_id.in_(student_ids))
+        else:
+            query = query.filter(False)
     if status:
         query = query.filter(Project.status == status)
     else:

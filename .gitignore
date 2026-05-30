@@ -3,6 +3,7 @@ venv/
 env/
 __pycache__/
 *.py[cod]
+frontend/dist/
 
 # 2. 机密环境变量 (核心安全底线)
 .env

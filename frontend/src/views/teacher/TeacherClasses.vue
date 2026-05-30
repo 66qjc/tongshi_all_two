@@ -1,40 +1,40 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import {
-  getClasses, createClass, deleteClass as apiDeleteClass,
-  getClassStudents, enrollStudent, unenrollStudent, importStudents,
-  type ClassInfo, type ClassStudent,
-} from '@/api/class'
+import { createClass, deleteClass, getClassStudents, getClasses, type ClassInfo, type ClassStudent } from '@/api/class'
+import { getCourses, type Course } from '@/api/course'
 
+const router = useRouter()
 const classes = ref<ClassInfo[]>([])
+const courses = ref<Course[]>([])
+const students = ref<ClassStudent[]>([])
 const loading = ref(true)
-
+const studentLoading = ref(false)
 const createDialogVisible = ref(false)
-const newClass = reactive({ name: '', major: '' })
-
 const studentDialogVisible = ref(false)
 const selectedClass = ref<ClassInfo | null>(null)
-const classStudents = ref<ClassStudent[]>([])
-const studentLoading = ref(false)
 
-const enrollDialogVisible = ref(false)
-const enrollStudentId = ref('')
-const enrollStudentName = ref('')
-
-const importDialogVisible = ref(false)
-const importFile = ref<File | null>(null)
-const importInput = ref<HTMLInputElement | null>(null)
-const importing = ref(false)
-
-onMounted(async () => {
-  await loadClasses()
+const filters = reactive({
+  course_id: '' as number | '',
+  keyword: '',
 })
+const form = reactive({
+  name: '',
+  course_id: '' as number | '',
+})
+
+async function loadCourses() {
+  courses.value = await getCourses()
+}
 
 async function loadClasses() {
   loading.value = true
   try {
-    classes.value = await getClasses()
+    classes.value = await getClasses({
+      course_id: filters.course_id || undefined,
+      keyword: filters.keyword.trim() || undefined,
+    })
   } catch {
     ElMessage.error('班级数据加载失败，请稍后重试')
   } finally {
@@ -43,49 +43,36 @@ async function loadClasses() {
 }
 
 function openCreate() {
-  newClass.name = ''
-  newClass.major = ''
+  form.name = ''
+  form.course_id = filters.course_id || ''
   createDialogVisible.value = true
 }
 
 async function handleCreate() {
-  if (!newClass.name.trim() || !newClass.major.trim()) {
-    ElMessage.warning('请填写班级名称和专业')
+  if (!form.name.trim()) {
+    ElMessage.warning('请填写班级名称')
+    return
+  }
+  if (typeof form.course_id !== 'number') {
+    ElMessage.warning('请选择所属课程')
     return
   }
   try {
-    await createClass({ name: newClass.name.trim(), major: newClass.major.trim() })
+    await createClass({ name: form.name.trim(), course_id: form.course_id })
     ElMessage.success('班级创建成功')
     createDialogVisible.value = false
     await loadClasses()
   } catch {
-    ElMessage.error('创建失败')
+    ElMessage.error('创建失败，请确认课程和班级名称')
   }
 }
 
-async function handleDelete(cls: ClassInfo) {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除班级「${cls.name}」？只属于该班级的学生账号和学习数据会一并删除；仍属于其它班级的学生只会移出当前班级。`,
-      '提示',
-      { type: 'warning' },
-    )
-    await apiDeleteClass(cls.id)
-    classes.value = classes.value.filter(c => c.id !== cls.id)
-    ElMessage.success('已删除')
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败，请稍后重试')
-    }
-  }
-}
-
-async function openStudents(cls: ClassInfo) {
-  selectedClass.value = cls
+async function openStudents(row: ClassInfo) {
+  selectedClass.value = row
   studentDialogVisible.value = true
   studentLoading.value = true
   try {
-    classStudents.value = await getClassStudents(cls.id)
+    students.value = await getClassStudents(row.id)
   } catch {
     ElMessage.error('学生列表加载失败，请稍后重试')
   } finally {
@@ -93,117 +80,83 @@ async function openStudents(cls: ClassInfo) {
   }
 }
 
-function openEnroll() {
-  enrollStudentId.value = ''
-  enrollStudentName.value = ''
-  enrollDialogVisible.value = true
+function openStudentAdmin(row: ClassInfo) {
+  router.push({ path: '/teacher/student-admin', query: { class_id: row.id } })
 }
 
-async function handleEnroll() {
-  if (!selectedClass.value || !enrollStudentId.value.trim() || !enrollStudentName.value.trim()) {
-    ElMessage.warning('请输入学号和姓名')
-    return
-  }
+async function handleDelete(row: ClassInfo) {
   try {
-    await enrollStudent(selectedClass.value.id, enrollStudentId.value.trim(), enrollStudentName.value.trim())
-    ElMessage.success('添加成功')
-    enrollDialogVisible.value = false
-    classStudents.value = await getClassStudents(selectedClass.value.id)
-    await loadClasses()
-  } catch {
-    ElMessage.error('添加失败，请检查学号是否正确')
-  }
-}
-
-async function handleUnenroll(student: ClassStudent) {
-  if (!selectedClass.value) return
-  try {
-    await ElMessageBox.confirm(`确定将「${student.name}」移出该班级？`, '提示', { type: 'warning' })
-    await unenrollStudent(selectedClass.value.id, student.id)
-    classStudents.value = classStudents.value.filter(s => s.id !== student.id)
-    ElMessage.success('已移除')
-    await loadClasses()
+    await ElMessageBox.confirm(`确定删除班级「${row.name}」？有学生的班级需要先在学生管理中移除学生。`, '删除确认', { type: 'warning' })
+    await deleteClass(row.id)
+    classes.value = classes.value.filter(item => item.id !== row.id)
+    ElMessage.success('已删除')
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('移除失败，请稍后重试')
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error instanceof Error ? error.message : '删除失败，请先移除班级内学生')
     }
   }
 }
 
-function openImport() {
-  importFile.value = null
-  importDialogVisible.value = true
-}
-
-function handleImportFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (input.files && input.files[0]) {
-    importFile.value = input.files[0]
-  }
-}
-
-async function handleImport() {
-  if (!importFile.value) {
-    ElMessage.warning('请选择文件')
-    return
-  }
-  importing.value = true
+onMounted(async () => {
   try {
-    const classId = selectedClass.value?.id
-    const result = await importStudents(importFile.value, classId)
-    ElMessage.success(`导入完成：成功 ${result.success_count} 条，跳过 ${result.skip_count} 条，失败 ${result.fail_count} 条`)
-    importDialogVisible.value = false
-    if (classId) {
-      classStudents.value = await getClassStudents(classId)
-    }
+    await loadCourses()
     await loadClasses()
   } catch {
-    ElMessage.error('导入失败')
-  } finally {
-    importing.value = false
+    ElMessage.error('页面初始化失败')
   }
-}
+})
 </script>
 
 <template>
   <div class="classes-page">
     <div class="page-header">
       <h1>班级管理</h1>
-      <div class="header-actions">
-        <el-button type="primary" round @click="openCreate">新增班级</el-button>
-      </div>
+      <el-button type="primary" round @click="openCreate">新增班级</el-button>
+    </div>
+
+    <div class="filter-bar">
+      <el-select v-model="filters.course_id" placeholder="全部课程" clearable style="width: 220px" @change="loadClasses">
+        <el-option v-for="course in courses" :key="course.id" :label="course.name" :value="course.id" />
+      </el-select>
+      <el-input v-model="filters.keyword" placeholder="搜索班级名称" clearable style="width: 220px" @keyup.enter="loadClasses" />
+      <el-button @click="loadClasses">搜索</el-button>
+      <el-button @click="filters.course_id = ''; filters.keyword = ''; loadClasses()">重置</el-button>
     </div>
 
     <el-table :data="classes" stripe style="width: 100%" v-loading="loading">
-      <el-table-column prop="name" label="班级名称" min-width="160" />
-      <el-table-column prop="major" label="所属专业" min-width="160" />
+      <el-table-column prop="name" label="班级名称" min-width="180" />
+      <el-table-column prop="course_name" label="所属课程" min-width="180" />
       <el-table-column label="学生人数" width="100" align="center">
         <template #default="{ row }">
           <span class="count-badge">{{ row.student_count }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="140" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column prop="created_at" label="创建时间" width="160">
+        <template #default="{ row }">
+          {{ row.created_at ? row.created_at.slice(0, 10) : '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="250" fixed="right">
         <template #default="{ row }">
           <el-button text size="small" @click="openStudents(row)">查看学生</el-button>
+          <el-button text size="small" @click="openStudentAdmin(row)">学生管理</el-button>
           <el-button type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <div v-if="!loading && classes.length === 0" class="empty-state">
-      <p>暂无班级，点击「新增班级」开始创建</p>
-    </div>
+    <div v-if="!loading && classes.length === 0" class="empty-state">暂无班级</div>
 
-    <!-- Create class dialog -->
     <el-dialog v-model="createDialogVisible" title="新增班级" width="420px">
       <div class="form-group">
-        <label>专业名称</label>
-        <el-input v-model="newClass.major" placeholder="如：自动化专业" size="large" />
+        <label>所属课程</label>
+        <el-select v-model="form.course_id" placeholder="选择课程" size="large" style="width: 100%">
+          <el-option v-for="course in courses" :key="course.id" :label="course.name" :value="course.id" />
+        </el-select>
       </div>
       <div class="form-group">
         <label>班级名称</label>
-        <el-input v-model="newClass.name" placeholder="如：2025级1班" size="large" />
+        <el-input v-model="form.name" placeholder="如：2025级1班" size="large" />
       </div>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -211,89 +164,37 @@ async function handleImport() {
       </template>
     </el-dialog>
 
-    <!-- Students dialog -->
-    <el-dialog v-model="studentDialogVisible" :title="selectedClass ? `${selectedClass.major} · ${selectedClass.name} 学生列表` : '学生列表'" width="600px">
+    <el-dialog v-model="studentDialogVisible" :title="selectedClass ? `${selectedClass.name} 学生列表` : '学生列表'" width="560px">
       <div class="student-toolbar">
-        <span class="student-count">共 {{ classStudents.length }} 名学生</span>
-        <div>
-          <el-button size="small" plain round @click="openImport">Excel 导入</el-button>
-          <el-button size="small" type="primary" plain round @click="openEnroll">手动添加</el-button>
-        </div>
+        <span>共 {{ students.length }} 名学生</span>
       </div>
-      <el-table :data="classStudents" stripe v-loading="studentLoading" style="width: 100%">
-        <el-table-column prop="id" label="学号" width="120" />
-        <el-table-column prop="name" label="姓名" width="120" />
-        <el-table-column prop="major" label="专业" min-width="140" />
-        <el-table-column label="操作" width="80" fixed="right">
-          <template #default="{ row }">
-            <el-button type="danger" text size="small" @click="handleUnenroll(row)">移除</el-button>
-          </template>
-        </el-table-column>
+      <el-table :data="students" stripe v-loading="studentLoading" style="width: 100%">
+        <el-table-column prop="id" label="学号" width="140" />
+        <el-table-column prop="name" label="姓名" width="140" />
+        <el-table-column prop="major" label="专业" min-width="160" />
       </el-table>
-      <div v-if="!studentLoading && classStudents.length === 0" class="empty-mini">
-        该班级暂无学生
-      </div>
-    </el-dialog>
-
-    <!-- Enroll student dialog -->
-    <el-dialog v-model="enrollDialogVisible" title="手动添加学生" width="380px">
-      <div class="form-group">
-        <label>学号</label>
-        <el-input v-model="enrollStudentId" placeholder="输入学生学号" size="large" />
-      </div>
-      <div class="form-group">
-        <label>姓名</label>
-        <el-input v-model="enrollStudentName" placeholder="输入学生姓名" size="large" />
-      </div>
-      <p class="enroll-hint">若该学号不存在，系统将自动创建学生账号（默认密码 a123456）</p>
-      <template #footer>
-        <el-button @click="enrollDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleEnroll">添加</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- Import dialog -->
-    <el-dialog v-model="importDialogVisible" title="Excel 批量导入学生" width="480px">
-      <div class="import-info">
-        <p v-if="selectedClass">将导入至班级「{{ selectedClass.name }}」</p>
-        <p>请上传从教务系统导出的 .xlsx 文件。</p>
-        <p>系统会自动识别包含「学号」「姓名」的表头行，「姓名」右边一列将作为专业信息。</p>
-        <p class="import-note">已存在的学生将更新姓名和专业，不会重复创建。默认密码 123456。</p>
-      </div>
-      <div class="upload-zone-import" @click="importInput?.click()">
-        <input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="handleImportFile" />
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-          <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span v-if="!importFile">点击选择 Excel 文件</span>
-        <span v-else class="file-name">{{ importFile.name }}</span>
-      </div>
-      <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="handleImport">开始导入</el-button>
-      </template>
+      <div v-if="!studentLoading && students.length === 0" class="empty-state small">该班级暂无学生</div>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.page-header {
+.page-header,
+.filter-bar {
   display: flex;
   align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.page-header {
   justify-content: space-between;
-  margin-bottom: var(--space-xl);
 }
 
 .page-header h1 {
   font-size: 1.5rem;
   font-weight: 800;
   color: var(--color-text);
-}
-
-.header-actions {
-  display: flex;
-  gap: var(--space-sm);
 }
 
 .count-badge {
@@ -309,8 +210,13 @@ async function handleImport() {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--color-text);
   margin-bottom: var(--space-sm);
+}
+
+.student-toolbar {
+  margin-bottom: var(--space-md);
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
 }
 
 .empty-state {
@@ -320,86 +226,7 @@ async function handleImport() {
   font-size: 0.9rem;
 }
 
-.empty-mini {
-  text-align: center;
+.empty-state.small {
   padding: var(--space-xl) 0;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
-
-.student-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-md);
-}
-
-.student-count {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.import-info {
-  margin-bottom: var(--space-lg);
-}
-
-.import-info p {
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-sm);
-}
-
-.format-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8rem;
-  margin: var(--space-sm) 0;
-}
-
-.format-table th,
-.format-table td {
-  border: 1px solid var(--color-border);
-  padding: 0.3rem 0.6rem;
-  text-align: center;
-}
-
-.format-table th {
-  background: var(--color-bg-alt);
-  font-weight: 600;
-}
-
-.import-note {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.upload-zone-import {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-xl);
-  border: 2px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all var(--duration-fast);
-}
-
-.upload-zone-import:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.file-name {
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.enroll-hint {
-  font-size: 0.8rem;
-  color: #999;
-  margin-top: 8px;
 }
 </style>

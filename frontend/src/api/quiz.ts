@@ -12,6 +12,6 @@ export function getQuizStats() {
   return http.get<any, { total_questions: number; questions_done: number; accuracy: number; today_count: number }>('/quiz/stats')
 }
 
-export function getChapterQuizStats(chapterId: number) {
-  return http.get<any, { chapter_id: number; questions_done: number; accuracy: number }>(`/quiz/stats/${chapterId}`)
+export function getCourseQuizStats(courseId: number) {
+  return http.get<any, { course_id: number; questions_done: number; accuracy: number }>(`/quiz/stats/${courseId}`)
 }

@@ -114,7 +114,7 @@ function goNotificationAction(item: UserNotification) {
             </svg>
           </div>
           <h1>消息通知</h1>
-          <p>查看老师发布的公告和任务</p>
+          <p>查看老师发布的题目任务</p>
         </div>
       </div>
     </section>

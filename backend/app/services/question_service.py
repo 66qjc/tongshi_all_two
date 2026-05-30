@@ -1,30 +1,42 @@
-"""Question service"""
+"""题库与课程服务。"""
 from __future__ import annotations
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Chapter, Course, Material, Question, StudentProgress
+from app.models.entities import Class, Course, Material, Question, StudentProgress
 
 
-def list_questions(db: Session, chapter_id: int = None, type_: str = None, course_id: int = None):
-    # 始终 JOIN Chapter，支持 course 维度筛选及读取课程信息
-    query = db.query(Question).join(Chapter)
+def list_questions(
+    db: Session,
+    course_id: int | None = None,
+    type_: str | None = None,
+    teacher_id: str | None = None,
+):
+    query = db.query(Question).join(Course, Course.id == Question.course_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
     if course_id is not None:
-        query = query.filter(Chapter.course_id == course_id)
-    if chapter_id is not None:
-        query = query.filter(Question.chapter_id == chapter_id)
+        query = query.filter(Question.course_id == course_id)
     if type_ is not None:
         query = query.filter(Question.type == type_)
     return query.order_by(Question.id).all()
 
 
-def get_question(db: Session, question_id: int):
-    return db.query(Question).filter(Question.id == question_id).first()
+def get_question(db: Session, question_id: int, teacher_id: str | None = None):
+    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.id == question_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    return query.first()
 
 
-def create_question(db: Session, data: dict):
+def _get_owned_course(db: Session, course_id: int, teacher_id: str):
+    return db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id).first()
+
+
+def create_question(db: Session, data: dict, teacher_id: str):
+    if not _get_owned_course(db, data["course_id"], teacher_id):
+        raise BusinessException(404, "课程不存在")
     q = Question(**data)
     db.add(q)
     db.commit()
@@ -32,10 +44,13 @@ def create_question(db: Session, data: dict):
     return q
 
 
-def update_question(db: Session, question_id: int, data: dict):
-    q = db.query(Question).filter(Question.id == question_id).first()
+def update_question(db: Session, question_id: int, data: dict, teacher_id: str):
+    q = get_question(db, question_id, teacher_id)
     if not q:
         return None
+    if "course_id" in data and data["course_id"] is not None:
+        if not _get_owned_course(db, data["course_id"], teacher_id):
+            raise BusinessException(404, "课程不存在")
     for key, value in data.items():
         if value is not None and hasattr(q, key):
             setattr(q, key, value)
@@ -43,8 +58,8 @@ def update_question(db: Session, question_id: int, data: dict):
     return q
 
 
-def delete_question(db: Session, question_id: int):
-    q = db.query(Question).filter(Question.id == question_id).first()
+def delete_question(db: Session, question_id: int, teacher_id: str):
+    q = get_question(db, question_id, teacher_id)
     if not q:
         return False
     db.delete(q)
@@ -52,31 +67,37 @@ def delete_question(db: Session, question_id: int):
     return True
 
 
-def get_chapter_questions(db: Session, chapter_id: int):
-    return db.query(Question).filter(Question.chapter_id == chapter_id).order_by(Question.id).all()
+def get_course_questions(db: Session, course_id: int):
+    return db.query(Question).filter(Question.course_id == course_id).order_by(Question.id).all()
 
 
-def list_courses(db: Session):
-    return db.query(Course).order_by(Course.id.desc()).all()
+def list_courses(db: Session, teacher_id: str | None = None):
+    query = db.query(Course)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    return query.order_by(Course.id.desc()).all()
 
 
-def create_course(db: Session, name: str):
-    if db.query(Course).filter(Course.name == name).first():
+def create_course(db: Session, name: str, teacher_id: str):
+    if db.query(Course).filter(Course.name == name, Course.created_by == teacher_id).first():
         raise BusinessException(400, "课程已存在")
-    course = Course(name=name)
+    course = Course(name=name, created_by=teacher_id)
     db.add(course)
     db.commit()
     db.refresh(course)
     return course
 
 
-def update_course(db: Session, course_id: int, name: str):
-    course = db.query(Course).filter(Course.id == course_id).first()
+def update_course(db: Session, course_id: int, name: str, teacher_id: str):
+    course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
     if name != course.name:
         duplicate = db.query(Course).filter(
-            Course.name == name, Course.id != course_id).first()
+            Course.name == name,
+            Course.created_by == teacher_id,
+            Course.id != course_id,
+        ).first()
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
@@ -84,56 +105,52 @@ def update_course(db: Session, course_id: int, name: str):
     return course
 
 
-def delete_course(db: Session, course_id: int):
-    course = db.query(Course).filter(Course.id == course_id).first()
+def delete_course(db: Session, course_id: int, teacher_id: str):
+    course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
-    chapter_ids = [item.id for item in db.query(
-        Chapter.id).filter(Chapter.course_id == course_id).all()]
-    if chapter_ids:
-        has_materials = db.query(Material).filter(
-            Material.chapter_id.in_(chapter_ids)).count() > 0
-        has_questions = db.query(Question).filter(
-            Question.chapter_id.in_(chapter_ids)).count() > 0
-        has_progress = db.query(StudentProgress).filter(
-            StudentProgress.chapter_id.in_(chapter_ids)).count() > 0
-        if has_materials or has_questions or has_progress:
-            raise BusinessException(400, "课程下仍有章节关联资料、题目或学习记录，不能直接删除")
+    blockers = []
+    if db.query(Material).filter(Material.course_id == course_id).count() > 0:
+        blockers.append("资料")
+    if db.query(Question).filter(Question.course_id == course_id).count() > 0:
+        blockers.append("题目")
+    if db.query(StudentProgress).filter(StudentProgress.course_id == course_id).count() > 0:
+        blockers.append("学习记录")
+    if db.query(Class).filter(Class.course_id == course_id).count() > 0:
+        blockers.append("班级")
+    if blockers:
+        raise BusinessException(400, f"课程下仍有{'、'.join(blockers)}，不能直接删除")
     db.delete(course)
     db.commit()
     return True
 
 
-def get_course_detail(db: Session, course_id: int):
-    course = db.query(Course).filter(Course.id == course_id).first()
+def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None):
+    query = db.query(Course).filter(Course.id == course_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    course = query.first()
     if not course:
         return None
-    chapters = (
-        db.query(Chapter)
-        .filter(Chapter.course_id == course_id)
-        .order_by(Chapter.sort_order, Chapter.id)
-        .all()
-    )
-    material_count = (
-        db.query(Material)
-        .join(Chapter, Material.chapter_id == Chapter.id)
-        .filter(Chapter.course_id == course_id)
-        .count()
-    )
-    return course, chapters, material_count
+    material_count = db.query(Material).filter(Material.course_id == course_id).count()
+    question_count = db.query(Question).filter(Question.course_id == course_id).count()
+    class_count = db.query(Class).filter(Class.course_id == course_id).count()
+    return course, material_count, question_count, class_count
 
 
-def import_questions_from_excel(db: Session, rows: list[dict]):
+def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str):
     success_count = 0
     fail_count = 0
     errors = []
     for idx, row in enumerate(rows, start=2):
         try:
-            chapter_key = str(row.get("chapter", "")).strip()
-            ch = db.query(Chapter).filter((Chapter.num == chapter_key) | (
-                Chapter.title == chapter_key)).first()
-            if not ch:
-                raise BusinessException(400, f"未找到章节: {chapter_key}")
+            course_name = str(row.get("course", "")).strip()
+            course = db.query(Course).filter(
+                Course.name == course_name,
+                Course.created_by == teacher_id,
+            ).first()
+            if not course:
+                raise BusinessException(400, f"未找到课程: {course_name}")
             q_type = str(row.get("type", "")).strip()
             stem = str(row.get("stem", "")).strip()
             if not stem:
@@ -143,7 +160,7 @@ def import_questions_from_excel(db: Session, rows: list[dict]):
                            if x.strip()] if options else []
             answer = str(row.get("answer", "")).strip()
             explanation = str(row.get("explanation", "")).strip()
-            q = Question(type=q_type, chapter_id=ch.id, stem=stem,
+            q = Question(type=q_type, course_id=course.id, stem=stem,
                          options=option_list, answer=answer, explanation=explanation)
             db.add(q)
             success_count += 1

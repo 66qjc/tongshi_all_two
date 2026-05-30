@@ -1,26 +1,38 @@
-"""Material service"""
+"""资料服务。"""
 from datetime import datetime
+
 from sqlalchemy.orm import Session
-from app.models.entities import Material, Chapter
+
+from app.models.entities import Course, Material
 
 
-def list_materials(db: Session, chapter_id: int = None):
-    query = db.query(Material)
-    if chapter_id:
-        query = query.filter(Material.chapter_id == chapter_id)
-    return query.order_by(Material.id).all()
+def list_materials(db: Session, course_id: int | None = None, teacher_id: str | None = None):
+    query = db.query(Material).join(Course, Course.id == Material.course_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    if course_id is not None:
+        query = query.filter(Material.course_id == course_id)
+    return query.order_by(Material.course_id, Material.id).all()
 
 
-def list_all_materials(db: Session):
-    return db.query(Material).join(Chapter).order_by(Material.chapter_id, Material.id).all()
-
-
-def create_material(db: Session, chapter_id: int, type_: str, title: str, url: str = "", size: str = "0 MB", file_id: int | None = None):
-    ch = db.query(Chapter).filter(Chapter.id == chapter_id).first()
-    if not ch:
+def create_material(
+    db: Session,
+    course_id: int,
+    type_: str,
+    title: str,
+    url: str = "",
+    size: str = "0 MB",
+    file_id: int | None = None,
+    teacher_id: str | None = None,
+):
+    query = db.query(Course).filter(Course.id == course_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    course = query.first()
+    if not course:
         return None
     material = Material(
-        chapter_id=chapter_id,
+        course_id=course_id,
         type=type_,
         title=title,
         url=url,
@@ -30,11 +42,15 @@ def create_material(db: Session, chapter_id: int, type_: str, title: str, url: s
     )
     db.add(material)
     db.commit()
+    db.refresh(material)
     return material
 
 
-def delete_material(db: Session, material_id: int):
-    m = db.query(Material).filter(Material.id == material_id).first()
+def delete_material(db: Session, material_id: int, teacher_id: str | None = None):
+    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(Material.id == material_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    m = query.first()
     if not m:
         return False
     db.delete(m)
