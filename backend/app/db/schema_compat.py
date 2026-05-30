@@ -91,6 +91,50 @@ def ensure_schema_compatibility(engine) -> None:
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
 
+        # ── showcase_items 表（依赖 stored_files）────────────────────────
+        if "showcase_items" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE showcase_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        section VARCHAR(32) NOT NULL,
+                        title VARCHAR(128) NOT NULL,
+                        content TEXT DEFAULT '',
+                        cover_file_id INTEGER,
+                        link_url VARCHAR(512) DEFAULT '',
+                        sort_order INTEGER DEFAULT 0,
+                        is_active BOOLEAN DEFAULT 1,
+                        created_by VARCHAR(32) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE showcase_items (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        section VARCHAR(32) NOT NULL,
+                        title VARCHAR(128) NOT NULL,
+                        content TEXT,
+                        cover_file_id INTEGER NULL,
+                        link_url VARCHAR(512) DEFAULT '',
+                        sort_order INTEGER DEFAULT 0,
+                        is_active BOOLEAN DEFAULT 1,
+                        created_by VARCHAR(32) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_showcase_items_cover_file_id
+                            FOREIGN KEY (cover_file_id) REFERENCES stored_files(id),
+                        CONSTRAINT fk_showcase_items_created_by
+                            FOREIGN KEY (created_by) REFERENCES users(id)
+                    )
+                """))
+
+        # 再次刷新表名集合
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+
         # ── 为业务表补齐 file_id 列 ─────────────────────────────────────
         _add_column_if_missing(
             conn, inspector, "materials", "file_id", "INTEGER")
@@ -116,6 +160,20 @@ def ensure_schema_compatibility(engine) -> None:
         # ── users 表新增 needs_password_change 列 ────────────────────────
         _add_column_if_missing(
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
+
+        # ── 清理旧版遗留列（班级改课程归属 / 章节去除后残留的 NOT NULL 列）──
+        # 旧库里这些列为 NOT NULL 且无默认值，新模型已去除/改挂课程，
+        # 否则 INSERT 不带这些列会因 NOT NULL 约束失败（如新增班级 500）。
+        inspector = inspect(conn)
+        # classes.major 已从模型删除：直接删列
+        _drop_column_if_exists(conn, inspector, "classes", "major")
+        # materials/questions/student_progress 由挂章节改为挂课程：旧 chapter_id 放开为可空
+        _make_column_nullable(conn, inspector, "materials", "chapter_id", "INTEGER")
+        _make_column_nullable(conn, inspector, "questions", "chapter_id", "INTEGER")
+        _make_column_nullable(
+            conn, inspector, "student_progress", "chapter_id", "INTEGER")
+        # announcements.class_id 改为可空（多班级走 announcement_classes 关联表）
+        _make_column_nullable(conn, inspector, "announcements", "class_id", "INTEGER")
 
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
@@ -162,3 +220,27 @@ def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: s
     if column not in existing:
         conn.execute(
             text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+
+
+def _drop_column_if_exists(conn, inspector, table: str, column: str) -> None:
+    """如果表存在且包含指定列，则 ALTER TABLE DROP COLUMN（用于清理已从模型删除的旧列）。"""
+    table_names = {t for t in inspector.get_table_names()}
+    if table not in table_names:
+        return
+    existing = {c["name"] for c in inspector.get_columns(table)}
+    if column in existing:
+        conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {column}"))
+
+
+def _make_column_nullable(conn, inspector, table: str, column: str, col_type: str) -> None:
+    """将旧库中残留的 NOT NULL 列放开为可空（仅 MySQL；SQLite 测试库由模型新建无需处理）。"""
+    if conn.dialect.name != "mysql":
+        return
+    table_names = {t for t in inspector.get_table_names()}
+    if table not in table_names:
+        return
+    columns = {c["name"]: c for c in inspector.get_columns(table)}
+    col = columns.get(column)
+    if col is not None and not col["nullable"]:
+        conn.execute(
+            text(f"ALTER TABLE {table} MODIFY {column} {col_type} NULL"))

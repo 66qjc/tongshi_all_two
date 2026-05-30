@@ -94,6 +94,18 @@ class TestTeacherRefactor:
         assert data["code"] == 400
         assert "仍有学生" in data["message"]
 
+    def test_create_class_without_legacy_major_column(self, client, teacher_token):
+        """新增班级不应因旧库 classes.major NOT NULL 约束而 500。"""
+        resp = client.post(
+            "/api/classes",
+            json={"name": "新测试班", "course_id": 1},
+            headers=auth_header(teacher_token),
+        )
+        data = resp.json()
+
+        assert data["code"] == 0
+        assert isinstance(data["data"]["id"], int)
+
     def test_class_without_students_can_be_deleted(self, client, db_session, teacher_token):
         course = db_session.query(Course).filter(Course.created_by == "T001").first()
         cls = Class(name="空班级", course_id=course.id)

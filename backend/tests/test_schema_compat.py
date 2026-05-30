@@ -206,6 +206,39 @@ def test_ensure_schema_compatibility_adds_file_columns_to_business_tables():
     assert "file_id" in img_cols
 
 
+def test_ensure_schema_compatibility_drops_legacy_major_column():
+    """旧库 classes.major 已从模型删除，兼容脚本应清理该列。"""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE classes (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(64) NOT NULL,
+                major VARCHAR(64) NOT NULL
+            )
+        """))
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("classes")}
+    assert "major" not in columns
+
+
+def test_ensure_schema_compatibility_creates_showcase_items_table():
+    """兼容脚本应自动创建 showcase_items 表。"""
+    engine = create_engine("sqlite:///:memory:")
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    columns = {column["name"] for column in inspector.get_columns("showcase_items")}
+
+    assert "showcase_items" in table_names
+    assert {"id", "section", "title", "content", "cover_file_id", "sort_order", "is_active", "created_by"}.issubset(columns)
+
+
 def test_ensure_schema_compatibility_creates_announcement_classes_table():
     """兼容脚本应自动创建发布题目与班级的关联表"""
     engine = create_engine("sqlite:///:memory:")

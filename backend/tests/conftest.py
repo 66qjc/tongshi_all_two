@@ -1,6 +1,12 @@
 """测试配置：SQLite 内存数据库 + FastAPI TestClient"""
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def force_local_storage_for_tests(monkeypatch):
+    """测试环境强制 local 存储，避免依赖外部 SeaweedFS/S3 服务。"""
+    monkeypatch.setattr("app.core.config.settings.storage_backend", "local")
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
