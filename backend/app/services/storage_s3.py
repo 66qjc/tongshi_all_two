@@ -13,10 +13,13 @@ class S3StorageAdapter:
     """基于 boto3 的 S3 存储适配器"""
 
     def __init__(self):
-        client_config = None
+        # 构建 boto3 配置：始终开启重试策略，条件开启 path-style 寻址
+        config_kwargs: dict = {
+            "retries": {"max_attempts": 3, "mode": "standard"},
+        }
         if settings.s3_force_path_style:
-            # SeaweedFS 本地网关默认更适合 path-style 访问格式。
-            client_config = Config(s3={"addressing_style": "path"})
+            # SeaweedFS / MinIO 等本地 S3 网关需要 path-style 访问格式
+            config_kwargs["s3"] = {"addressing_style": "path"}
 
         self._client = boto3.client(
             "s3",
@@ -24,7 +27,7 @@ class S3StorageAdapter:
             aws_access_key_id=settings.s3_access_key,
             aws_secret_access_key=settings.s3_secret_key,
             region_name=settings.s3_region,
-            config=client_config,
+            config=Config(**config_kwargs),
         )
         self._bucket_public = settings.s3_bucket_public
         self._bucket_private = settings.s3_bucket_private
@@ -56,8 +59,14 @@ class S3StorageAdapter:
 
     def open_stream(self, *, object_key: str, bucket_name: str = "") -> BinaryIO:
         bucket = self._resolve_bucket(bucket_name)
-        resp = self._client.get_object(Bucket=bucket, Key=object_key)
-        return resp["Body"]
+        try:
+            resp = self._client.get_object(Bucket=bucket, Key=object_key)
+            return resp["Body"]
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "")
+            if code in ("404", "NoSuchKey"):
+                raise FileNotFoundError(f"S3 对象不存在: {bucket}/{object_key}") from e
+            raise
 
     def exists(self, *, object_key: str, bucket_name: str = "") -> bool:
         bucket = self._resolve_bucket(bucket_name)

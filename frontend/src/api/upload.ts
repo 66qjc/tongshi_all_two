@@ -9,8 +9,9 @@ export interface UploadResult {
   storage_provider: string
 }
 
-export function uploadFile(file: File) {
+export function uploadFile(file: File, bizType: string = 'upload') {
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('biz_type', bizType)
   return http.post<any, UploadResult>('/upload', formData)
 }

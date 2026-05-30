@@ -15,25 +15,28 @@ ALLOWED_UPLOAD_EXTENSIONS = {
 
 ALLOWED_EXCEL_EXTENSIONS = {".xlsx", ".xls"}
 
-MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024  # 通用上传：2GB，支持教学视频。
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 通用上传：50MB。
 MAX_EXCEL_SIZE = 10 * 1024 * 1024   # Excel 导入：10MB。
 
-# 魔数映射：扩展名 -> 允许的文件头字节前缀。
+# 魔数映射：扩展名 -> 允许的文件头字节前缀（均在偏移 0 处检查）。
 _MAGIC_SIGNATURES = {
     ".pdf": [b"%PDF"],
     ".png": [b"\x89PNG"],
     ".jpg": [b"\xff\xd8\xff"],
     ".jpeg": [b"\xff\xd8\xff"],
     ".gif": [b"GIF87a", b"GIF89a"],
-    ".webp": [b"RIFF"],  # WebP 以 RIFF 开头，第 8-11 字节为 WEBP。
+    ".webp": [b"RIFF"],  # 在 validate_magic_number 中额外校验偏移 8 的 WEBP 标识
     ".zip": [b"PK"],
-    ".mp4": [b"\x00\x00\x00", b"ftyp"],  # ISO BMFF，ftyp 通常位于偏移 4 字节处。
-    ".mov": [b"\x00\x00\x00", b"ftyp"],
-    ".webm": [b"\x1a\x45\xdf\xa3"],  # Matroska/EBML。
+    ".mp4": [b"ftyp"],   # 在 validate_magic_number 中校验偏移 4 的 ftyp
+    ".mov": [b"ftyp"],
+    ".webm": [b"\x1a\x45\xdf\xa3"],  # Matroska/EBML
+    ".docx": [b"PK"],    # ZIP 容器格式，PK 头
+    ".pptx": [b"PK"],
 }
 
 # 需要跳过魔数校验的扩展名：无标准魔数或魔数不可靠。
-_SKIP_MAGIC_EXTENSIONS = {".svg", ".doc", ".docx", ".ppt", ".pptx"}
+# .svg 由 SVG 安全清洗器单独处理；.doc（旧格式）魔数复杂，跳过。
+_SKIP_MAGIC_EXTENSIONS = {".svg", ".doc"}
 
 
 def detect_content_type(content: bytes, filename: str) -> str:
@@ -52,6 +55,10 @@ def detect_content_type(content: bytes, filename: str) -> str:
         return "image/webp"
     if ext in {".zip"} and content[:2] == b"PK":
         return "application/zip"
+    if ext in {".docx"} and content[:2] == b"PK":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if ext in {".pptx"} and content[:2] == b"PK":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     if ext in {".mp4", ".mov"}:
         return "video/mp4"
     if ext in {".webm"}:
@@ -69,6 +76,19 @@ def validate_magic_number(content: bytes, filename: str) -> str | None:
     if ext in _SKIP_MAGIC_EXTENSIONS or ext not in _MAGIC_SIGNATURES:
         return None
 
+    # MP4/MOV：ISOBMFF 容器格式，ftyp box type 位于偏移 4 字节处
+    if ext in (".mp4", ".mov"):
+        if len(content) >= 8 and content[4:8] == b"ftyp":
+            return None
+        return f"文件内容与扩展名 {ext} 不匹配"
+
+    # WebP：偏移 0 处为 RIFF 且偏移 8 处为 WEBP
+    if ext == ".webp":
+        if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+            return None
+        return f"文件内容与扩展名 {ext} 不匹配"
+
+    # 标准：检查偏移 0 处的魔数前缀
     signatures = _MAGIC_SIGNATURES.get(ext, [])
     for sig in signatures:
         if content[:len(sig)] == sig:

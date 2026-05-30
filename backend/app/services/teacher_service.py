@@ -107,7 +107,14 @@ def list_students(db: Session, teacher_id: str, class_id: int = None, page: int 
     return result, total
 
 
-def list_all_projects(db: Session, status: str = None, page: int = None, page_size: int = None, teacher_id: str | None = None):
+def list_all_projects(
+    db: Session,
+    status: str = None,
+    page: int = None,
+    page_size: int = None,
+    teacher_id: str | None = None,
+    keyword: str | None = None,
+):
     query = db.query(Project)
     if teacher_id:
         student_ids = _teacher_student_ids(db, teacher_id)
@@ -117,8 +124,8 @@ def list_all_projects(db: Session, status: str = None, page: int = None, page_si
             query = query.filter(False)
     if status:
         query = query.filter(Project.status == status)
-    else:
-        query = query.filter(Project.status.in_(["pending", "approved"]))
+    if keyword:
+        query = query.filter(Project.title.like(f"%{keyword}%"))
     query = query.order_by(Project.date.desc())
     total = query.count()
     if page and page_size:

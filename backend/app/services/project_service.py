@@ -116,16 +116,32 @@ def toggle_like(db: Session, user_id: str, project_id: int):
     project = get_project(db, project_id)
     if not project:
         return None
+
     existing = db.query(ProjectLike).filter(
         ProjectLike.user_id == user_id, ProjectLike.project_id == project_id).first()
+
     if existing:
         db.delete(existing)
-        project.likes = max(0, project.likes - 1)
+        # 原子递减 likes，避免并发竞态
+        db.execute(
+            Project.__table__.update()
+            .where(Project.id == project_id)
+            .values(likes=Project.likes - 1)
+        )
+        db.commit()
+        db.refresh(project)
+        return {"liked": False, "likes": max(0, project.likes)}
     else:
         db.add(ProjectLike(user_id=user_id, project_id=project_id))
-        project.likes += 1
-    db.commit()
-    return {"liked": existing is None, "likes": project.likes}
+        # 原子递增 likes，避免并发竞态
+        db.execute(
+            Project.__table__.update()
+            .where(Project.id == project_id)
+            .values(likes=Project.likes + 1)
+        )
+        db.commit()
+        db.refresh(project)
+        return {"liked": True, "likes": project.likes}
 
 
 def approve_project(db: Session, project_id: int):
@@ -152,12 +168,14 @@ def reject_project(db: Session, project_id: int, reason: str):
 
 
 def format_project(db: Session, p) -> dict:
-    """将 Project ORM 对象格式化为 API 响应 dict"""
-    from app.models.entities import User as UserModel
-    author = db.query(UserModel).filter(UserModel.id == p.author_id).first()
+    """将 Project ORM 对象格式化为 API 响应 dict（唯一规范版本）。
+
+    所有路由统一调用此函数，避免 _format_project 重复定义。
+    """
+    author = db.query(User).filter(User.id == p.author_id).first()
     images = [
         {"id": image.id, "image_url": image.image_url,
-            "sort_order": image.sort_order}
+            "sort_order": image.sort_order, "file_id": image.file_id}
         for image in sorted(p.images, key=lambda item: (item.sort_order, item.id))
     ] if hasattr(p, "images") and p.images else []
     if not images and p.image_url:
@@ -169,7 +187,7 @@ def format_project(db: Session, p) -> dict:
         "author_name": author.name if author else "",
         "major": p.major,
         "description": p.description,
-        "tags": p.tags if hasattr(p, "tags") else "",
+        "tags": p.tags if hasattr(p, "tags") else [],
         "likes": p.likes,
         "featured": p.featured if hasattr(p, "featured") else False,
         "video_url": p.video_url if hasattr(p, "video_url") else "",
@@ -180,6 +198,8 @@ def format_project(db: Session, p) -> dict:
         "status": p.status if hasattr(p, "status") else "",
         "reject_reason": p.reject_reason if hasattr(p, "reject_reason") else "",
         "date": p.date if hasattr(p, "date") else "",
+        "report_file_id": getattr(p, "report_file_id", None),
+        "cover_file_id": getattr(p, "cover_file_id", None),
     }
 
 

@@ -188,6 +188,8 @@ class ProjectImage(Base):
 
 class ProjectLike(Base):
     __tablename__ = "project_likes"
+    __table_args__ = (UniqueConstraint("user_id", "project_id", name="uq_project_like"),)
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(32), ForeignKey(
         "users.id"), nullable=False, index=True)

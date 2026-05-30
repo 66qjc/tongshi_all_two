@@ -132,19 +132,23 @@ async function handleSubmit() {
   submitting.value = true
   try {
     let reportUrl = editingProject.value?.report_url || ''
+    let reportFileId = editingProject.value?.report_file_id
     const uploadedImageUrls = [...existingImageUrls.value]
+    const uploadedImageFileIds: number[] = []
 
     if (reportFile.value) {
-      const result = await uploadFile(reportFile.value)
+      const result = await uploadFile(reportFile.value, 'project_report')
       reportUrl = result.url
+      reportFileId = result.file_id
     }
 
     for (const file of imageFiles.value) {
-      const result = await uploadFile(file)
+      const result = await uploadFile(file, 'project_image')
       uploadedImageUrls.push(result.url)
+      uploadedImageFileIds.push(result.file_id)
     }
 
-    const payload = {
+    const payload: Record<string, any> = {
       title: form.title.trim(),
       description: form.description.trim(),
       tags: tags.value,
@@ -153,6 +157,10 @@ async function handleSubmit() {
       image_url: uploadedImageUrls[0] || undefined,
       image_urls: uploadedImageUrls,
       link_url: form.linkUrl.trim() || undefined,
+      image_file_ids: uploadedImageFileIds,
+    }
+    if (reportFileId) {
+      payload.report_file_id = reportFileId
     }
 
     if (isEditMode.value && editingProject.value) {
@@ -250,7 +258,7 @@ onMounted(() => {
               <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
                     stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
-            <span v-if="!reportFile">{{ editingProject?.report_url ? '点击替换已上传 PDF 报告' : '点击或拖拽上传 PDF 文件（限 20MB）' }}</span>
+            <span v-if="!reportFile">{{ editingProject?.report_url ? '点击替换已上传 PDF 报告' : '点击或拖拽上传 PDF 文件（限 50MB）' }}</span>
             <span v-else class="file-name">{{ reportFile.name }}</span>
           </div>
         </div>
@@ -277,11 +285,12 @@ onMounted(() => {
           </div>
 
           <div v-if="displayedImageNames.length > 0" class="image-list">
-            <div v-for="(name, index) in existingImageUrls" :key="`${name}-${index}`" class="image-item">
+            <div v-for="(url, index) in existingImageUrls" :key="`existing-${index}`" class="image-item">
+              <img :src="url" :alt="`已上传图片 ${index + 1}`" class="image-thumb" />
               <span>已上传图片 {{ index + 1 }}</span>
               <button class="tag-remove" @click="removeExistingImage(index)">&times;</button>
             </div>
-            <div v-for="(file, index) in imageFiles" :key="`${file.name}-${index}`" class="image-item">
+            <div v-for="(file, index) in imageFiles" :key="`new-${file.name}-${index}`" class="image-item">
               <span>{{ file.name }}</span>
               <button class="tag-remove" @click="removeNewImage(index)">&times;</button>
             </div>
@@ -438,6 +447,14 @@ onMounted(() => {
   background: var(--color-create-bg);
   border-radius: var(--radius-full);
   border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.image-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
 }
 
 .tag-remove {

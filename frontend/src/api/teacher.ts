@@ -36,9 +36,10 @@ export function getStudents(classId?: number, page = 1, pageSize = 20) {
   return http.get<any, PaginatedResult<Student>>('/teacher/students', { params })
 }
 
-export function getAllProjects(status?: string, page = 1, pageSize = 20) {
+export function getAllProjects(status?: string | null, keyword?: string, page = 1, pageSize = 20) {
   const params: Record<string, any> = { page, page_size: pageSize }
   if (status) params.status = status
+  if (keyword) params.keyword = keyword
   return http.get<any, PaginatedResult<Project>>('/teacher/projects', { params })
 }
 

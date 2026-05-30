@@ -95,7 +95,13 @@ def resolve_file_stream(db: Session, file_id: int) -> tuple[StoredFile, BinaryIO
     if not adapter.exists(object_key=object_key):
         return record, None
 
-    stream = adapter.open_stream(object_key=object_key)
+    try:
+        stream = adapter.open_stream(object_key=object_key)
+    except FileNotFoundError:
+        return record, None
+    except Exception:
+        return record, None
+
     return record, stream
 
 

@@ -19,6 +19,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const statusFilter = ref<string | null>(null)
+const searchKeyword = ref('')
 
 const statusMap: Record<string, { label: string; type: 'warning' | 'success' | 'danger' }> = {
   pending: { label: '待审', type: 'warning' },
@@ -54,7 +55,12 @@ onMounted(async () => {
 async function loadProjects() {
   loading.value = true
   try {
-    const res = await getAllProjects(statusFilter.value || undefined, currentPage.value, pageSize.value)
+    const res = await getAllProjects(
+      statusFilter.value || undefined,
+      searchKeyword.value || undefined,
+      currentPage.value,
+      pageSize.value,
+    )
     projects.value = res.items
     total.value = res.total
   } catch {
@@ -62,6 +68,11 @@ async function loadProjects() {
   } finally {
     loading.value = false
   }
+}
+
+function handleSearch() {
+  currentPage.value = 1
+  loadProjects()
 }
 
 function handlePageChange(page: number) {
@@ -167,7 +178,21 @@ async function handleBatchDownload() {
         <el-option label="全部状态" :value="null" />
         <el-option label="待审" value="pending" />
         <el-option label="通过" value="approved" />
+        <el-option label="驳回" value="rejected" />
       </el-select>
+      <el-input
+        v-model="searchKeyword"
+        placeholder="搜索作品名称"
+        clearable
+        size="default"
+        style="width: 200px"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      >
+        <template #prefix>
+          <span style="font-size: 0.85rem; color: var(--color-text-muted);">🔍</span>
+        </template>
+      </el-input>
       <span class="filter-count">共 {{ total }} 条</span>
     </div>
 

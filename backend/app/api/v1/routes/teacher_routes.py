@@ -19,44 +19,12 @@ from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, ProjectReviewAction
 from app.services.teacher_service import get_teacher_stats, list_students, list_all_projects
-from app.services.project_service import approve_project, reject_project
+from app.services.project_service import approve_project, reject_project, format_project
 from app.services.file_service import resolve_file_stream
 from app.models.entities import User, Project, Class
 from openpyxl import Workbook
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
-
-
-def _format_project(db: Session, p):
-    author = db.query(User).filter(User.id == p.author_id).first()
-    images = [
-        {"id": image.id, "image_url": image.image_url,
-            "sort_order": image.sort_order, "file_id": image.file_id}
-        for image in sorted(p.images, key=lambda item: (item.sort_order, item.id))
-    ]
-    if not images and p.image_url:
-        images = [{"image_url": p.image_url, "sort_order": 0}]
-    return {
-        "id": p.id,
-        "title": p.title,
-        "author_id": p.author_id,
-        "author_name": author.name if author else "",
-        "major": p.major,
-        "description": p.description,
-        "tags": p.tags,
-        "likes": p.likes,
-        "featured": p.featured,
-        "video_url": p.video_url,
-        "report_url": p.report_url,
-        "image_url": p.image_url,
-        "images": images,
-        "link_url": getattr(p, "link_url", ""),
-        "status": p.status,
-        "reject_reason": p.reject_reason,
-        "date": p.date,
-        "report_file_id": getattr(p, "report_file_id", None),
-        "cover_file_id": getattr(p, "cover_file_id", None),
-    }
 
 
 @router.get("/stats", summary="工作台概览", description="教师端：返回总学生数、我的课程数、待审核作品数、练习题量等教学数据")
@@ -76,16 +44,20 @@ def get_students(
     return paginated_success(items, total, page, page_size)
 
 
-@router.get("/projects", summary="作品审核列表", description="教师端：按状态筛选所有学生作品，默认返回全部")
+@router.get("/projects", summary="作品审核列表", description="教师端：按状态筛选所有学生作品，支持关键词搜索和分页")
 def get_all_projects(
     status: str = None,
+    keyword: str = None,
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    projects, total = list_all_projects(db, status, page, page_size, current_user.id)
-    return paginated_success([_format_project(db, p) for p in projects], total, page, page_size)
+    projects, total = list_all_projects(
+        db, status=status, page=page, page_size=page_size,
+        teacher_id=current_user.id, keyword=keyword,
+    )
+    return paginated_success([format_project(db, p) for p in projects], total, page, page_size)
 
 
 @router.post("/projects/{project_id}/approve", summary="通过作品审核", description="教师端：将指定作品设为审核通过")

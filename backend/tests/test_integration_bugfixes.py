@@ -310,3 +310,269 @@ class TestTeacherRefactor:
             for path in (own_report, other_report):
                 if path.exists():
                     path.unlink()
+
+
+class TestProjectReview:
+    """作品审核接口集成测试。"""
+
+    def _create_project(self, client, student_token, title="测试作品", report_url=""):
+        """辅助：学生创建作品，返回 project id。"""
+        resp = client.post(
+            "/api/projects",
+            json={
+                "title": title,
+                "description": "测试描述",
+                "tags": ["AI"],
+                "report_url": report_url,
+            },
+            headers=auth_header(student_token),
+        )
+        assert resp.json()["code"] == 0
+        return resp.json()["data"]["id"]
+
+    def test_teacher_approve_project(self, client, student_token, teacher_token):
+        """教师通过作品审核 → 状态变更为 approved。"""
+        pid = self._create_project(client, student_token, "待审核作品")
+
+        resp = client.post(
+            f"/api/teacher/projects/{pid}/approve",
+            headers=auth_header(teacher_token),
+        )
+        assert resp.json()["code"] == 0
+
+        detail = client.get(f"/api/projects/{pid}", headers=auth_header(student_token)).json()
+        assert detail["data"]["status"] == "approved"
+
+    def test_teacher_reject_project_with_reason(self, client, student_token, teacher_token):
+        """教师驳回作品 → 状态变更为 rejected，驳回理由不为空。"""
+        pid = self._create_project(client, student_token, "要驳回的作品")
+
+        resp = client.post(
+            f"/api/teacher/projects/{pid}/reject",
+            json={"reason": "报告格式不规范"},
+            headers=auth_header(teacher_token),
+        )
+        assert resp.json()["code"] == 0
+
+        detail = client.get(f"/api/projects/{pid}", headers=auth_header(student_token)).json()
+        assert detail["data"]["status"] == "rejected"
+        assert detail["data"]["reject_reason"] == "报告格式不规范"
+
+    def test_non_teacher_cannot_approve(self, client, student_token):
+        """非教师角色审核作品被拒绝。"""
+        pid = self._create_project(client, student_token, "学生想审核")
+
+        resp = client.post(
+            f"/api/teacher/projects/{pid}/approve",
+            headers=auth_header(student_token),
+        )
+        assert resp.json()["code"] == 403
+
+    def test_approve_nonexistent_project_returns_error(self, client, teacher_token):
+        """审核不存在的作品返回错误。"""
+        resp = client.post(
+            "/api/teacher/projects/99999/approve",
+            headers=auth_header(teacher_token),
+        )
+        assert resp.json()["code"] == 404
+
+
+class TestProjectLike:
+    """作品点赞接口集成测试。"""
+
+    def _create_project(self, client, student_token, title="点赞测试作品"):
+        resp = client.post(
+            "/api/projects",
+            json={"title": title, "description": "测试描述", "tags": ["AI"]},
+            headers=auth_header(student_token),
+        )
+        assert resp.json()["code"] == 0
+        return resp.json()["data"]["id"]
+
+    def _like(self, client, token, project_id):
+        return client.post(
+            f"/api/projects/{project_id}/like",
+            headers=auth_header(token),
+        )
+
+    def test_like_project(self, client, student_token):
+        """点赞作品 → liked=true, likes 计数增加。"""
+        pid = self._create_project(client, student_token)
+
+        result = self._like(client, student_token, pid).json()
+        assert result["code"] == 0
+        assert result["data"]["liked"] is True
+        assert result["data"]["likes"] == 1
+
+    def test_unlike_project(self, client, student_token):
+        """取消点赞 → liked=false, likes 计数减少。"""
+        pid = self._create_project(client, student_token)
+
+        # 先点赞
+        self._like(client, student_token, pid)
+        # 再取消
+        result = self._like(client, student_token, pid).json()
+        assert result["code"] == 0
+        assert result["data"]["liked"] is False
+        assert result["data"]["likes"] == 0
+
+    def test_double_like_is_idempotent(self, client, student_token):
+        """重复点赞不累积，连续两次点赞 = 赞后取消，回到未赞状态。"""
+        pid = self._create_project(client, student_token)
+
+        self._like(client, student_token, pid)
+        result = self._like(client, student_token, pid).json()
+
+        # 赞后再次调用 = 取消点赞
+        assert result["data"]["liked"] is False
+        assert result["data"]["likes"] == 0
+
+    def test_like_nonexistent_project_returns_error(self, client, student_token):
+        """点赞不存在的作品返回 404。"""
+        resp = self._like(client, student_token, 99999)
+        assert resp.json()["code"] == 404
+
+
+class TestProjectFullFlow:
+    """作品完整流程 E2E 测试。"""
+
+    def test_create_then_approve_then_visible_in_square(self, client, db_session, student_token, teacher_token):
+        """学生创建 → 待审不可见 → 教师通过 → 广场可见。"""
+        # 创建
+        create = client.post(
+            "/api/projects",
+            json={"title": "完整流程测试", "description": "E2E", "tags": ["AI"]},
+            headers=auth_header(student_token),
+        ).json()
+        assert create["code"] == 0
+        pid = create["data"]["id"]
+
+        # 待审状态下广场不可见
+        square = client.get("/api/projects", headers=auth_header(student_token)).json()
+        square_ids = [item["id"] for item in square["data"]["items"]]
+        assert pid not in square_ids
+
+        # 审核通过
+        approve = client.post(
+            f"/api/teacher/projects/{pid}/approve",
+            headers=auth_header(teacher_token),
+        ).json()
+        assert approve["code"] == 0
+
+        # 广场可见
+        square_after = client.get("/api/projects", headers=auth_header(student_token)).json()
+        square_ids_after = [item["id"] for item in square_after["data"]["items"]]
+        assert pid in square_ids_after
+
+    def test_rejected_project_can_be_resubmitted(self, client, db_session, student_token, teacher_token):
+        """驳回后学生重新提交 → 状态变回 pending。"""
+        # 创建 → 驳回
+        create = client.post(
+            "/api/projects",
+            json={"title": "驳回重提交测试", "description": "描述", "tags": []},
+            headers=auth_header(student_token),
+        ).json()
+        pid = create["data"]["id"]
+
+        client.post(
+            f"/api/teacher/projects/{pid}/reject",
+            json={"reason": "格式不对"},
+            headers=auth_header(teacher_token),
+        )
+
+        # 重新提交
+        update = client.put(
+            f"/api/projects/{pid}",
+            json={"title": "驳回重提交测试（已修改）", "description": "改好了", "tags": ["AI"], "report_url": ""},
+            headers=auth_header(student_token),
+        ).json()
+        assert update["code"] == 0
+
+        detail = client.get(f"/api/projects/{pid}", headers=auth_header(student_token)).json()
+        assert detail["data"]["status"] == "pending"
+
+
+class TestBatchDownload:
+    """批量下载测试。"""
+
+    def test_empty_projects_returns_error(self, client, teacher_token):
+        """没有可下载的作品时返回 404。"""
+        resp = client.get("/api/teacher/projects/batch-download", headers=auth_header(teacher_token))
+        assert resp.json()["code"] == 404
+
+    def test_local_storage_batch_download(self, client, db_session, student_token, teacher_token):
+        """本地存储模式下批量下载返回 ZIP。"""
+        upload_dir = Path(__file__).resolve().parents[1] / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        report_path = upload_dir / "batch-dl-test.pdf"
+        report_path.write_bytes(b"%PDF-1.4 batch download test content")
+
+        try:
+            project = Project(
+                title="下载测试作品",
+                author_id="2025001",
+                major="自动化专业",
+                description="测试",
+                tags=[],
+                report_url="/uploads/batch-dl-test.pdf",
+                status="approved",
+                date="2026-05-25",
+            )
+            db_session.add(project)
+            db_session.commit()
+
+            resp = client.get(
+                "/api/teacher/projects/batch-download",
+                headers=auth_header(teacher_token),
+            )
+            assert resp.status_code == 200
+            # ZIP 文件以 PK 开头
+            assert resp.content[:2] == b"PK"
+        finally:
+            if report_path.exists():
+                report_path.unlink()
+
+    def test_batch_download_with_report_file_id(self, client, db_session, student_token, teacher_token):
+        """通过 report_file_id（新方式）批量下载。"""
+        upload_dir = Path(__file__).resolve().parents[1] / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        local_file = upload_dir / "file-id-dl-test.pdf"
+        local_file.write_bytes(b"%PDF-1.4 via stored_file")
+
+        try:
+            stored = StoredFile(
+                biz_type="project_report",
+                storage_provider="local",
+                object_key="file-id-dl-test.pdf",
+                original_name="report.pdf",
+                stored_name="file-id-dl-test.pdf",
+                content_type="application/pdf",
+                extension=".pdf",
+                size_bytes=24,
+                created_by="2025001",
+            )
+            db_session.add(stored)
+            db_session.flush()
+
+            project = Project(
+                title="file_id 下载测试",
+                author_id="2025001",
+                major="自动化专业",
+                description="测试",
+                tags=[],
+                status="approved",
+                date="2026-05-25",
+                report_file_id=stored.id,
+            )
+            db_session.add(project)
+            db_session.commit()
+
+            resp = client.get(
+                "/api/teacher/projects/batch-download",
+                headers=auth_header(teacher_token),
+            )
+            assert resp.status_code == 200
+            assert resp.content[:2] == b"PK"
+        finally:
+            if local_file.exists():
+                local_file.unlink()
