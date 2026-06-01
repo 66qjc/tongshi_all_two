@@ -268,6 +268,8 @@ onMounted(async () => {
   font-size: 1.5rem;
   font-weight: 800;
   color: var(--color-text);
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
 }
 
 .empty-state {

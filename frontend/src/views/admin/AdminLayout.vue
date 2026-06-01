@@ -73,6 +73,7 @@ const handleLogout = () => {
 .admin-layout {
   min-height: 100vh;
   background: var(--color-bg-alt);
+  font-family: var(--font-sans);
 }
 
 .admin-header {
@@ -81,13 +82,16 @@ const handleLogout = () => {
   left: 0;
   right: 0;
   z-index: 1000;
-  height: 56px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-xl);
-  background: var(--color-bg-card);
+  background: rgba(255, 253, 248, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xs);
 }
 
 .header-left {
@@ -104,6 +108,7 @@ const handleLogout = () => {
 .logo-text {
   font-size: 1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
 }
 
@@ -125,20 +130,20 @@ const handleLogout = () => {
   font-weight: 500;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   cursor: pointer;
   background: transparent;
   transition: all var(--duration-fast);
 }
 
 .btn-logout:hover {
-  border-color: #f56c6c;
-  color: #f56c6c;
+  border-color: #c0392b;
+  color: #c0392b;
 }
 
 .admin-body {
   display: flex;
-  padding-top: 56px;
+  padding-top: 60px;
   min-height: 100vh;
 }
 
@@ -149,7 +154,7 @@ const handleLogout = () => {
   border-right: 1px solid var(--color-border);
   padding: var(--space-lg) 0;
   position: fixed;
-  top: 56px;
+  top: 60px;
   bottom: 0;
   left: 0;
   overflow-y: auto;
@@ -171,19 +176,21 @@ const handleLogout = () => {
   font-weight: 500;
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
   transition: all var(--duration-fast);
   text-decoration: none;
 }
 
 .sidebar-link:hover {
-  background: var(--color-primary-glow);
   color: var(--color-primary);
+  border-left-color: var(--color-border);
 }
 
 .sidebar-link.active {
-  background: var(--color-primary-glow);
-  color: var(--color-primary);
+  color: #2d5a6e !important;
   font-weight: 600;
+  border-left-color: #2d5a6e;
+  background: rgba(45, 90, 110, 0.04);
 }
 
 .sidebar-icon {
@@ -206,6 +213,7 @@ const handleLogout = () => {
   .sidebar-link {
     justify-content: center;
     padding: var(--space-sm);
+    border-left: none;
   }
 
   .sidebar-link span:not(.sidebar-icon) {

@@ -163,7 +163,7 @@ async function handleRegister() {
   width: 100%;
   max-width: 900px;
   background: var(--color-bg-card);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
@@ -189,6 +189,8 @@ async function handleRegister() {
 .brand-content h1 {
   font-size: 1.8rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   margin-bottom: var(--space-sm);
 }
 
@@ -214,6 +216,8 @@ async function handleRegister() {
 .form-content h2 {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
 }

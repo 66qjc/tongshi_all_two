@@ -493,6 +493,7 @@ onMounted(fetchItems)
 .page-title {
   font-size: 1.25rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
   margin: 0;
 }
@@ -517,12 +518,12 @@ onMounted(fetchItems)
   padding: 16px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  transition: box-shadow 0.15s;
+  border-radius: var(--radius-md);
+  transition: box-shadow var(--duration-fast, 0.15s);
 }
 
 .item-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 封面缩略图 */
@@ -530,7 +531,7 @@ onMounted(fetchItems)
   flex-shrink: 0;
   width: 120px;
   height: 80px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--color-bg-alt);
 }
@@ -604,7 +605,7 @@ onMounted(fetchItems)
   color: var(--color-text-muted);
   background: var(--color-bg-alt);
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 1px 6px;
 }
 
@@ -630,7 +631,7 @@ onMounted(fetchItems)
   width: 120px;
   height: 80px;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
 }
 
@@ -663,7 +664,7 @@ onMounted(fetchItems)
   position: relative;
   width: 120px;
   height: 80px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--color-border);
 }
@@ -692,6 +693,6 @@ onMounted(fetchItems)
 }
 
 .image-remove-btn:hover {
-  background: rgba(220, 53, 69, 0.9);
+  background: rgba(192, 57, 43, 0.9);
 }
 </style>

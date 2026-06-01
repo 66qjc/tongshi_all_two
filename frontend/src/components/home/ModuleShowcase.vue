@@ -159,23 +159,23 @@ onUnmounted(() => {
 
 .section-tag {
   display: inline-block;
-  padding: 0.3rem 0.9rem;
-  font-size: 0.75rem;
+  padding: 0.25rem 0.8rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--color-primary);
   background: var(--color-primary-glow);
-  border-radius: var(--radius-full);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.1em;
   margin-bottom: var(--space-lg);
 }
 
 .section-title {
-  font-size: clamp(1.8rem, 4vw, 2.5rem);
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-weight: 900;
   color: var(--color-text);
   margin-bottom: var(--space-md);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.05em;
 }
 
 .section-desc {
@@ -197,7 +197,7 @@ onUnmounted(() => {
   padding: var(--space-2xl);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   overflow: hidden;

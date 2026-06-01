@@ -322,6 +322,8 @@ onMounted(async () => {
   font-size: 1.5rem;
   font-weight: 800;
   color: var(--color-text);
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
 }
 
 .filter-bar {
@@ -407,7 +409,7 @@ onMounted(async () => {
   min-height: 120px;
   padding: var(--space-2xl);
   border: 2px dashed var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   text-align: center;
   color: var(--color-text-muted);
   cursor: pointer;

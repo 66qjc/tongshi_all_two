@@ -69,6 +69,7 @@ onMounted(async () => {
 .page-title {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
   color: var(--color-text);
   margin-bottom: var(--space-xl);
 }
@@ -86,6 +87,11 @@ onMounted(async () => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   text-align: center;
+  transition: box-shadow var(--duration-fast);
+}
+
+.stat-card:hover {
+  box-shadow: var(--shadow-sm);
 }
 
 .stat-value {
@@ -103,6 +109,7 @@ onMounted(async () => {
 .section-title {
   font-size: 1.1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
   margin-bottom: var(--space-lg);
 }
@@ -141,6 +148,7 @@ onMounted(async () => {
 .action-card h3 {
   font-size: 0.95rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
   margin-bottom: 2px;
 }

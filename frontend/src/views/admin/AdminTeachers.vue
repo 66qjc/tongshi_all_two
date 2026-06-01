@@ -291,6 +291,7 @@ onMounted(fetchTeachers)
 .page-title {
   font-size: 1.25rem;
   font-weight: 700;
+  font-family: var(--font-serif);
   color: var(--color-text);
   margin: 0;
 }
@@ -301,8 +302,8 @@ onMounted(fetchTeachers)
 }
 
 .import-tips {
-  background: var(--color-bg-alt, #f5f7fa);
-  border-radius: 6px;
+  background: var(--color-bg-alt, #f1ece2);
+  border-radius: var(--radius-md);
   padding: 14px 16px;
   font-size: 0.875rem;
   color: var(--color-text-secondary, #606266);

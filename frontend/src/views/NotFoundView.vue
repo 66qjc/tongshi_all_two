@@ -22,7 +22,7 @@ const router = useRouter()
 
 <style scoped>
 .not-found-page {
-  padding-top: 64px;
+  padding-top: 60px;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -46,6 +46,8 @@ const router = useRouter()
 .not-found-content h1 {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }

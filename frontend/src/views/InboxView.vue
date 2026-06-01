@@ -124,7 +124,7 @@ function formatDate(dateStr: string) {
 
 <style scoped>
 .inbox-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
@@ -144,7 +144,7 @@ function formatDate(dateStr: string) {
   width: 64px;
   height: 64px;
   background: linear-gradient(135deg, var(--color-primary), var(--color-learn));
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: white;
   margin-bottom: var(--space-md);
 }
@@ -152,6 +152,8 @@ function formatDate(dateStr: string) {
 .hero-inner h1 {
   font-size: 1.8rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
 }

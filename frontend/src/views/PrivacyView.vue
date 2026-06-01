@@ -54,7 +54,7 @@
 
 <style scoped>
 .privacy-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
@@ -70,6 +70,8 @@
 .hero-inner h1 {
   font-size: 2rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }
@@ -91,6 +93,8 @@
 .content-block h2 {
   font-size: 1.2rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-md);
 }

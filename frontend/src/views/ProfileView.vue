@@ -241,6 +241,8 @@ function handleTabChange(name: string) {
 .page-header h1 {
   font-size: 1.6rem;
   font-weight: 600;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text-primary, #1a1a1a);
   margin: 0 0 4px;
 }
@@ -308,8 +310,8 @@ function handleTabChange(name: string) {
 
 .question-detail {
   padding: 12px 16px;
-  background: #fafafa;
-  border-radius: 6px;
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-sm);
 }
 
 .options-list {
@@ -319,7 +321,7 @@ function handleTabChange(name: string) {
 .option-item {
   padding: 4px 8px;
   margin: 2px 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
 }
 
@@ -340,7 +342,7 @@ function handleTabChange(name: string) {
 }
 
 .label {
-  color: #666;
+  color: var(--color-text-secondary);
 }
 
 .wrong-answer {
@@ -355,9 +357,9 @@ function handleTabChange(name: string) {
 
 .explanation {
   font-size: 0.88rem;
-  color: #555;
+  color: var(--color-text-secondary);
   line-height: 1.6;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border);
   padding-top: 8px;
   margin-top: 8px;
 }
@@ -382,8 +384,8 @@ function handleTabChange(name: string) {
 }
 
 .project-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
   transition: box-shadow 0.2s, transform 0.2s;
@@ -398,7 +400,7 @@ function handleTabChange(name: string) {
   width: 100%;
   height: 160px;
   overflow: hidden;
-  background: #f3f4f6;
+  background: var(--color-bg-alt);
 }
 
 .card-cover img {
@@ -413,7 +415,7 @@ function handleTabChange(name: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #aaa;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
@@ -424,7 +426,7 @@ function handleTabChange(name: string) {
 .card-title {
   font-size: 0.95rem;
   font-weight: 500;
-  color: #1a1a1a;
+  color: var(--color-text);
   margin-bottom: 4px;
   white-space: nowrap;
   overflow: hidden;
@@ -435,7 +437,7 @@ function handleTabChange(name: string) {
   display: flex;
   justify-content: space-between;
   font-size: 0.82rem;
-  color: #888;
+  color: var(--color-text-muted);
 }
 
 .likes {

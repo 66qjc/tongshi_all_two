@@ -150,12 +150,12 @@ function handlePageChange(page: number) {
 
 <style scoped>
 .create-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 /* Page hero */
 .page-hero {
-  padding: var(--space-3xl) 0;
+  padding: var(--space-3xl) 0 var(--space-2xl);
   background: var(--color-create-bg);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -168,29 +168,32 @@ function handlePageChange(page: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  background: linear-gradient(135deg, var(--color-create-light), var(--color-create));
-  border-radius: var(--radius-lg);
+  width: 56px;
+  height: 56px;
+  background: var(--color-create);
+  border-radius: var(--radius-md);
   color: white;
   margin-bottom: var(--space-lg);
+  box-shadow: 0 4px 14px rgba(184, 134, 11, 0.2);
 }
 
 .hero-inner h1 {
-  font-size: 2rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.8rem;
+  font-weight: 900;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.05em;
 }
 
 .hero-inner p {
-  font-size: 1.05rem;
+  font-size: 0.92rem;
   color: var(--color-text-secondary);
 }
 
 /* Gallery */
 .gallery-section {
-  padding: var(--space-3xl) 0;
+  padding: var(--space-2xl) 0 var(--space-3xl);
 }
 
 .gallery-header {
@@ -198,14 +201,16 @@ function handlePageChange(page: number) {
 }
 
 .gallery-header h2 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.05em;
 }
 
 .gallery-header p {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: var(--color-text-secondary);
 }
 
@@ -218,19 +223,19 @@ function handlePageChange(page: number) {
 .projects-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-xl);
+  gap: var(--space-lg);
 }
 
 .project-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   overflow: hidden;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .project-card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-3px);
   box-shadow: var(--shadow-lg);
 }
 
@@ -267,26 +272,28 @@ function handlePageChange(page: number) {
 }
 
 .project-body {
-  padding: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
 }
 
 .project-title {
-  font-size: 1.1rem;
+  font-family: var(--font-serif);
+  font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.02em;
 }
 
 .project-author {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
   margin-bottom: var(--space-md);
 }
 
 .project-desc {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: 1.65;
   margin-bottom: var(--space-md);
 }
 
@@ -298,13 +305,13 @@ function handlePageChange(page: number) {
 }
 
 .project-tag {
-  padding: 0.2rem 0.6rem;
-  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
   font-weight: 500;
   color: var(--color-create);
   background: var(--color-create-bg);
-  border-radius: var(--radius-full);
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(184, 134, 11, 0.12);
 }
 
 .project-footer {
@@ -319,18 +326,19 @@ function handlePageChange(page: number) {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
 }
 
 .project-likes svg {
-  color: #ef4444;
+  color: #c0392b;
 }
 
 .view-btn {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--color-create);
+  letter-spacing: 0.03em;
   transition: opacity var(--duration-fast);
 }
 
@@ -349,24 +357,26 @@ function handlePageChange(page: number) {
   justify-content: space-between;
   padding: var(--space-xl) var(--space-2xl);
   background: var(--color-create-bg);
-  border: 1px solid rgba(245, 158, 11, 0.15);
-  border-radius: var(--radius-lg);
+  border: 1px solid rgba(184, 134, 11, 0.12);
+  border-radius: var(--radius-md);
 }
 
 .upload-content h3 {
-  font-size: 1.1rem;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.03em;
 }
 
 .upload-content p {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--color-text-secondary);
 }
 
 .upload-hint {
-  font-size: 0.8rem !important;
+  font-size: 0.75rem !important;
   color: var(--color-text-muted) !important;
   margin-top: var(--space-xs);
 }

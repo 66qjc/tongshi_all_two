@@ -187,7 +187,7 @@ function openPreview(image: string) {
 
 <style scoped>
 .detail-page {
-  padding-top: 80px;
+  padding-top: 60px;
   padding-bottom: var(--space-3xl);
 }
 
@@ -252,6 +252,8 @@ function openPreview(image: string) {
 .project-header h1 {
   font-size: 1.8rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
 }
@@ -297,6 +299,8 @@ function openPreview(image: string) {
 .detail-section h3 {
   font-size: 1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-md);
 }
@@ -439,6 +443,8 @@ function openPreview(image: string) {
 .not-found h2 {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }

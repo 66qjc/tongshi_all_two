@@ -116,6 +116,8 @@ const handleSubmit = async () => {
 .card-header {
   font-size: 1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text, #303133);
 }
 </style>

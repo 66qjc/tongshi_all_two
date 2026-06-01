@@ -67,7 +67,7 @@ onMounted(async () => {
 
 <style scoped>
 .course-detail-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .course-hero {
@@ -85,6 +85,8 @@ onMounted(async () => {
 .course-heading h1 {
   font-size: 2rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }
@@ -128,6 +130,8 @@ onMounted(async () => {
 .material-card h3 {
   font-size: 1.1rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }

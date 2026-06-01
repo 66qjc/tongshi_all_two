@@ -76,7 +76,7 @@ const modules = [
 
 <style scoped>
 .about-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
@@ -92,6 +92,8 @@ const modules = [
 .hero-inner h1 {
   font-size: 2rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }
@@ -112,6 +114,8 @@ const modules = [
 .about-block h2 {
   font-size: 1.3rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-lg);
 }
@@ -153,6 +157,8 @@ const modules = [
 .phil-card h3 {
   font-size: 1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }
@@ -207,6 +213,8 @@ const modules = [
 .ch-top h3 {
   font-size: 1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
 }
 

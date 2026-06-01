@@ -90,7 +90,7 @@ onMounted(() => {
 .stat-card {
   text-align: center;
   padding: var(--space-2xl) var(--space-lg);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   transition: all var(--duration-normal) var(--ease-out);
@@ -124,10 +124,12 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 0.95rem;
+  font-family: var(--font-serif);
+  font-size: 0.92rem;
   font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.03em;
 }
 
 .stat-desc {

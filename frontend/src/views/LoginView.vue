@@ -243,18 +243,19 @@ async function handleFirstLoginChange() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-alt);
+  background: var(--color-bg);
   padding: var(--space-xl);
 }
 
 .login-container {
   display: flex;
   width: 100%;
-  max-width: 900px;
+  max-width: 880px;
   background: var(--color-bg-card);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-lg);
+  border: 1px solid var(--color-border);
 }
 
 .brand-side {
@@ -264,6 +265,7 @@ async function handleFirstLoginChange() {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .brand-content {
@@ -276,29 +278,32 @@ async function handleFirstLoginChange() {
 }
 
 .brand-content h1 {
-  font-size: 1.8rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
+  font-weight: 900;
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.1em;
 }
 
 .brand-content p {
-  font-size: 0.95rem;
-  opacity: 0.7;
+  font-size: 0.88rem;
+  opacity: 0.65;
   margin-bottom: var(--space-2xl);
 }
 
 .brand-modules {
   display: flex;
-  gap: var(--space-lg);
+  gap: var(--space-md);
   justify-content: center;
 }
 
 .bm {
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.12);
-  padding: 0.3rem 0.8rem;
-  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.05em;
 }
 
 .form-side {
@@ -310,19 +315,21 @@ async function handleFirstLoginChange() {
 
 .form-content {
   width: 100%;
-  max-width: 340px;
+  max-width: 320px;
   margin: 0 auto;
 }
 
 .form-content h2 {
-  font-size: 1.5rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  font-weight: 900;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.05em;
 }
 
 .form-subtitle {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--color-text-secondary);
   margin-bottom: var(--space-2xl);
 }
@@ -333,10 +340,11 @@ async function handleFirstLoginChange() {
 
 .form-group label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.03em;
 }
 
 .btn-submit {
@@ -348,7 +356,7 @@ async function handleFirstLoginChange() {
 .admin-hint {
   text-align: center;
   margin-top: var(--space-lg);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
 }
 
@@ -356,7 +364,7 @@ async function handleFirstLoginChange() {
   text-align: right;
   margin-top: var(--space-sm);
   margin-bottom: var(--space-xs);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
 }
 
 .link {

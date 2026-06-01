@@ -241,7 +241,7 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
 
 <style scoped>
 .quiz-page {
-  padding-top: 64px;
+  padding-top: 60px;
   min-height: 100vh;
   background: var(--color-bg-alt);
 }
@@ -276,6 +276,8 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
 .quiz-info h2 {
   font-size: 1.1rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   text-align: right;
 }
@@ -297,7 +299,7 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
   padding: var(--space-3xl);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   max-width: 480px;
   margin: 0 auto;
 }
@@ -310,6 +312,8 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
 .summary-card h2 {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-lg);
 }
@@ -369,7 +373,7 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
 .question-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-2xl);
   max-width: 720px;
   margin: 0 auto var(--space-xl);

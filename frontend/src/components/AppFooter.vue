@@ -70,18 +70,18 @@ const currentYear = new Date().getFullYear()
 
 <style scoped>
 .app-footer {
-  background: var(--color-text);
-  color: rgba(255, 255, 255, 0.7);
-  padding: var(--space-4xl) 0 0;
-  margin-top: var(--space-4xl);
+  background: #1a1a2e;
+  color: rgba(255, 255, 255, 0.55);
+  padding: var(--space-3xl) 0 0;
+  margin-top: var(--space-3xl);
 }
 
 .footer-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr 1fr;
-  gap: var(--space-3xl);
-  padding-bottom: var(--space-3xl);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: var(--space-2xl);
+  padding-bottom: var(--space-2xl);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .footer-logo {
@@ -92,42 +92,44 @@ const currentYear = new Date().getFullYear()
 }
 
 .footer-logo span {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: white;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.08em;
 }
 
 .footer-desc {
-  font-size: 0.875rem;
+  font-size: 0.82rem;
   line-height: 1.7;
   max-width: 280px;
 }
 
 .footer-links h4 {
-  color: white;
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.78rem;
   font-weight: 600;
   margin-bottom: var(--space-lg);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 .footer-links a {
   display: block;
-  font-size: 0.875rem;
+  font-size: 0.82rem;
   padding: var(--space-xs) 0;
   transition: color var(--duration-fast);
 }
 
 .footer-links a:hover {
-  color: white;
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .footer-bottom {
-  padding: var(--space-xl) 0;
+  padding: var(--space-lg) 0;
   text-align: center;
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 0.03em;
 }
 
 @media (max-width: 768px) {

@@ -163,7 +163,7 @@ onMounted(() => {
   justify-content: center;
   overflow: hidden;
   background: var(--gradient-hero);
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 /* ── Background ── */
@@ -194,7 +194,7 @@ onMounted(() => {
 .orb-1 {
   width: 600px;
   height: 600px;
-  background: rgba(79, 70, 229, 0.25);
+  background: rgba(45, 90, 110, 0.3);
   top: -200px;
   right: -100px;
   animation: float1 20s ease-in-out infinite;
@@ -203,7 +203,7 @@ onMounted(() => {
 .orb-2 {
   width: 400px;
   height: 400px;
-  background: rgba(6, 182, 212, 0.15);
+  background: rgba(58, 125, 92, 0.15);
   bottom: -100px;
   left: -50px;
   animation: float2 25s ease-in-out infinite;
@@ -212,7 +212,7 @@ onMounted(() => {
 .orb-3 {
   width: 300px;
   height: 300px;
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(184, 134, 11, 0.1);
   top: 40%;
   left: 60%;
   animation: float3 18s ease-in-out infinite;
@@ -350,7 +350,7 @@ onMounted(() => {
 
 @keyframes charGlow {
   0%, 100% { filter: drop-shadow(0 0 0 transparent); }
-  50% { filter: drop-shadow(0 0 20px rgba(129, 140, 248, 0.5)); }
+  50% { filter: drop-shadow(0 0 20px rgba(45, 90, 110, 0.4)); }
 }
 
 .char-dot {

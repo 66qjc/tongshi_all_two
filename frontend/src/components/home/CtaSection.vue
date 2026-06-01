@@ -67,7 +67,7 @@ const router = useRouter()
   position: relative;
   padding: var(--space-4xl) var(--space-2xl);
   background: var(--gradient-hero);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   text-align: center;
 }
@@ -96,7 +96,7 @@ const router = useRouter()
 .cta-orb-1 {
   width: 300px;
   height: 300px;
-  background: rgba(79, 70, 229, 0.3);
+  background: rgba(45, 90, 110, 0.35);
   top: -100px;
   right: -50px;
   animation: float1 15s ease-in-out infinite;
@@ -105,7 +105,7 @@ const router = useRouter()
 .cta-orb-2 {
   width: 250px;
   height: 250px;
-  background: rgba(6, 182, 212, 0.2);
+  background: rgba(58, 125, 92, 0.2);
   bottom: -80px;
   left: -30px;
   animation: float2 18s ease-in-out infinite;
@@ -126,11 +126,12 @@ const router = useRouter()
 }
 
 .cta-title {
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-family: var(--font-serif);
+  font-size: clamp(1.6rem, 4vw, 2.5rem);
   font-weight: 900;
   color: white;
   margin-bottom: var(--space-lg);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
 .cta-desc {
@@ -152,7 +153,7 @@ const router = useRouter()
   padding: 0.85rem 2rem;
   font-size: 1rem;
   font-weight: 600;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   transition: all var(--duration-normal) var(--ease-out);
 }
 
@@ -211,10 +212,10 @@ const router = useRouter()
   color: white;
 }
 
-.cta-module-icon.t { background: rgba(6, 182, 212, 0.3); }
-.cta-module-icon.p { background: rgba(139, 92, 246, 0.3); }
-.cta-module-icon.c { background: rgba(245, 158, 11, 0.3); }
-.cta-module-icon.a { background: rgba(16, 185, 129, 0.3); }
+.cta-module-icon.t { background: rgba(45, 106, 122, 0.35); }
+.cta-module-icon.p { background: rgba(107, 76, 138, 0.35); }
+.cta-module-icon.c { background: rgba(184, 134, 11, 0.35); }
+.cta-module-icon.a { background: rgba(58, 125, 92, 0.35); }
 
 .cta-sep {
   color: rgba(255, 255, 255, 0.2);

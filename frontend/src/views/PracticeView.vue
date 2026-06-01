@@ -94,11 +94,11 @@ onMounted(async () => {
 
 <style scoped>
 .practice-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
-  padding: var(--space-3xl) 0;
+  padding: var(--space-3xl) 0 var(--space-2xl);
   background: var(--color-practice-bg);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -111,21 +111,25 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   background: var(--color-practice);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   color: white;
-  font-size: 1.4rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.3rem;
+  font-weight: 900;
   margin-bottom: var(--space-lg);
+  box-shadow: 0 4px 14px rgba(107, 76, 138, 0.2);
 }
 
 .hero-inner h1 {
-  font-size: 2rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.8rem;
+  font-weight: 900;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.05em;
 }
 
 .stats-section,
@@ -156,9 +160,16 @@ onMounted(async () => {
 .stat-card {
   padding: var(--space-lg);
   text-align: center;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .stat-value {
+  font-family: var(--font-serif);
   font-size: 1.6rem;
   font-weight: 900;
   color: var(--color-practice);
@@ -166,39 +177,67 @@ onMounted(async () => {
 
 .stat-label {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
 }
 
 .course-card {
   text-align: left;
   padding: var(--space-xl);
+  transition: all var(--duration-normal) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+
+.course-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--color-practice);
+  opacity: 0;
+  transition: opacity var(--duration-normal);
 }
 
 .course-card:hover {
-  border-color: var(--color-practice);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(107, 76, 138, 0.2);
+}
+
+.course-card:hover::before {
+  opacity: 1;
 }
 
 .course-card h3 {
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.03em;
 }
 
 .course-card p {
   color: var(--color-text-secondary);
+  font-size: 0.88rem;
   margin-bottom: var(--space-lg);
 }
 
 .course-card span {
   color: var(--color-practice);
-  font-weight: 800;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.03em;
 }
 
 .recent-section h2 {
-  font-size: 1.2rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 700;
   margin-bottom: var(--space-lg);
+  letter-spacing: 0.05em;
 }
 
 .recent-list {
@@ -210,20 +249,22 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   padding: var(--space-md);
+  font-size: 0.88rem;
 }
 
 .recent-item strong.correct {
-  color: #10b981;
+  color: var(--color-act);
 }
 
 .recent-item strong.wrong {
-  color: #ef4444;
+  color: #c0392b;
 }
 
 .empty-state {
   text-align: center;
   color: var(--color-text-muted);
   padding: var(--space-3xl) 0;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {

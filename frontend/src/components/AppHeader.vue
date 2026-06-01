@@ -180,15 +180,15 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   left: 0;
   right: 0;
   z-index: 1000;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(248, 245, 239, 0.78);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   border-bottom: 1px solid transparent;
   transition: all var(--duration-normal) var(--ease-out);
 }
 
 .app-header.scrolled {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(248, 245, 239, 0.94);
   border-bottom-color: var(--color-border);
   box-shadow: var(--shadow-xs);
 }
@@ -197,7 +197,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  height: 60px;
 }
 
 /* Logo */
@@ -216,7 +216,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .logo:hover .logo-icon {
-  transform: rotate(-10deg) scale(1.1);
+  transform: rotate(-8deg) scale(1.08);
 }
 
 .logo-text {
@@ -226,18 +226,18 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .logo-main {
-  font-size: 1.05rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 900;
   color: var(--color-text);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
 }
 
 .logo-sub {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   color: var(--color-text-muted);
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.1em;
 }
 
 /* Desktop Nav */
@@ -249,7 +249,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 
 .nav-link {
   padding: var(--space-sm) var(--space-md);
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 500;
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);
@@ -264,8 +264,19 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 
 .nav-link.active {
   color: var(--color-primary);
-  background: var(--color-primary-glow);
   font-weight: 600;
+  position: relative;
+}
+
+.nav-link.active::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: var(--space-md);
+  right: var(--space-md);
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: 1px;
 }
 
 /* Actions */
@@ -276,19 +287,20 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .btn-login {
-  padding: 0.5rem 1.25rem;
-  font-size: 0.875rem;
+  padding: 0.45rem 1.2rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: white;
-  background: var(--gradient-cta);
-  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  border-radius: var(--radius-sm);
   transition: all var(--duration-fast) var(--ease-out);
   white-space: nowrap;
 }
 
 .btn-login:hover {
+  background: var(--color-primary-light);
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.35);
+  box-shadow: 0 4px 14px rgba(45, 90, 110, 0.25);
 }
 
 .btn-login:active {
@@ -296,24 +308,24 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 }
 
 .user-name {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .btn-logout {
-  padding: 0.4rem 1rem;
-  font-size: 0.8rem;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.78rem;
   font-weight: 500;
   color: var(--color-text-secondary);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   transition: all var(--duration-fast);
 }
 
 .btn-logout:hover {
-  border-color: #ef4444;
-  color: #ef4444;
+  border-color: #c0392b;
+  color: #c0392b;
 }
 
 .teacher-link {
@@ -329,7 +341,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   width: 36px;
   height: 36px;
   color: var(--color-text-secondary);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   transition: all var(--duration-fast);
 }
 
@@ -348,7 +360,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   font-size: 0.6rem;
   font-weight: 700;
   color: white;
-  background: #ef4444;
+  background: #c0392b;
   border-radius: var(--radius-full);
   display: flex;
   align-items: center;
@@ -369,9 +381,8 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
 
 .hamburger span {
   display: block;
-  height: 2px;
+  height: 1.5px;
   background: var(--color-text);
-  border-radius: 2px;
   transition: all var(--duration-fast) var(--ease-out);
 }
 
@@ -392,11 +403,12 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll))
   padding: var(--space-md) var(--space-xl) var(--space-xl);
   gap: var(--space-xs);
   border-top: 1px solid var(--color-border-light);
+  background: rgba(248, 245, 239, 0.98);
 }
 
 .mobile-nav-link {
   padding: var(--space-md);
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: var(--color-text-secondary);
   border-radius: var(--radius-sm);

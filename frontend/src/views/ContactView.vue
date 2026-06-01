@@ -101,7 +101,7 @@ async function handleSubmit() {
 
 <style scoped>
 .contact-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
@@ -117,6 +117,8 @@ async function handleSubmit() {
 .hero-inner h1 {
   font-size: 2rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
 }
@@ -139,13 +141,15 @@ async function handleSubmit() {
 .contact-form-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-2xl);
 }
 
 .contact-form-card h2 {
   font-size: 1.2rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xl);
 }
@@ -153,13 +157,15 @@ async function handleSubmit() {
 .contact-info-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-2xl);
 }
 
 .contact-info-card h2 {
   font-size: 1.2rem;
   font-weight: 700;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xl);
 }

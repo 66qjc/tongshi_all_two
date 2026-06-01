@@ -1,50 +1,51 @@
 /* ============================================
-   学·练·创·行  AI通识课平台  —  Design System
+   学·思·践·悟  AI通识课平台  —  Design System
+   书卷墨韵 · 东方人文气质
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;600;700;900&display=swap');
 
 :root {
-  /* ── 品牌色 ── */
-  --color-primary: #4f46e5;
-  --color-primary-light: #818cf8;
-  --color-primary-dark: #3730a3;
-  --color-primary-glow: rgba(79, 70, 229, 0.15);
+  /* ── 品牌色（墨色层级）── */
+  --color-primary: #2d5a6e;         /* 靛青 - 主色，取自传统靛染 */
+  --color-primary-light: #4a8fa6;
+  --color-primary-dark: #1a3d4d;
+  --color-primary-glow: rgba(45, 90, 110, 0.10);
 
-  /* ── 功能色 ── */
-  --color-learn: #06b6d4;       /* 学 - 青色 */
-  --color-learn-light: #a5f3fc;
-  --color-learn-bg: rgba(6, 182, 212, 0.06);
+  /* ── 功能色（传统色谱）── */
+  --color-learn: #2d6a7a;           /* 学 - 靛青 */
+  --color-learn-light: #a8d4e0;
+  --color-learn-bg: rgba(45, 106, 122, 0.05);
 
-  --color-create: #f59e0b;      /* 创 - 琥珀 */
-  --color-create-light: #fde68a;
-  --color-create-bg: rgba(245, 158, 11, 0.06);
+  --color-create: #b8860b;          /* 造 - 琥珀/藤黄 */
+  --color-create-light: #f0d68a;
+  --color-create-bg: rgba(184, 134, 11, 0.05);
 
-  --color-practice: #8b5cf6;    /* 练 - 紫罗兰 */
-  --color-practice-light: #ddd6fe;
-  --color-practice-bg: rgba(139, 92, 246, 0.06);
+  --color-practice: #6b4c8a;        /* 练 - 紫藤 */
+  --color-practice-light: #c4aedd;
+  --color-practice-bg: rgba(107, 76, 138, 0.05);
 
-  --color-act: #10b981;         /* 行 - 翠绿 */
-  --color-act-light: #a7f3d0;
-  --color-act-bg: rgba(16, 185, 129, 0.06);
+  --color-act: #3a7d5c;             /* 行 - 翠绿 */
+  --color-act-light: #a7d4b8;
+  --color-act-bg: rgba(58, 125, 92, 0.05);
 
-  /* ── 中性色 ── */
-  --color-bg: #fafbfe;
-  --color-bg-alt: #f1f5f9;
-  --color-bg-card: #ffffff;
-  --color-text: #0f172a;
-  --color-text-secondary: #475569;
-  --color-text-muted: #94a3b8;
-  --color-border: #e2e8f0;
-  --color-border-light: #f1f5f9;
+  /* ── 中性色（暖调）── */
+  --color-bg: #f8f5ef;              /* 米白暖底 */
+  --color-bg-alt: #f1ece2;          /* 暖灰交替背景 */
+  --color-bg-card: #fffdf8;         /* 宣纸白 */
+  --color-text: #1a1a2e;            /* 浓墨 */
+  --color-text-secondary: #4a4a5a;  /* 淡墨 */
+  --color-text-muted: #8a8a96;      /* 残墨 */
+  --color-border: #e0d8c8;          /* 暖边框 */
+  --color-border-light: #ebe4d6;    /* 淡暖边框 */
 
   /* ── 渐变 ── */
-  --gradient-hero: linear-gradient(135deg, #0f172a 0%, #1e1b4b 40%, #312e81 70%, #4338ca 100%);
-  --gradient-card-learn: linear-gradient(135deg, #ecfeff, #e0f2fe);
-  --gradient-card-create: linear-gradient(135deg, #fffbeb, #fef3c7);
-  --gradient-card-practice: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  --gradient-card-act: linear-gradient(135deg, #ecfdf5, #d1fae5);
-  --gradient-cta: linear-gradient(135deg, #4f46e5, #7c3aed, #a855f7);
+  --gradient-hero: linear-gradient(135deg, #1a1a2e 0%, #2a2a40 30%, #2d5a6e 70%, #3a7d5c 100%);
+  --gradient-card-learn: linear-gradient(135deg, #eef6f8, #ddeef3);
+  --gradient-card-create: linear-gradient(135deg, #faf5eb, #f3edd8);
+  --gradient-card-practice: linear-gradient(135deg, #f3eff8, #e9e2f0);
+  --gradient-card-act: linear-gradient(135deg, #edf5f0, #dbeedd);
+  --gradient-cta: linear-gradient(135deg, #2d5a6e, #3a7d5c);
 
   /* ── 间距 ── */
   --space-xs: 0.25rem;
@@ -56,23 +57,24 @@
   --space-3xl: 4rem;
   --space-4xl: 6rem;
 
-  /* ── 圆角 ── */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
+  /* ── 圆角（偏方正，书卷气）── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
   --radius-full: 9999px;
 
-  /* ── 阴影 ── */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.10);
-  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 40px rgba(79, 70, 229, 0.15);
+  /* ── 阴影（暖调）── */
+  --shadow-xs: 0 1px 2px rgba(26, 26, 46, 0.03);
+  --shadow-sm: 0 2px 6px rgba(26, 26, 46, 0.05);
+  --shadow-md: 0 4px 14px rgba(26, 26, 46, 0.06);
+  --shadow-lg: 0 8px 28px rgba(26, 26, 46, 0.08);
+  --shadow-xl: 0 16px 40px rgba(26, 26, 46, 0.10);
+  --shadow-glow: 0 0 30px rgba(45, 90, 110, 0.10);
 
-  /* ── 字体 ── */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* ── 字体（宋体 display + 黑体 body）── */
+  --font-sans: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* ── 过渡 ── */
@@ -102,12 +104,24 @@ body {
   font-family: var(--font-sans);
   color: var(--color-text);
   background: var(--color-bg);
-  line-height: 1.6;
+  line-height: 1.7;
   overflow-x: hidden;
+}
+
+/* 宣纸微纹理 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg width='80' height='80' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.5' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.012'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
 }
 
 #app {
   min-height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 
 a {
@@ -167,13 +181,13 @@ a:focus-visible {
 
 /* ── 选区颜色 ── */
 ::selection {
-  background: var(--color-primary-light);
+  background: var(--color-primary);
   color: white;
 }
 
 /* ── 滚动条 ── */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -181,10 +195,111 @@ a:focus-visible {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-text-muted);
+  background: var(--color-border);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: var(--color-text-muted);
+}
+
+/* ── Element Plus 全局样式覆盖 ── */
+
+/* 按钮圆角调小 */
+.el-button--primary {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background-color: var(--color-primary-light) !important;
+  border-color: var(--color-primary-light) !important;
+}
+
+.el-button--success {
+  background-color: var(--color-act) !important;
+  border-color: var(--color-act) !important;
+}
+
+.el-button--warning {
+  background-color: var(--color-create) !important;
+  border-color: var(--color-create) !important;
+}
+
+/* 输入框 */
+.el-input__wrapper {
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 0 0 1px var(--color-border) !important;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--color-text-muted) !important;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--color-primary) !important;
+}
+
+/* 对话框 */
+.el-dialog {
+  border-radius: var(--radius-lg) !important;
+}
+
+/* 分页器 */
+.el-pagination.is-background .el-pager li:not(.is-disabled).is-active {
+  background-color: var(--color-primary) !important;
+}
+
+/* 标签 */
+.el-tag--warning {
+  --el-tag-bg-color: var(--color-create-bg);
+  --el-tag-border-color: rgba(184, 134, 11, 0.15);
+  --el-tag-text-color: var(--color-create);
+}
+
+/* 消息提示 */
+.el-message {
+  border-radius: var(--radius-md) !important;
+}
+
+/* 表格 */
+.el-table {
+  --el-table-border-color: var(--color-border);
+  --el-table-header-bg-color: var(--color-bg-alt);
+}
+
+/* 菜单 - 强制适配靛青色系 */
+.el-menu {
+  border-right: none !important;
+}
+
+.el-menu-item.is-active {
+  color: #2d5a6e !important;
+  background: rgba(45, 90, 110, 0.06) !important;
+}
+
+.el-menu-item.is-active::before {
+  background: #2d5a6e !important;
+}
+
+.el-menu-item:hover {
+  background: rgba(45, 90, 110, 0.04) !important;
+  color: #2d5a6e !important;
+}
+
+.el-sub-menu__title:hover {
+  background: rgba(45, 90, 110, 0.04) !important;
+  color: #2d5a6e !important;
+}
+
+/* 全局侧边栏激活态覆盖（教师端/管理端） */
+.sidebar-link.active {
+  color: #2d5a6e !important;
+  border-left-color: #2d5a6e !important;
+  background: rgba(45, 90, 110, 0.06) !important;
+}
+
+.sidebar-link.active .sidebar-icon {
+  color: #2d5a6e !important;
 }

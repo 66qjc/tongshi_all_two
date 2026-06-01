@@ -310,7 +310,7 @@ onMounted(() => {
 
 <style scoped>
 .upload-page {
-  padding-top: 80px;
+  padding-top: 60px;
   padding-bottom: var(--space-3xl);
 }
 
@@ -334,13 +334,15 @@ onMounted(() => {
   margin: 0 auto;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-2xl);
 }
 
 .upload-card h1 {
   font-size: 1.5rem;
   font-weight: 800;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
 }

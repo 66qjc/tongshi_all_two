@@ -185,11 +185,11 @@ onMounted(async () => {
 
 <style scoped>
 .portfolio-page {
-  padding-top: 64px;
+  padding-top: 60px;
 }
 
 .page-hero {
-  padding: var(--space-3xl) 0;
+  padding: var(--space-3xl) 0 var(--space-2xl);
   background: var(--color-practice-bg);
   border-bottom: 1px solid var(--color-border-light);
 }
@@ -202,23 +202,26 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
-  background: linear-gradient(135deg, var(--color-practice-light), var(--color-practice));
+  width: 64px;
+  height: 64px;
+  background: var(--color-practice);
   border-radius: 50%;
   color: white;
   margin-bottom: var(--space-md);
+  box-shadow: 0 4px 14px rgba(107, 76, 138, 0.2);
 }
 
 .hero-inner h1 {
-  font-size: 1.8rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
+  font-weight: 900;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  letter-spacing: 0.05em;
 }
 
 .hero-inner p {
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: var(--color-text-secondary);
 }
 
@@ -245,27 +248,31 @@ onMounted(async () => {
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .stat-value {
-  font-size: 1.8rem;
+  font-family: var(--font-serif);
+  font-size: 1.7rem;
   font-weight: 900;
   font-family: var(--font-mono);
   margin-bottom: var(--space-xs);
 }
 
 .stat-label {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
+  letter-spacing: 0.03em;
 }
 
 /* Section title */
 .section-title {
-  font-size: 1.3rem;
-  font-weight: 800;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-xl);
+  letter-spacing: 0.05em;
 }
 
 /* Radar */
@@ -276,7 +283,7 @@ onMounted(async () => {
 .radar-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: var(--space-lg);
   max-width: 600px;
   margin: 0 auto;
@@ -301,7 +308,7 @@ onMounted(async () => {
   left: 7px;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 1.5px;
   background: var(--color-border);
 }
 
@@ -318,8 +325,8 @@ onMounted(async () => {
   position: absolute;
   left: -32px;
   top: 4px;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   border: 3px solid var(--color-bg-alt);
   z-index: 1;
@@ -327,14 +334,14 @@ onMounted(async () => {
 
 .timeline-date {
   display: inline-block;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--color-text-muted);
   margin-bottom: 2px;
 }
 
 .timeline-title {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--color-text);
 }
@@ -356,9 +363,10 @@ onMounted(async () => {
 }
 
 .view-all {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--color-practice);
+  letter-spacing: 0.03em;
   transition: opacity var(--duration-fast);
 }
 
@@ -377,12 +385,12 @@ onMounted(async () => {
   border-radius: var(--radius-md);
   overflow: hidden;
   cursor: pointer;
-  transition: all var(--duration-fast);
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .project-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-md);
 }
 
 .project-image {
@@ -399,10 +407,12 @@ onMounted(async () => {
 }
 
 .project-info h4 {
-  font-size: 0.95rem;
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
   font-weight: 700;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  letter-spacing: 0.02em;
 }
 
 .project-tags {
@@ -412,11 +422,11 @@ onMounted(async () => {
 }
 
 .project-tags span {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.5rem;
+  font-size: 0.65rem;
+  padding: 0.12rem 0.45rem;
   color: var(--color-create);
   background: var(--color-create-bg);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
 }
 
 @media (max-width: 1024px) {

@@ -193,6 +193,8 @@ function formatDate(dateStr: string) {
   font-weight: 700;
   color: var(--color-text);
   margin: 0;
+  font-family: var(--font-serif);
+  letter-spacing: 0.05em;
 }
 
 .count-badge {
