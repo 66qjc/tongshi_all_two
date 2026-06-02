@@ -58,9 +58,9 @@ def _seed_if_empty():
             count = db.query(Course).count()
             if count == 0:
                 logger.info("Empty database, running seed...")
-                seed()
             else:
-                logger.info("Database already seeded, skipping.")
+                logger.info("Database already seeded, ensuring shared seed data...")
+            seed()
         finally:
             db.close()
     except Exception as e:

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -86,11 +87,18 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
     if not question_ids:
         raise BusinessException(400, "请选择题目")
 
-    course = db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id).first()
+    course = db.query(Course).filter(
+        Course.id == course_id,
+        or_(Course.created_by == teacher_id, Course.is_public.is_(True)),
+    ).first()
     if not course:
         raise BusinessException(404, "课程不存在")
 
-    classes = db.query(Class).filter(Class.id.in_(class_ids), Class.course_id == course_id).all()
+    classes = db.query(Class).filter(
+        Class.id.in_(class_ids),
+        Class.course_id == course_id,
+        Class.created_by == teacher_id,
+    ).all()
     if len(classes) != len(set(class_ids)):
         raise BusinessException(400, "目标班级必须属于所选课程")
 

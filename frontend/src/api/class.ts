@@ -10,6 +10,7 @@ export interface ClassInfo {
 }
 
 export interface ClassStudent {
+  serial_no: number
   id: string
   name: string
   major: string

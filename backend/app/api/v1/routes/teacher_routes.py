@@ -290,7 +290,7 @@ def _write_student_sheet(ws, students: list) -> None:
     # 数据行，每个学生一行
     for idx, s in enumerate(students, start=1):
         ws.append([
-            idx,
+            s.get("serial_no") or idx,
             s["id"],
             s["name"],
             s["major"] or "",

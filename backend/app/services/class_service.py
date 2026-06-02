@@ -7,6 +7,7 @@ from io import BytesIO
 from typing import Dict, List
 
 from openpyxl import load_workbook
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -37,7 +38,13 @@ def _now_iso(value: datetime | None) -> str:
 
 
 def _owned_class_query(db: Session, teacher_id: str):
-    return db.query(Class).join(Course, Course.id == Class.course_id).filter(Course.created_by == teacher_id)
+    return db.query(Class).filter(Class.created_by == teacher_id)
+
+
+def _accessible_course_query(db: Session, teacher_id: str):
+    return db.query(Course).filter(
+        or_(Course.created_by == teacher_id, Course.is_public.is_(True))
+    )
 
 
 def list_classes(db: Session, teacher_id: str, course_id: int | None = None, keyword: str | None = None):
@@ -63,14 +70,14 @@ def list_classes(db: Session, teacher_id: str, course_id: int | None = None, key
 
 
 def create_class(db: Session, name: str, course_id: int, teacher_id: str):
-    course = db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id).first()
+    course = _accessible_course_query(db, teacher_id).filter(Course.id == course_id).first()
     if not course:
         raise BusinessException(404, "课程不存在")
     existing = db.query(Class).filter(
-        Class.name == name, Class.course_id == course_id).first()
+        Class.name == name, Class.course_id == course_id, Class.created_by == teacher_id).first()
     if existing:
         raise BusinessException(400, "班级已存在")
-    cls = Class(name=name, course_id=course_id)
+    cls = Class(name=name, course_id=course_id, created_by=teacher_id)
     try:
         db.add(cls)
         db.commit()
@@ -145,7 +152,7 @@ def list_class_students(db: Session, class_id: int, teacher_id: str):
     enrollments = (
         db.query(StudentClassEnrollment)
         .filter(StudentClassEnrollment.class_id == class_id)
-        .order_by(StudentClassEnrollment.enrolled_at.desc())
+        .order_by(StudentClassEnrollment.import_order.asc(), StudentClassEnrollment.enrolled_at.asc())
         .all()
     )
     result = []
@@ -154,6 +161,7 @@ def list_class_students(db: Session, class_id: int, teacher_id: str):
         if not student:
             continue
         result.append({
+            "serial_no": enrollment.import_order or 0,
             "id": student.id,
             "name": student.name,
             "major": student.major or "",
@@ -196,7 +204,15 @@ def enroll_student(db: Session, class_id: int, student_id: str, teacher_id: str,
     ).first()
     if existing:
         return existing, "已存在"
-    enrollment = StudentClassEnrollment(user_id=student_id, class_id=class_id)
+    max_order = db.query(StudentClassEnrollment.import_order).filter(
+        StudentClassEnrollment.class_id == class_id,
+    ).order_by(StudentClassEnrollment.import_order.desc()).first()
+    next_order = ((max_order[0] if max_order and max_order[0] else 0) + 1)
+    enrollment = StudentClassEnrollment(
+        user_id=student_id,
+        class_id=class_id,
+        import_order=next_order,
+    )
     try:
         db.add(enrollment)
         db.commit()
@@ -263,11 +279,14 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
     if header_row_idx is None or header_values is None:
         raise BusinessException(400, "未找到表头行，请确认文件包含「学号」列")
 
-    # 定位学号列和姓名列
+    # 定位序号列、学号列和姓名列
+    order_col = None
     id_col = None
     name_col = None
     for idx, val in enumerate(header_values):
-        if val == "学号":
+        if val == "序号":
+            order_col = idx
+        elif val == "学号":
             id_col = idx
         elif val == "姓名":
             name_col = idx
@@ -283,6 +302,7 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
     # 遍历数据行
     result = {"success_count": 0, "skip_count": 0, "fail_count": 0, "errors": []}
 
+    data_order = 0
     for row_idx, row in enumerate(
         ws.iter_rows(min_row=header_row_idx + 1, values_only=True),
         start=header_row_idx + 1,
@@ -296,6 +316,13 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
 
         if not student_id or not name:
             continue
+        data_order += 1
+        import_order = data_order
+        if order_col is not None and order_col < len(row_list) and row_list[order_col] is not None:
+            try:
+                import_order = int(float(str(row_list[order_col]).strip()))
+            except ValueError:
+                import_order = data_order
 
         # 提取专业（可能为 None）
         major = ""
@@ -327,9 +354,14 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
                         StudentClassEnrollment.user_id == student_id,
                         StudentClassEnrollment.class_id == target_class.id,
                     ).first()
-                    if not existing_enrollment:
+                    if existing_enrollment:
+                        existing_enrollment.import_order = import_order
+                    else:
                         db.add(StudentClassEnrollment(
-                            user_id=student_id, class_id=target_class.id))
+                            user_id=student_id,
+                            class_id=target_class.id,
+                            import_order=import_order,
+                        ))
                         db.flush()
 
                 if is_new:

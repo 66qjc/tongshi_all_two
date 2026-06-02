@@ -6,8 +6,7 @@ from app.models.entities import User, Course, Project, QuizAttempt, StudentProgr
 def _teacher_class_ids(db: Session, teacher_id: str) -> list[int]:
     return [
         row.id for row in db.query(Class.id)
-        .join(Course, Course.id == Class.course_id)
-        .filter(Course.created_by == teacher_id)
+        .filter(Class.created_by == teacher_id)
         .all()
     ]
 
@@ -28,6 +27,7 @@ def get_teacher_stats(db: Session, teacher_id: str):
     student_ids = _teacher_student_ids(db, teacher_id)
     total_students = len(student_ids)
     my_courses = db.query(Course).filter(Course.created_by == teacher_id).count()
+    public_courses = db.query(Course).filter(Course.is_public.is_(True)).count()
     pending_reviews_query = db.query(Project).filter(Project.status == "pending")
     if student_ids:
         pending_reviews_query = pending_reviews_query.filter(Project.author_id.in_(student_ids))
@@ -43,6 +43,7 @@ def get_teacher_stats(db: Session, teacher_id: str):
     return {
         "total_students": total_students,
         "my_courses": my_courses,
+        "public_courses": public_courses,
         "pending_reviews": pending_reviews,
         "weekly_exercises": weekly_exercises,
     }
@@ -57,27 +58,32 @@ def list_students(db: Session, teacher_id: str, class_id: int = None, page: int 
     if not class_ids:
         return [], 0
     query = (
-        db.query(User)
+        db.query(User, StudentClassEnrollment, Class)
         .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
+        .join(Class, Class.id == StudentClassEnrollment.class_id)
         .filter(User.role == "student", StudentClassEnrollment.class_id.in_(class_ids))
-        .distinct()
     )
     if keyword:
         query = query.filter(
             (User.id.like(f"%{keyword}%")) | (User.name.like(f"%{keyword}%"))
         )
-    query = query.order_by(User.id)
+    query = query.order_by(Class.id.asc(), StudentClassEnrollment.import_order.asc(), User.id.asc())
     total = query.count()
     if page and page_size:
-        students = query.offset((page - 1) * page_size).limit(page_size).all()
+        rows = query.offset((page - 1) * page_size).limit(page_size).all()
     else:
-        students = query.all()
+        rows = query.all()
     result = []
-    for s in students:
+    for s, enrollment, class_ in rows:
         progresses = (
             db.query(StudentProgress)
             .join(Course, Course.id == StudentProgress.course_id)
-            .filter(StudentProgress.user_id == s.id, Course.created_by == teacher_id)
+            .filter(
+                StudentProgress.user_id == s.id,
+                StudentProgress.course_id.in_(
+                    db.query(Class.course_id).filter(Class.id.in_(class_ids))
+                ),
+            )
             .all()
         )
         total_progress = sum(p.learn_progress for p in progresses)
@@ -87,23 +93,13 @@ def list_students(db: Session, teacher_id: str, class_id: int = None, page: int 
         total_accuracy = sum(p.accuracy for p in progresses)
         avg_accuracy = int(total_accuracy / len(progresses)) if progresses else 0
 
-        enrollment_query = (
-            db.query(StudentClassEnrollment, Class)
-            .join(Class, Class.id == StudentClassEnrollment.class_id)
-            .filter(StudentClassEnrollment.user_id == s.id, Class.id.in_(class_ids))
-        )
-        if class_id:
-            enrollment_query = enrollment_query.filter(StudentClassEnrollment.class_id == class_id)
-        enrollment = enrollment_query.order_by(StudentClassEnrollment.enrolled_at.desc()).first()
-        class_id_value = enrollment[1].id if enrollment else None
-        class_name = enrollment[1].name if enrollment else ""
-
         result.append({
+            "serial_no": enrollment.import_order or 0,
             "id": s.id,
             "name": s.name,
             "major": s.major or "",
-            "class_id": class_id_value,
-            "class_name": class_name,
+            "class_id": class_.id,
+            "class_name": class_.name,
             "progress": avg_progress,
             "exercises": total_done,
             "accuracy": avg_accuracy,

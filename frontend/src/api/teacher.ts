@@ -9,6 +9,7 @@ export interface TeacherStats {
 }
 
 export interface Student {
+  serial_no: number
   id: string
   name: string
   major: string

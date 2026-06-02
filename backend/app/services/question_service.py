@@ -1,6 +1,7 @@
 """题库与课程服务。"""
 from __future__ import annotations
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
@@ -15,7 +16,7 @@ def list_questions(
 ):
     query = db.query(Question).join(Course, Course.id == Question.course_id)
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(_course_access_filter(teacher_id))
     if course_id is not None:
         query = query.filter(Question.course_id == course_id)
     if type_ is not None:
@@ -32,6 +33,10 @@ def get_question(db: Session, question_id: int, teacher_id: str | None = None):
 
 def _get_owned_course(db: Session, course_id: int, teacher_id: str):
     return db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id).first()
+
+
+def _course_access_filter(teacher_id: str):
+    return or_(Course.created_by == teacher_id, Course.is_public.is_(True))
 
 
 def create_question(db: Session, data: dict, teacher_id: str):
@@ -78,21 +83,22 @@ def get_course_questions(db: Session, course_id: int):
 def list_courses(db: Session, teacher_id: str | None = None):
     query = db.query(Course)
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(_course_access_filter(teacher_id))
+        return query.order_by(Course.is_public.asc(), Course.id.desc()).all()
     return query.order_by(Course.id.desc()).all()
 
 
-def create_course(db: Session, name: str, teacher_id: str):
+def create_course(db: Session, name: str, teacher_id: str, is_public: bool = False):
     if db.query(Course).filter(Course.name == name, Course.created_by == teacher_id).first():
         raise BusinessException(400, "课程已存在")
-    course = Course(name=name, created_by=teacher_id)
+    course = Course(name=name, created_by=teacher_id, is_public=is_public)
     db.add(course)
     db.commit()
     db.refresh(course)
     return course
 
 
-def update_course(db: Session, course_id: int, name: str, teacher_id: str):
+def update_course(db: Session, course_id: int, name: str, teacher_id: str, is_public: bool | None = None):
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
@@ -105,6 +111,8 @@ def update_course(db: Session, course_id: int, name: str, teacher_id: str):
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
+    if is_public is not None:
+        course.is_public = is_public
     db.commit()
     return course
 
@@ -132,7 +140,7 @@ def delete_course(db: Session, course_id: int, teacher_id: str):
 def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None):
     query = db.query(Course).filter(Course.id == course_id)
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(_course_access_filter(teacher_id))
     course = query.first()
     if not course:
         return None

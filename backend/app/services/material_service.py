@@ -1,6 +1,7 @@
 """资料服务。"""
 from datetime import datetime
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.entities import Course, Material
@@ -9,7 +10,8 @@ from app.models.entities import Course, Material
 def list_materials(db: Session, course_id: int | None = None, teacher_id: str | None = None):
     query = db.query(Material).join(Course, Course.id == Material.course_id)
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(
+            or_(Course.created_by == teacher_id, Course.is_public.is_(True)))
     if course_id is not None:
         query = query.filter(Material.course_id == course_id)
     return query.order_by(Material.course_id, Material.id).all()

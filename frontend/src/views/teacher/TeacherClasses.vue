@@ -115,7 +115,7 @@ onMounted(async () => {
     </div>
 
     <div class="filter-bar">
-      <el-select v-model="filters.course_id" placeholder="全部课程" clearable style="width: 220px" @change="loadClasses">
+      <el-select v-model="filters.course_id" placeholder="全部课程" clearable filterable style="width: 220px" @change="loadClasses">
         <el-option v-for="course in courses" :key="course.id" :label="course.name" :value="course.id" />
       </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索班级名称" clearable style="width: 220px" @keyup.enter="loadClasses" />
@@ -150,7 +150,7 @@ onMounted(async () => {
     <el-dialog v-model="createDialogVisible" title="新增班级" width="420px">
       <div class="form-group">
         <label>所属课程</label>
-        <el-select v-model="form.course_id" placeholder="选择课程" size="large" style="width: 100%">
+        <el-select v-model="form.course_id" placeholder="选择课程" size="large" clearable filterable style="width: 100%">
           <el-option v-for="course in courses" :key="course.id" :label="course.name" :value="course.id" />
         </el-select>
       </div>

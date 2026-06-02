@@ -34,9 +34,11 @@ class Class(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(64), nullable=False)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     course = relationship("Course", back_populates="classes")
+    creator = relationship("User", foreign_keys=[created_by])
     enrollments = relationship(
         "StudentClassEnrollment", back_populates="class_", cascade="all, delete-orphan")
 
@@ -51,6 +53,7 @@ class StudentClassEnrollment(Base):
         "users.id", ondelete="CASCADE"), nullable=False, index=True)
     class_id = Column(Integer, ForeignKey(
         "classes.id", ondelete="CASCADE"), nullable=False, index=True)
+    import_order = Column(Integer, nullable=False, default=0)
     enrolled_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="enrollments")
@@ -64,6 +67,7 @@ class Course(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
     created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
+    is_public = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     creator = relationship("User", foreign_keys=[created_by])

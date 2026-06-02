@@ -141,7 +141,11 @@ def ensure_schema_compatibility(engine) -> None:
         _add_column_if_missing(
             conn, inspector, "courses", "created_by", "VARCHAR(32) NOT NULL DEFAULT 'T001'")
         _add_column_if_missing(
+            conn, inspector, "courses", "is_public", "BOOLEAN NOT NULL DEFAULT 0")
+        _add_column_if_missing(
             conn, inspector, "classes", "course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "classes", "created_by", "VARCHAR(32)")
         _add_column_if_missing(
             conn, inspector, "materials", "course_id", "INTEGER")
         _add_column_if_missing(
@@ -156,10 +160,52 @@ def ensure_schema_compatibility(engine) -> None:
                                "cover_file_id", "INTEGER")
         _add_column_if_missing(
             conn, inspector, "project_images", "file_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "student_class_enrollment", "import_order", "INTEGER NOT NULL DEFAULT 0")
 
         # ── users 表新增 needs_password_change 列 ────────────────────────
         _add_column_if_missing(
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "student_class_enrollment" in table_names:
+            enrollment_columns = {c["name"] for c in inspector.get_columns("student_class_enrollment")}
+            if "import_order" in enrollment_columns:
+                conn.execute(text("""
+                    UPDATE student_class_enrollment
+                    SET import_order = id
+                    WHERE import_order IS NULL OR import_order = 0
+                """))
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "classes" in table_names and "courses" in table_names:
+            class_columns = {c["name"] for c in inspector.get_columns("classes")}
+            if {"created_by", "course_id"}.issubset(class_columns):
+                if conn.dialect.name == "mysql":
+                    conn.execute(text("""
+                        UPDATE classes c
+                        JOIN courses co ON co.id = c.course_id
+                        SET c.created_by = co.created_by
+                        WHERE c.created_by IS NULL OR c.created_by = ''
+                    """))
+                    conn.execute(text(
+                        "UPDATE classes SET created_by = 'T001' WHERE created_by IS NULL OR created_by = ''"))
+                    conn.execute(text(
+                        "ALTER TABLE classes MODIFY created_by VARCHAR(32) NOT NULL"))
+                else:
+                    conn.execute(text("""
+                        UPDATE classes
+                        SET created_by = (
+                            SELECT courses.created_by
+                            FROM courses
+                            WHERE courses.id = classes.course_id
+                        )
+                        WHERE created_by IS NULL OR created_by = ''
+                    """))
+                    conn.execute(text(
+                        "UPDATE classes SET created_by = 'T001' WHERE created_by IS NULL OR created_by = ''"))
 
         # ── 清理旧版遗留列（班级改课程归属 / 章节去除后残留的 NOT NULL 列）──
         # 旧库里这些列为 NOT NULL 且无默认值，新模型已去除/改挂课程，

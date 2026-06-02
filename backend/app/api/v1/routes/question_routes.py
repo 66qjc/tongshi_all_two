@@ -97,15 +97,22 @@ def get_courses(db: Session = Depends(get_db), current_user: AuthUser = Depends(
         "id": c.id,
         "name": c.name,
         "created_at": c.created_at.isoformat() if c.created_at else "",
+        "created_by": c.created_by,
+        "is_public": bool(c.is_public),
+        "is_owner": c.created_by == current_user.id,
         "material_count": len(c.materials),
         "question_count": len(c.questions),
-        "class_count": len(c.classes),
+        "class_count": (
+            db.query(Class).filter(Class.course_id == c.id, Class.created_by == current_user.id).count()
+            if current_user.role == "teacher"
+            else len(c.classes)
+        ),
     } for c in courses])
 
 
 @router.post("/courses", summary="创建课程", description="教师端：创建新课程")
 def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = create_course(db, data.name.strip(), current_user.id)
+    course = create_course(db, data.name.strip(), current_user.id, data.is_public)
     return success({"id": course.id})
 
 
@@ -124,15 +131,22 @@ def get_course(
         "id": course.id,
         "name": course.name,
         "created_at": course.created_at.isoformat() if course.created_at else "",
+        "created_by": course.created_by,
+        "is_public": bool(course.is_public),
+        "is_owner": course.created_by == current_user.id,
         "material_count": material_count,
         "question_count": question_count,
-        "class_count": class_count,
+        "class_count": (
+            db.query(Class).filter(Class.course_id == course.id, Class.created_by == current_user.id).count()
+            if current_user.role == "teacher"
+            else class_count
+        ),
     })
 
 
 @router.put("/courses/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")
 def edit_course(course_id: int, data: CourseUpdateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = update_course(db, course_id, data.name.strip(), current_user.id)
+    course = update_course(db, course_id, data.name.strip(), current_user.id, data.is_public)
     if not course:
         raise BusinessException(404, "课程不存在")
     return success()

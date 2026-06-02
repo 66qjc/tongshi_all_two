@@ -60,6 +60,7 @@ class ClassCreate(BaseModel):
 
 
 class ClassStudentOut(BaseModel):
+    serial_no: int = 0
     id: str
     name: str
     major: str = ""
@@ -89,10 +90,12 @@ class AnnouncementCreate(BaseModel):
 
 class CourseCreateRequest(BaseModel):
     name: str = Field(min_length=1)
+    is_public: bool = False
 
 
 class CourseUpdateRequest(BaseModel):
     name: str = Field(min_length=1)
+    is_public: Optional[bool] = None
 
 
 # ── Material ────────────────────────────────────────────────────────────────
@@ -252,6 +255,7 @@ class ProjectReviewAction(BaseModel):
 
 # ── Teacher ─────────────────────────────────────────────────────────────────
 class StudentOut(BaseModel):
+    serial_no: int = 0
     id: str
     name: str
     major: str = ""
@@ -265,6 +269,7 @@ class StudentOut(BaseModel):
 class TeacherStatsOut(BaseModel):
     total_students: int
     my_courses: int
+    public_courses: int = 0
     pending_reviews: int
     weekly_exercises: int
 

@@ -177,6 +177,7 @@ async function exportExcel() {
       </div>
 
       <el-table :data="students" stripe style="width: 100%" v-loading="loading">
+        <el-table-column prop="serial_no" label="序号" width="80" align="center" />
         <el-table-column prop="id" label="学号" width="120" />
         <el-table-column prop="name" label="姓名" width="100" />
         <el-table-column prop="major" label="专业" width="140" />

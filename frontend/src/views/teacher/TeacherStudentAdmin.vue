@@ -203,6 +203,7 @@ watch(selectedClassId, () => {
 
     <el-table :data="students" stripe style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" />
+      <el-table-column prop="serial_no" label="序号" width="80" align="center" />
       <el-table-column prop="id" label="学号" width="160" />
       <el-table-column prop="name" label="姓名" width="160" />
       <el-table-column prop="major" label="专业" min-width="180" />
@@ -233,7 +234,7 @@ watch(selectedClassId, () => {
 
     <el-dialog v-model="importDialogVisible" title="Excel 批量导入学生" width="480px">
       <div class="import-info">
-        <p>请上传包含「学号」「姓名」列的 .xlsx 文件，姓名右侧一列将作为专业信息。</p>
+        <p>请上传包含「学号」「姓名」列的 .xlsx 文件；如包含「序号」列，系统会保留该序号。</p>
       </div>
       <div class="upload-zone" @click="importInput?.click()">
         <input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="handleImportFile" />
