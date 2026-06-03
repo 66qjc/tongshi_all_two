@@ -62,7 +62,9 @@ const selectedQuestions = computed(() => {
 })
 
 function getQuestionTypeLabel(type: Question['type']) {
-  return type === 'choice' ? '选择题' : type === 'multi_choice' ? '多选题' : '填空题'
+  if (type === 'choice') return '选择题'
+  if (type === 'multi_choice') return '多选题'
+  return '填空题'
 }
 
 function getQuestionPreview(stem: string, length = 52) {
@@ -414,7 +416,7 @@ onMounted(async () => {
           <div v-else class="selected-question-list">
             <div v-for="item in selectedQuestions" :key="item.id" class="selected-question-item">
               <div class="selected-question-main">
-                <el-tag :type="item.type === 'choice' ? '' : 'success'" size="small" effect="plain">
+                <el-tag :type="item.type === 'choice' ? '' : item.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
                   {{ getQuestionTypeLabel(item.type) }}
                 </el-tag>
                 <span>{{ getQuestionPreview(item.stem, 34) }}</span>

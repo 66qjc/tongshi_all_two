@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Material } from '../../api/material'
 import type { Question } from '../../api/question'
+import { uploadFile } from '../../api/upload'
 import {
   createAdminPublicCourse,
   createAdminPublicMaterial,
@@ -18,6 +19,18 @@ import {
   updateAdminPublicQuestion,
   type AdminPublicCourse,
 } from '../../api/adminPublicCourse'
+
+function formatFileSize(bytes: number) {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let size = bytes
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
+}
 
 const courses = ref<AdminPublicCourse[]>([])
 const selectedCourse = ref<AdminPublicCourse | null>(null)
@@ -36,12 +49,14 @@ const courseForm = ref({ name: '' })
 
 const showMaterialDialog = ref(false)
 const editingMaterialId = ref<number | null>(null)
+const uploadInput = ref<HTMLInputElement | null>(null)
 const materialForm = ref({
   type: 'pdf' as 'video' | 'pdf',
   title: '',
   url: '',
   size: '0 MB',
   file_id: undefined as number | undefined,
+  file: null as File | null,
 })
 
 const showQuestionDialog = ref(false)
@@ -164,7 +179,8 @@ async function removeCourse(course: AdminPublicCourse) {
 function openCreateMaterial() {
   if (!selectedCourse.value) return
   editingMaterialId.value = null
-  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined }
+  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined, file: null }
+  if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
 }
 
@@ -176,8 +192,19 @@ function openEditMaterial(material: Material) {
     url: material.url || '',
     size: material.size || '0 MB',
     file_id: material.file_id,
+    file: null,
   }
+  if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
+}
+
+function handleFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] || null
+  materialForm.value.file = file
+  if (file) {
+    materialForm.value.size = formatFileSize(file.size)
+  }
 }
 
 async function saveMaterial() {
@@ -186,13 +213,23 @@ async function saveMaterial() {
     ElMessage.warning('请填写资料标题')
     return
   }
+  if (!editingMaterialId.value && !materialForm.value.file && !materialForm.value.url) {
+    ElMessage.warning('请选择要上传的文件')
+    return
+  }
   saving.value = true
   try {
+    if (materialForm.value.file) {
+      const uploaded = await uploadFile(materialForm.value.file)
+      materialForm.value.url = uploaded.url
+      materialForm.value.size = formatFileSize(uploaded.size)
+      materialForm.value.file_id = uploaded.file_id
+    }
     const payload = {
       type: materialForm.value.type,
       title: materialForm.value.title.trim(),
       url: materialForm.value.url.trim(),
-      size: materialForm.value.size.trim() || '0 MB',
+      size: materialForm.value.size || '0 MB',
       file_id: materialForm.value.file_id,
     }
     if (editingMaterialId.value) {
@@ -256,12 +293,8 @@ async function saveQuestion() {
     .split('\n')
     .map(item => item.trim())
     .filter(Boolean)
-  if (questionForm.value.type === 'choice' && options.length === 0) {
-    ElMessage.warning('选择题请至少填写一个选项')
-    return
-  }
-  if (questionForm.value.type === 'multi_choice' && options.length === 0) {
-    ElMessage.warning('多选题请至少填写一个选项')
+  if ((questionForm.value.type === 'choice' || questionForm.value.type === 'multi_choice') && options.length === 0) {
+    ElMessage.warning('选择题/多选题请至少填写一个选项')
     return
   }
   saving.value = true
@@ -426,11 +459,15 @@ onMounted(() => fetchCourses())
         <el-form-item label="资料标题" required>
           <el-input v-model="materialForm.title" placeholder="请输入资料标题" clearable />
         </el-form-item>
-        <el-form-item label="资料地址">
-          <el-input v-model="materialForm.url" placeholder="/uploads/example.pdf" clearable />
+        <el-form-item label="上传文件">
+          <input ref="uploadInput" type="file" accept=".pdf,video/*" hidden @change="handleFileChange" />
+          <div class="upload-zone" @click="uploadInput?.click()">
+            <span v-if="!materialForm.file">{{ materialForm.file_id ? '已关联文件，点击更换' : '点击选择要上传的文件' }}</span>
+            <span v-else class="file-name">{{ materialForm.file.name }}</span>
+          </div>
         </el-form-item>
         <el-form-item label="资料大小">
-          <el-input v-model="materialForm.size" placeholder="例如 1 MB" clearable />
+          <span class="size-display">{{ materialForm.size }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -535,6 +572,32 @@ onMounted(() => fetchCourses())
   display: flex;
   justify-content: flex-end;
   margin: 4px 0 12px;
+}
+
+.upload-zone {
+  padding: var(--space-xl);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: border-color var(--duration-fast), color var(--duration-fast);
+}
+
+.upload-zone:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.file-name {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.size-display {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
+  line-height: 32px;
 }
 
 @media (max-width: 1100px) {

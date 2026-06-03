@@ -1,5 +1,6 @@
 """认证接口测试"""
 from tests.conftest import auth_header
+from app.models.entities import Question
 
 
 class TestAuth:
@@ -100,6 +101,29 @@ class TestQuiz:
         data = resp.json()
         assert data["code"] == 0
         assert data["data"]["is_correct"] is False
+
+    def test_submit_multi_choice_answer_ignores_order(self, client, db_session, student_token):
+        """多选题答案按字母集合判定，不受提交顺序影响。"""
+        question = Question(
+            type="multi_choice",
+            course_id=1,
+            stem="以下哪些是编程语言？",
+            options=["A. Python", "B. Java", "C. HTML", "D. C++"],
+            answer="ABD",
+            explanation="HTML 是标记语言。",
+        )
+        db_session.add(question)
+        db_session.commit()
+
+        resp = client.post(
+            "/api/quiz/submit",
+            json={"question_id": question.id, "user_answer": "DBA"},
+            headers=auth_header(student_token),
+        )
+        data = resp.json()
+
+        assert data["code"] == 0
+        assert data["data"]["is_correct"] is True
 
     def test_quiz_stats(self, client, student_token):
         # 先答一题

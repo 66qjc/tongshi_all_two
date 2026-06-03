@@ -92,7 +92,7 @@ async function handleSave() {
     course_id: form.course_id,
     type: form.type,
     stem: form.stem.trim(),
-    options: (form.type === 'choice' || form.type === 'multi_choice') ? form.options.map(item => item.trim()).filter(Boolean) : [],
+    options: form.type === 'choice' || form.type === 'multi_choice' ? form.options.map(item => item.trim()).filter(Boolean) : [],
     answer: form.answer.trim(),
     explanation: form.explanation.trim(),
   }
@@ -210,6 +210,7 @@ onMounted(async () => {
       <el-table-column label="题干" min-width="260">
         <template #default="{ row }">
           <span>{{ row.stem.length > 48 ? row.stem.slice(0, 48) + '…' : row.stem }}</span>
+          <span v-if="row.type === 'multi_choice'" class="multi-tag">（多选题）</span>
           <el-tag v-if="row.is_synced" class="synced-tag" size="small" type="info" effect="plain">
             公共同步
           </el-tag>
@@ -289,7 +290,7 @@ onMounted(async () => {
             <tr><td>fill</td><td>示例课程</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
           </tbody>
         </table>
-        <p class=”import-note”>请将”课程名称”填写为当前教师已有课程名称；”题型”支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。</p>
+        <p class="import-note">请将“课程名称”填写为当前教师已有课程名称；“题型”支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。</p>
       </div>
       <div class="import-actions">
         <div class="template-block">
@@ -372,8 +373,15 @@ onMounted(async () => {
   text-align: center;
 }
 
-.synced-tag {
+.synced-tag,
+.multi-tag {
   margin-left: var(--space-sm);
+}
+
+.multi-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #d97706;
 }
 
 .readonly-text {

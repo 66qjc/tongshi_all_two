@@ -14,14 +14,12 @@ from app.db.session import get_db
 from app.core.security import get_current_user, require_role
 from app.core.response import success
 from app.core.exceptions import BusinessException
-from app.core.timezone_utils import to_beijing_iso
 from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
 from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate, CourseCreateRequest, CourseUpdateRequest
-from app.models.entities import Class, Course, StudentClassEnrollment
 from app.services.question_service import (
     list_questions, create_question, update_question, delete_question,
     get_course_questions, create_course, add_public_course, update_course, delete_course,
-    get_course_detail, import_questions_from_excel, list_courses,
+    get_course_detail, import_questions_from_excel,
 )
 from app.services.course_response_service import build_course_detail, build_course_list
 
@@ -89,65 +87,6 @@ def get_courses(db: Session = Depends(get_db), current_user: AuthUser = Depends(
         return success(data["courses"])
     return success(data)
 
-    if current_user.role == "teacher":
-        courses = list_courses(db, current_user.id)
-        return success([{
-            "id": c.id,
-            "name": c.name,
-            "created_at": to_beijing_iso(c.created_at),
-            "material_count": len(c.materials),
-            "question_count": len(c.questions),
-            "class_count": len(c.classes),
-        } for c in courses])
-    elif current_user.role == "student":
-        # 查询学生所属班级
-        enrollments = (
-            db.query(StudentClassEnrollment)
-            .filter(StudentClassEnrollment.user_id == current_user.id)
-            .all()
-        )
-        if not enrollments:
-            # 学生未加入任何班级
-            return success({"courses": [], "hint": "你尚未加入任何班级，请联系老师"})
-        # 检查班级是否已分配课程
-        class_ids = [e.class_id for e in enrollments]
-        classes_with_course = (
-            db.query(Class)
-            .filter(Class.id.in_(class_ids), Class.course_id.isnot(None))
-            .all()
-        )
-        if not classes_with_course:
-            # 学生有班级但班级未分配课程
-            return success({"courses": [], "hint": "你的班级尚未分配课程，请联系老师"})
-        course_ids = list({c.course_id for c in classes_with_course})
-        courses = (
-            db.query(Course)
-            .filter(Course.id.in_(course_ids))
-            .order_by(Course.id.desc())
-            .all()
-        )
-        return success({
-            "courses": [{
-                "id": c.id,
-                "name": c.name,
-                "created_at": to_beijing_iso(c.created_at),
-                "material_count": len(c.materials),
-                "question_count": len(c.questions),
-                "class_count": len(c.classes),
-            } for c in courses],
-            "hint": None,
-        })
-    else:
-        courses = list_courses(db)
-        return success([{
-            "id": c.id,
-            "name": c.name,
-            "created_at": to_beijing_iso(c.created_at),
-            "material_count": len(c.materials),
-            "question_count": len(c.questions),
-            "class_count": len(c.classes),
-        } for c in courses])
-
 
 @router.post("/courses", summary="创建课程", description="教师端：创建新课程")
 def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
@@ -172,15 +111,6 @@ def get_course(
     if not detail:
         raise BusinessException(404, "课程不存在")
     return success(build_course_detail(db, detail, current_user))
-    course, material_count, question_count, class_count = detail
-    return success({
-        "id": course.id,
-        "name": course.name,
-        "created_at": to_beijing_iso(course.created_at),
-        "material_count": material_count,
-        "question_count": question_count,
-        "class_count": class_count,
-    })
 
 
 @router.put("/courses/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")
@@ -223,6 +153,7 @@ def _download_template_response(template_type: str):
     filename_map = {
         "choice": "choice-question-template.xlsx",
         "fill": "fill-question-template.xlsx",
+        "multi_choice": "multi-choice-question-template.xlsx",
         "all": "question-template.xlsx",
     }
     filename = filename_map[template_type]

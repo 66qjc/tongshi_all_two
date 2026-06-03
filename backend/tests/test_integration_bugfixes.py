@@ -355,6 +355,13 @@ class TestTeacherRefactor:
         assert data["code"] == 0
         assert data["data"] == {"courses": [], "hint": "你尚未加入任何班级，请联系老师"}
 
+    def test_download_multi_choice_question_template(self, client, teacher_token):
+        resp = client.get("/api/questions/import/template/multi_choice", headers=auth_header(teacher_token))
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        assert "multi-choice-question-template.xlsx" in resp.headers["content-disposition"]
+
     def test_classes_are_filtered_by_teacher_and_course(self, client, teacher_token, other_teacher_token):
         t1 = client.get("/api/classes", headers=auth_header(teacher_token)).json()
         t2 = client.get("/api/classes", headers=auth_header(other_teacher_token)).json()

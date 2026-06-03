@@ -22,7 +22,7 @@ watch(courseId, async () => {
 
 const currentIndex = ref(0)
 const selectedOption = ref<string | null>(null)
-const selectedOptions = ref<string[]>([])
+const selectedOptions = ref<Set<string>>(new Set())
 const fillAnswer = ref('')
 const submitted = ref(false)
 const answers = ref<(string | null)[]>([])
@@ -39,16 +39,20 @@ const progress = computed(() => Math.round(((currentIndex.value + 1) / totalQues
 const allDone = computed(() => results.value.every(r => r !== null))
 
 const optionLabels = ['A', 'B', 'C', 'D']
+const optionItems = computed(() => currentQuestion.value.options.map((text, index) => ({
+  label: optionLabels[index] ?? String.fromCharCode(65 + index),
+  text,
+})))
 
 async function submitAnswer() {
   const q = currentQuestion.value
   let userAnswer: string
-  if (q.type === 'choice') {
+  if (q.type === 'multi_choice') {
+    if (selectedOptions.value.size === 0) return
+    userAnswer = [...selectedOptions.value].sort().join('')
+  } else if (q.type === 'choice') {
     if (!selectedOption.value) return
     userAnswer = selectedOption.value
-  } else if (q.type === 'multi_choice') {
-    if (selectedOptions.value.length === 0) return
-    userAnswer = [...selectedOptions.value].sort().join('')
   } else {
     if (!fillAnswer.value.trim()) return
     userAnswer = fillAnswer.value.trim()
@@ -82,23 +86,16 @@ function resetState() {
   const idx = currentIndex.value
   if (results.value[idx] !== null) {
     submitted.value = true
-    if (currentQuestion.value.type === 'choice') {
-      selectedOption.value = answers.value[idx] ?? null
-      selectedOptions.value = []
-      fillAnswer.value = ''
-    } else if (currentQuestion.value.type === 'multi_choice') {
-      selectedOption.value = null
-      selectedOptions.value = answers.value[idx] ? answers.value[idx]!.split('') : []
-      fillAnswer.value = ''
-    } else {
-      selectedOption.value = null
-      selectedOptions.value = []
-      fillAnswer.value = answers.value[idx] ?? ''
+    const answer = answers.value[idx] ?? ''
+    if (currentQuestion.value.type === 'multi_choice') {
+      selectedOptions.value = new Set(answer ? answer.split('') : [])
     }
+    selectedOption.value = currentQuestion.value.type === 'choice' ? answer : null
+    fillAnswer.value = currentQuestion.value.type === 'fill' ? answer : ''
   } else {
     submitted.value = false
     selectedOption.value = null
-    selectedOptions.value = []
+    selectedOptions.value = new Set()
     fillAnswer.value = ''
   }
 }
@@ -107,14 +104,15 @@ function selectOption(label: string | undefined) {
   if (!submitted.value && label) selectedOption.value = label
 }
 
-function toggleOption(label: string | undefined) {
-  if (submitted.value || !label) return
-  const idx = selectedOptions.value.indexOf(label)
-  if (idx >= 0) {
-    selectedOptions.value.splice(idx, 1)
+function toggleMultiOption(label: string) {
+  if (submitted.value) return
+  const next = new Set(selectedOptions.value)
+  if (next.has(label)) {
+    next.delete(label)
   } else {
-    selectedOptions.value.push(label)
+    next.add(label)
   }
+  selectedOptions.value = next
 }
 
 const correctCount = computed(() => results.value.filter(r => r === true).length)
@@ -170,48 +168,45 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
           <div class="question-stem">
             <span class="q-label">Q{{ currentIndex + 1 }}.</span>
             {{ currentQuestion.stem }}
+            <span v-if="currentQuestion.type === 'multi_choice'" class="multi-tag">（多选题）</span>
+          </div>
+
+          <!-- Multi choice question -->
+          <div v-if="currentQuestion.type === 'multi_choice'" class="options-list">
+            <div
+              v-for="item in optionItems"
+              :key="item.label"
+              class="option-item"
+              :class="{
+                selected: selectedOptions.has(item.label),
+                correct: submitted && currentQuestion.answer.includes(item.label),
+                wrong: submitted && selectedOptions.has(item.label) && !currentQuestion.answer.includes(item.label),
+              }"
+              @click="toggleMultiOption(item.label)"
+            >
+              <span class="option-check">{{ selectedOptions.has(item.label) ? '☑' : '☐' }}</span>
+              <span class="option-label">{{ item.label }}</span>
+              <span class="option-text">{{ item.text }}</span>
+            </div>
+            <div v-if="!submitted" class="multi-hint">可选择多个选项，选好后点击"提交答案"</div>
           </div>
 
           <!-- Choice question -->
-          <div v-if="currentQuestion.type === 'choice'" class="options-list">
+          <div v-else-if="currentQuestion.type === 'choice'" class="options-list">
             <div
-              v-for="(opt, i) in currentQuestion.options"
-              :key="i"
+              v-for="item in optionItems"
+              :key="item.label"
               class="option-item"
               :class="{
-                selected: selectedOption === optionLabels[i],
-                correct: submitted && optionLabels[i] === currentQuestion.answer,
-                wrong: submitted && selectedOption === optionLabels[i] && optionLabels[i] !== currentQuestion.answer,
+                selected: selectedOption === item.label,
+                correct: submitted && item.label === currentQuestion.answer,
+                wrong: submitted && selectedOption === item.label && item.label !== currentQuestion.answer,
               }"
-              @click="selectOption(optionLabels[i])"
+              @click="selectOption(item.label)"
             >
-              <span class="option-label">{{ optionLabels[i] }}</span>
-              <span class="option-text">{{ opt }}</span>
+              <span class="option-label">{{ item.label }}</span>
+              <span class="option-text">{{ item.text }}</span>
             </div>
-          </div>
-
-          <!-- Multi-choice question -->
-          <div v-else-if="currentQuestion.type === 'multi_choice'" class="options-list">
-            <div
-              v-for="(opt, i) in currentQuestion.options"
-              :key="i"
-              class="option-item multi"
-              :class="{
-                selected: selectedOptions.includes(optionLabels[i]),
-                correct: submitted && currentQuestion.answer.includes(optionLabels[i]),
-                wrong: submitted && selectedOptions.includes(optionLabels[i]) && !currentQuestion.answer.includes(optionLabels[i]),
-              }"
-              @click="toggleOption(optionLabels[i])"
-            >
-              <span class="option-checkbox" :class="{ checked: selectedOptions.includes(optionLabels[i]) }">
-                <svg v-if="selectedOptions.includes(optionLabels[i])" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </span>
-              <span class="option-label">{{ optionLabels[i] }}</span>
-              <span class="option-text">{{ opt }}</span>
-            </div>
-            <div v-if="!submitted" class="multi-hint">可选择多个选项，选好后点击"提交答案"</div>
           </div>
 
           <!-- Fill question -->
@@ -500,6 +495,33 @@ const correctCount = computed(() => results.value.filter(r => r === true).length
   background: var(--color-bg-alt);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
+}
+
+.option-check {
+  font-size: 1.1rem;
+  width: 24px;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.option-item.selected .option-check {
+  color: var(--color-practice);
+}
+
+.option-item.correct .option-check {
+  color: #10b981;
+}
+
+.option-item.wrong .option-check {
+  color: #ef4444;
+}
+
+.multi-tag {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #d97706;
+  margin-left: 4px;
+  white-space: nowrap;
 }
 
 .option-item.selected .option-label {
