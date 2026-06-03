@@ -14,7 +14,7 @@ const useTransition = computed(() => !route.path.startsWith('/admin') && !route.
   <main>
     <RouterView v-slot="{ Component, route: viewRoute }">
       <template v-if="Component">
-        <Transition v-if="useTransition" name="page-fade" mode="out-in">
+        <Transition v-if="useTransition" name="page-fade">
           <component :is="Component" :key="viewRoute.fullPath" />
         </Transition>
         <component v-else :is="Component" :key="viewRoute.fullPath" />
