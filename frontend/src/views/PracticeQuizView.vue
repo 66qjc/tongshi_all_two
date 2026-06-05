@@ -3,11 +3,16 @@ import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getCourseQuestions, type Question } from '@/api/question'
 import { submitAnswer as apiSubmitAnswer } from '@/api/quiz'
+import { recordCompletion } from '@/api/announcement'
 import { loadQuizDraft, saveQuizDraft, clearQuizDraft } from '@/composables/useQuizDraft'
 
 const route = useRoute()
 const router = useRouter()
 const courseId = computed(() => Number(route.params.courseId) || 1)
+const announcementId = computed(() => {
+  const raw = route.query.announcementId
+  return raw ? Number(raw) : null
+})
 
 const mockQuestions = ref<Question[]>([])
 const loading = ref(true)
@@ -152,8 +157,27 @@ function toggleMultiOption(label: string) {
   selectedOptions.value = next
 }
 
+const practiceFinished = ref(false)
+
 const correctCount = computed(() => results.value.filter(r => r === true).length)
 
+/** 完成练习：标记作业完成并展示总结 */
+async function finishPractice() {
+  if (announcementId.value) {
+    try {
+      await recordCompletion(announcementId.value)
+    } catch { /* 后端幂等，失败不影响本地流程 */ }
+  }
+  practiceFinished.value = true
+  clearQuizDraft(courseId.value)
+}
+
+// 无作业上下文时（自由练习），全部答完自动展示总结
+watch(allDone, (val) => {
+  if (val && !announcementId.value) {
+    practiceFinished.value = true
+  }
+})
 /** 保存当前答题草稿到 localStorage */
 function persistDraft() {
   const qs = mockQuestions.value
@@ -221,7 +245,7 @@ function persistDraft() {
       </div>
     </section>
 
-    <section v-else-if="allDone" class="summary-section">
+    <section v-else-if="practiceFinished" class="summary-section">
       <div class="container">
         <div class="summary-card">
           <div class="summary-icon">
@@ -336,7 +360,15 @@ function persistDraft() {
               </svg>
               上一题
             </button>
-            <button class="nav-btn" :disabled="currentIndex === totalQuestions - 1" @click="nextQuestion">
+            <!-- 最后一题已提交：显示"完成练习" -->
+            <button v-if="currentIndex === totalQuestions - 1 && submitted" class="nav-btn btn-finish" @click="finishPractice">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              完成练习
+            </button>
+            <!-- 非最后一题或未提交：正常"下一题" -->
+            <button v-else class="nav-btn" :disabled="currentIndex === totalQuestions - 1" @click="nextQuestion">
               下一题
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                 <path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -768,6 +800,17 @@ function persistDraft() {
 .nav-btn:disabled {
   color: var(--color-text-muted);
   cursor: not-allowed;
+}
+
+.btn-finish {
+  color: white;
+  background: #10b981;
+  border-color: #10b981;
+}
+
+.btn-finish:hover {
+  color: white;
+  background: #059669;
 }
 
 /* Question nav bar */
