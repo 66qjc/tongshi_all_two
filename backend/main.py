@@ -49,7 +49,7 @@ def _seed_if_empty():
             logger.info("Seed lock held by another worker, skipping.")
             return
 
-    try:
+    try:    
         from seed_data import seed
         from app.db.session import SessionLocal
         from app.models.entities import Course

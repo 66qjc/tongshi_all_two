@@ -1,0 +1,6 @@
+#!/home/allan_parker/Workplace/tongshi_all_two/internship/bin/python
+import sys
+from rsa.cli import encrypt
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(encrypt())
