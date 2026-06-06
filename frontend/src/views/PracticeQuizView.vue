@@ -31,7 +31,9 @@ function shuffle<T>(arr: T[]): T[] {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
+    const current = a[i]!
+    a[i] = a[j]!
+    a[j] = current
   }
   return a
 }
@@ -51,17 +53,18 @@ watch(courseId, async () => {
 }, { immediate: true })
 
 const currentIndex = ref(0)
-const completionMarked = ref(false)
 const selectedOption = ref<string | null>(null)
 const selectedOptions = ref<Set<string>>(new Set())
 const fillAnswer = ref('')
 const submitted = ref(false)
 const answers = ref<(string | null)[]>([])
 const results = ref<(boolean | null)[]>([])
+const practiceFinished = ref(false)
 
 // 加载题目后尝试恢复草稿（作业入口跳过）
 watch(mockQuestions, (qs) => {
   if (!qs.length) return
+  practiceFinished.value = false
   // 从作业入口进入时不恢复草稿，每次全新开始
   if (announcementId.value) {
     answers.value = qs.map(() => null)
@@ -134,14 +137,9 @@ async function submitAnswer() {
   results.value[currentIndex.value] = result.is_correct
   submitted.value = true
   persistDraft()
-  // 全部完成时清理草稿 + 自动标记作业完成
+  // 全部完成时清理草稿；作业完成状态由最终按钮显式提交。
   if (results.value.every(r => r !== null)) {
     clearQuizDraft(courseId.value)
-    const annId = announcementId.value
-    if (annId && !completionMarked.value) {
-      completionMarked.value = true
-      recordCompletion(annId).catch(() => {})
-    }
   }
 }
 
@@ -203,6 +201,27 @@ function toggleMultiOption(label: string) {
 }
 
 const correctCount = computed(() => results.value.filter(r => r === true).length)
+
+/** 完成练习：标记作业完成并展示总结 */
+async function finishPractice() {
+  if (practiceFinished.value) return
+  if (announcementId.value) {
+    try {
+      await recordCompletion(announcementId.value)
+    } catch {
+      // 后端接口幂等，失败不阻断本地总结展示。
+    }
+  }
+  practiceFinished.value = true
+  clearQuizDraft(courseId.value)
+}
+
+// 自由练习没有作业上下文，全部答完后直接展示总结。
+watch(allDone, (done) => {
+  if (done && !announcementId.value) {
+    practiceFinished.value = true
+  }
+})
 
 /** 保存当前答题草稿到 localStorage */
 function persistDraft() {
@@ -271,7 +290,7 @@ function persistDraft() {
       </div>
     </section>
 
-    <section v-else-if="allDone" class="summary-section">
+    <section v-else-if="practiceFinished" class="summary-section">
       <div class="container">
         <div class="summary-card">
           <div class="summary-icon">
@@ -386,7 +405,13 @@ function persistDraft() {
               </svg>
               上一题
             </button>
-            <button class="nav-btn" :disabled="currentIndex === totalQuestions - 1" @click="nextQuestion">
+            <button v-if="currentIndex === totalQuestions - 1 && submitted" class="nav-btn btn-finish" @click="finishPractice">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              完成练习
+            </button>
+            <button v-else class="nav-btn" :disabled="currentIndex === totalQuestions - 1" @click="nextQuestion">
               下一题
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
                 <path d="M4 10h12m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -825,21 +850,15 @@ function persistDraft() {
   cursor: not-allowed;
 }
 
-.nav-btn.submit-all {
+.btn-finish {
   color: white;
   background: #10b981;
-  border: none;
-  padding: 0.5rem 1.5rem;
+  border-color: #10b981;
 }
 
-.nav-btn.submit-all:hover:not(:disabled) {
+.btn-finish:hover {
+  color: white;
   background: #059669;
-}
-
-.nav-btn.submit-all:disabled {
-  background: #d1d5db;
-  color: #9ca3af;
-  cursor: not-allowed;
 }
 
 /* Question nav bar */
