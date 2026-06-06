@@ -53,3 +53,4 @@ backend/.seed_lock
 backend/setup_mysql.sh
 tongshi_all_two/
 start.sh
+internship/

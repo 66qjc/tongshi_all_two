@@ -12,7 +12,6 @@ const authStore = useAuthStore()
 const project = ref<Project | null>(null)
 const loading = ref(true)
 const liked = ref(false)
-const relatedProjects = ref<{ id: number; title: string; author: string }[]>([])
 const previewImage = ref('')
 const imagePreviewVisible = ref(false)
 
@@ -148,28 +147,6 @@ function openPreview(image: string) {
           </a>
         </section>
 
-        <section v-if="relatedProjects.length > 0" class="detail-section">
-          <h3>相关作品</h3>
-          <div class="related-grid">
-            <div
-              v-for="rp in relatedProjects"
-              :key="rp.id"
-              class="related-card"
-              @click="router.push(`/create/project/${rp.id}`)"
-            >
-              <div class="related-image">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"
-                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </div>
-              <div class="related-info">
-                <h4>{{ rp.title }}</h4>
-                <p>{{ rp.author }}</p>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <div v-else class="not-found">
@@ -384,50 +361,6 @@ function openPreview(image: string) {
   background: rgba(79, 70, 229, 0.12);
 }
 
-.related-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-md);
-}
-
-.related-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  cursor: pointer;
-  transition: all var(--duration-fast);
-}
-
-.related-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
-}
-
-.related-image {
-  aspect-ratio: 16 / 10;
-  background: var(--color-bg-alt);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-muted);
-}
-
-.related-info {
-  padding: var(--space-md);
-}
-
-.related-info h4 {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin-bottom: 2px;
-}
-
-.related-info p {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
 .preview-image {
   width: 100%;
   max-height: 75vh;
@@ -464,7 +397,6 @@ function openPreview(image: string) {
 }
 
 @media (max-width: 768px) {
-  .related-grid,
   .gallery-grid {
     grid-template-columns: 1fr;
   }

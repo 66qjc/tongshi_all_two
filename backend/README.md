@@ -188,7 +188,6 @@ Client 请求
 | `announcements` | 公告/测验任务 |
 | `announcement_reads` | 公告已读记录 |
 | `task_completions` | 任务完成记录 |
-| `activity_events` | 课程活动时间线 |
 | `stored_files` | 文件元数据（存储后端、桶、路径、原始名称） |
 | `showcase_items` | 悟页面图文展示内容（section、标题、封面、排序） |
 

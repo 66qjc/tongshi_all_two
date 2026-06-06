@@ -3,7 +3,7 @@ import io
 from pathlib import Path
 
 from app.core.security import get_password_hash
-from app.models.entities import Announcement, AnnouncementClass, Class, Course, Material, Project, Question, StoredFile, StudentClassEnrollment, StudentProgress, TaskCompletion, User
+from app.models.entities import Announcement, AnnouncementClass, Class, Course, Material, Project, Question, StoredFile, StudentClassEnrollment, TaskCompletion, User
 from tests.conftest import auth_header
 
 
@@ -42,7 +42,7 @@ class TestTeacherRefactor:
         assert create_data["code"] == 0
 
         list_data = client.get("/api/materials?course_id=1", headers=auth_header(teacher_token)).json()
-        created = next(item for item in list_data["data"] if item["id"] == create_data["data"]["id"])
+        created = next(item for item in list_data["data"]["items"] if item["id"] == create_data["data"]["id"])
         assert created["course_id"] == 1
         assert created["course_name"] == "测试课程"
         assert created["url"] == "/uploads/test-material.pdf"
@@ -240,7 +240,7 @@ class TestTeacherRefactor:
         assert mirrored.stem == "原题干"
 
         list_resp = client.get(f"/api/questions?course_id={copy_id}", headers=auth_header(teacher_token))
-        listed = next(item for item in list_resp.json()["data"] if item["id"] == mirrored.id)
+        listed = next(item for item in list_resp.json()["data"]["items"] if item["id"] == mirrored.id)
         assert listed["source_question_id"] == source_question_id
         assert listed["is_synced"] is True
 
@@ -289,7 +289,7 @@ class TestTeacherRefactor:
         ).one()
 
         list_resp = client.get(f"/api/materials?course_id={copy_id}", headers=auth_header(teacher_token))
-        listed = next(item for item in list_resp.json()["data"] if item["id"] == mirrored.id)
+        listed = next(item for item in list_resp.json()["data"]["items"] if item["id"] == mirrored.id)
         assert listed["source_material_id"] == source_material_id
         assert listed["is_synced"] is True
 
@@ -460,13 +460,91 @@ class TestTeacherRefactor:
         assert report["data"]["completed_count"] == 1
         assert len(report["data"]["per_class"]) == 2
 
-    def test_quiz_progress_is_course_based(self, client, db_session, student_token):
-        client.post("/api/quiz/submit", json={"question_id": 1, "user_answer": "B"}, headers=auth_header(student_token))
-        progress = db_session.query(StudentProgress).filter(StudentProgress.user_id == "2025001").first()
+    def test_publish_assignment_rejects_public_source_course(self, client, db_session, teacher_token):
+        public_course = Course(name="不可直接发布公共课程", created_by="admin", is_public=True)
+        db_session.add(public_course)
+        db_session.flush()
+        public_question = Question(
+            type="choice",
+            course_id=public_course.id,
+            stem="公共课程源题目",
+            options=["A", "B"],
+            answer="A",
+        )
+        db_session.add(public_question)
+        db_session.commit()
 
-        assert progress is not None
-        assert progress.course_id == 1
-        assert progress.questions_done == 1
+        resp = client.post(
+            "/api/announcements",
+            json={
+                "course_id": public_course.id,
+                "class_ids": [1],
+                "title": "不应发布",
+                "question_ids": [public_question.id],
+            },
+            headers=auth_header(teacher_token),
+        )
+        data = resp.json()
+
+        assert data["code"] == 404
+        assert "课程不存在" in data["message"]
+
+    def test_publish_assignment_allows_owned_copy_of_public_course(self, client, db_session, teacher_token):
+        public_course = Course(name="可发布公共课程副本", created_by="admin", is_public=True)
+        db_session.add(public_course)
+        db_session.flush()
+        db_session.add(Question(
+            type="choice",
+            course_id=public_course.id,
+            stem="公共课程源同步题目",
+            options=["A", "B"],
+            answer="A",
+        ))
+        db_session.commit()
+
+        copy_resp = client.post(
+            f"/api/questions/courses/{public_course.id}/add",
+            headers=auth_header(teacher_token),
+        ).json()
+        assert copy_resp["code"] == 0
+        copied_course_id = copy_resp["data"]["id"]
+
+        copied_question = db_session.query(Question).filter(
+            Question.course_id == copied_course_id,
+            Question.source_question_id.isnot(None),
+        ).first()
+        assert copied_question is not None
+
+        cls = Class(name="公共副本班级", course_id=copied_course_id, created_by="T001")
+        db_session.add(cls)
+        db_session.commit()
+
+        resp = client.post(
+            "/api/announcements",
+            json={
+                "course_id": copied_course_id,
+                "class_ids": [cls.id],
+                "title": "公共副本作业",
+                "question_ids": [copied_question.id],
+            },
+            headers=auth_header(teacher_token),
+        )
+        data = resp.json()
+
+        assert data["code"] == 0
+        ann = db_session.query(Announcement).filter(Announcement.id == data["data"]["id"]).first()
+        assert ann is not None
+        assert ann.course_id == copied_course_id
+
+    def test_quiz_submit_persists_attempt(self, client, db_session, student_token):
+        """测试答题记录保存，不再依赖 StudentProgress"""
+        from app.models.entities import QuizAttempt
+        client.post("/api/quiz/submit", json={"question_id": 1, "user_answer": "B"}, headers=auth_header(student_token))
+        attempt = db_session.query(QuizAttempt).filter(QuizAttempt.user_id == "2025001").first()
+
+        assert attempt is not None
+        assert attempt.question_id == 1
+        assert attempt.user_answer == "B"
 
     def test_create_material_persists_file_id(self, client, db_session, teacher_token):
         stored = StoredFile(
@@ -497,7 +575,7 @@ class TestTeacherRefactor:
         )
         assert create_resp.json()["code"] == 0
 
-        materials = client.get("/api/materials", headers=auth_header(teacher_token)).json()["data"]
+        materials = client.get("/api/materials", headers=auth_header(teacher_token)).json()["data"]["items"]
         created = next(item for item in materials if item["id"] == create_resp.json()["data"]["id"])
         assert created["file_id"] == stored.id
         assert created["url"].startswith("/api/files/")
@@ -892,3 +970,123 @@ class TestBatchDownload:
         finally:
             if local_file.exists():
                 local_file.unlink()
+
+
+class TestProjectDetailPermission:
+    """作品详情权限回归测试：非作者不能查看未审核作品。"""
+
+    def test_non_author_cannot_view_pending_project_detail(self, client, student_token, db_session):
+        """非作者不能通过详情接口查看待审核作品。"""
+        other_login = client.post("/api/token", json={"id": "2025002", "password": "abc123"}).json()
+        other_token = other_login["data"]["access_token"]
+
+        create = client.post(
+            "/api/projects",
+            json={"title": "待审核私有作品", "description": "未审核", "tags": ["AI"]},
+            headers=auth_header(student_token),
+        ).json()
+        assert create["code"] == 0
+        project_id = create["data"]["id"]
+
+        own_detail = client.get(f"/api/projects/{project_id}", headers=auth_header(student_token)).json()
+        other_detail = client.get(f"/api/projects/{project_id}", headers=auth_header(other_token)).json()
+
+        assert own_detail["code"] == 0
+        assert own_detail["data"]["status"] == "pending"
+        assert other_detail["code"] == 404
+        assert "作品不存在" in other_detail["message"]
+
+    def test_non_author_can_view_approved_project_detail(self, client, student_token, teacher_token):
+        """审核通过作品仍可被非作者查看。"""
+        other_login = client.post("/api/token", json={"id": "2025002", "password": "abc123"}).json()
+        other_token = other_login["data"]["access_token"]
+
+        create = client.post(
+            "/api/projects",
+            json={"title": "公开作品详情", "description": "已通过", "tags": ["AI"]},
+            headers=auth_header(student_token),
+        ).json()
+        project_id = create["data"]["id"]
+        client.post(f"/api/teacher/projects/{project_id}/approve", headers=auth_header(teacher_token))
+
+        detail = client.get(f"/api/projects/{project_id}", headers=auth_header(other_token)).json()
+
+        assert detail["code"] == 0
+        assert detail["data"]["id"] == project_id
+        assert detail["data"]["status"] == "approved"
+
+
+class TestUnlikeNonNegative:
+    """取消点赞非负回归测试：历史计数异常时数据库 likes 也保持非负。"""
+
+    def _create_project(self, client, student_token, title="点赞测试作品"):
+        resp = client.post(
+            "/api/projects",
+            json={"title": title, "description": "测试描述", "tags": ["AI"]},
+            headers=auth_header(student_token),
+        )
+        assert resp.json()["code"] == 0
+        return resp.json()["data"]["id"]
+
+    def _like(self, client, token, project_id):
+        return client.post(
+            f"/api/projects/{project_id}/like",
+            headers=auth_header(token),
+        )
+
+    def test_unlike_never_persists_negative_likes(self, client, db_session, student_token):
+        """取消点赞时即使历史计数异常，数据库 likes 也会被修正为 0。"""
+        from app.models.entities import Project
+
+        pid = self._create_project(client, student_token)
+        self._like(client, student_token, pid)
+
+        # 模拟历史计数异常：手动将 likes 设为 0
+        project = db_session.query(Project).filter(Project.id == pid).one()
+        project.likes = 0
+        db_session.commit()
+
+        result = self._like(client, student_token, pid).json()
+        db_session.refresh(project)
+
+        assert result["code"] == 0
+        assert result["data"]["liked"] is False
+        assert result["data"]["likes"] == 0
+        assert project.likes == 0
+
+
+class TestQuizStatsCourseScope:
+    """练习统计课程范围回归测试：四个指标都限定在学生所属课程范围。"""
+
+    def test_quiz_stats_use_student_course_scope_for_all_metrics(self, client, db_session, student_token):
+        """总题数、已练习、正确率、今日练习都限定在学生所属课程范围。"""
+        from app.models.entities import Course, Question
+
+        other_course = db_session.query(Course).filter(Course.created_by == "T002").one()
+        other_question = Question(
+            type="choice",
+            course_id=other_course.id,
+            stem="其它课程题",
+            options=["A", "B"],
+            answer="A",
+            explanation="",
+        )
+        db_session.add(other_question)
+        db_session.commit()
+
+        # 学生答自己课程的题（正确）
+        client.post("/api/quiz/submit", json={"question_id": 1, "user_answer": "B"}, headers=auth_header(student_token))
+        # 学生答其它课程的题（不应被统计）
+        client.post(
+            "/api/quiz/submit",
+            json={"question_id": other_question.id, "user_answer": "B"},
+            headers=auth_header(student_token),
+        )
+
+        stats = client.get("/api/quiz/stats", headers=auth_header(student_token)).json()
+
+        assert stats["code"] == 0
+        assert stats["data"]["total_questions"] == 1
+        assert stats["data"]["questions_done"] == 1
+        assert stats["data"]["accuracy"] == 100
+        assert stats["data"]["today_count"] == 1

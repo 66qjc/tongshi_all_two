@@ -78,8 +78,6 @@ const outcomeCards = [
   },
 ]
 
-// outcomeDetails 静态数据已替换为动态展示，详见下方模板内的三个板块
-
 const portfolioFeatures = [
   { label: '学习时长', color: 'var(--color-learn)' },
   { label: '练习正确率', color: 'var(--color-primary)' },
@@ -362,7 +360,6 @@ function startAction() {
 
 .path-section,
 .outcomes-nav-section,
-.outcome-details-section,
 .portfolio-section {
   padding: var(--space-3xl) 0;
 }
@@ -524,129 +521,6 @@ function startAction() {
   font-size: 0.78rem;
 }
 
-.outcome-details-section {
-  background: var(--color-bg-card);
-}
-
-.detail-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--space-2xl);
-  padding: var(--space-2xl);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  scroll-margin-top: 96px;
-}
-
-.detail-panel + .detail-panel {
-  margin-top: var(--space-xl);
-}
-
-.detail-badge {
-  display: inline-flex;
-  margin-bottom: var(--space-md);
-  padding: 0.2rem 0.6rem;
-  color: var(--color-act);
-  background: var(--color-act-bg);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.detail-main h2 {
-  font-family: var(--font-serif);
-  color: var(--color-text);
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin-bottom: var(--space-md);
-  letter-spacing: 0.03em;
-}
-
-.detail-main p {
-  color: var(--color-text-secondary);
-  font-size: 0.88rem;
-  line-height: 1.8;
-}
-
-.detail-highlights {
-  margin-top: var(--space-xl);
-}
-
-.detail-highlights h3,
-.case-box h3 {
-  font-family: var(--font-serif);
-  color: var(--color-text);
-  font-size: 0.95rem;
-  font-weight: 700;
-  margin-bottom: var(--space-md);
-  letter-spacing: 0.03em;
-}
-
-.detail-highlights ul {
-  display: grid;
-  gap: var(--space-sm);
-  padding-left: 1.2rem;
-  color: var(--color-text-secondary);
-  font-size: 0.85rem;
-  line-height: 1.7;
-}
-
-.detail-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-lg);
-}
-
-.detail-stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-sm);
-}
-
-.detail-stat {
-  padding: var(--space-md);
-  background: var(--color-act-bg);
-  border-radius: var(--radius-sm);
-  text-align: center;
-}
-
-.detail-stat strong {
-  display: block;
-  color: var(--color-act);
-  font-family: var(--font-mono);
-  font-size: 1.2rem;
-  font-weight: 900;
-  margin-bottom: 0.1rem;
-}
-
-.detail-stat span {
-  color: var(--color-text-secondary);
-  font-size: 0.72rem;
-}
-
-.case-box {
-  padding: var(--space-lg);
-  background: var(--color-bg-alt);
-  border-radius: var(--radius-md);
-}
-
-.case-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-sm);
-}
-
-.case-item {
-  padding: 0.3rem 0.6rem;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.78rem;
-}
-
 .portfolio-card {
   display: flex;
   align-items: center;
@@ -697,13 +571,8 @@ function startAction() {
 
 @media (max-width: 960px) {
   .steps-grid,
-  .outcome-card-grid,
-  .detail-panel {
+  .outcome-card-grid {
     grid-template-columns: 1fr;
-  }
-
-  .detail-side {
-    max-width: none;
   }
 }
 
@@ -714,14 +583,6 @@ function startAction() {
 
   .outcome-card {
     flex-direction: column;
-  }
-
-  .detail-panel {
-    padding: var(--space-xl);
-  }
-
-  .detail-stats {
-    grid-template-columns: 1fr;
   }
 
   .portfolio-card {

@@ -59,10 +59,6 @@ export function getProject(id: number) {
   return http.get<any, Project>(`/projects/${id}`)
 }
 
-export function getMyProjects(page = 1, pageSize = 12) {
-  return http.get<any, PaginatedProjects>('/projects/mine', { params: { page, page_size: pageSize } })
-}
-
 export function createProject(data: ProjectPayload) {
   return http.post<any, { id: number }>('/projects', data)
 }

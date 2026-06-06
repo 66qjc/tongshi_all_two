@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import HeroSection from '../components/home/HeroSection.vue'
 import ModuleShowcase from '../components/home/ModuleShowcase.vue'
 import CoursePreview from '../components/home/CoursePreview.vue'
 import StatsSection from '../components/home/StatsSection.vue'
 import CtaSection from '../components/home/CtaSection.vue'
 import AnnouncementPopup from '../components/AnnouncementPopup.vue'
-
-const router = useRouter()
 
 const observer = ref<IntersectionObserver | null>(null)
 const fadeTimeouts = new Map<Element, ReturnType<typeof setTimeout>>()

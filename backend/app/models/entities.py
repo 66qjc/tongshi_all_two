@@ -265,14 +265,6 @@ class TaskCompletion(Base):
     user = relationship("User")
 
 
-class ActivityEvent(Base):
-    __tablename__ = "activity_events"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(String(32), nullable=False)
-    title = Column(String(128), nullable=False)
-    description = Column(String(256), default="")
-
-
 class StoredFile(Base):
     __tablename__ = "stored_files"
 

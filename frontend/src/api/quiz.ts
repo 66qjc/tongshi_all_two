@@ -11,7 +11,3 @@ export function getQuizHistory(limit = 10) {
 export function getQuizStats() {
   return http.get<any, { total_questions: number; questions_done: number; accuracy: number; today_count: number }>('/quiz/stats')
 }
-
-export function getCourseQuizStats(courseId: number) {
-  return http.get<any, { course_id: number; questions_done: number; accuracy: number }>(`/quiz/stats/${courseId}`)
-}

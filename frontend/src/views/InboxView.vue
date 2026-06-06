@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   getAnnouncements, markAsRead, recordCompletion,
   type Announcement,
 } from '@/api/announcement'
 
-const router = useRouter()
 const announcements = ref<Announcement[]>([])
 const loading = ref(true)
 

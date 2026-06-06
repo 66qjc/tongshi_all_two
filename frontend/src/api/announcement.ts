@@ -70,10 +70,6 @@ export function getAnnouncements() {
   return http.get<any, Announcement[]>('/announcements')
 }
 
-export function getAnnouncement(id: number) {
-  return http.get<any, Announcement>(`/announcements/${id}`)
-}
-
 export function createAnnouncement(data: {
   course_id: number
   class_ids: number[]
