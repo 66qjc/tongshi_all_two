@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const activeModule = ref(0)
+const activeModule = ref(-1)
 
 const modules = [
   {
@@ -77,6 +77,7 @@ const modules = [
 ]
 
 let timer: ReturnType<typeof setInterval> | undefined
+let idleTimeout: ReturnType<typeof setTimeout> | undefined
 
 const startTimer = () => {
   if (timer) clearInterval(timer)
@@ -92,12 +93,27 @@ const stopTimer = () => {
   }
 }
 
+const scheduleIdle = () => {
+  cancelIdle()
+  idleTimeout = setTimeout(() => {
+    startTimer()
+  }, 8000)
+}
+
+const cancelIdle = () => {
+  if (idleTimeout) {
+    clearTimeout(idleTimeout)
+    idleTimeout = undefined
+  }
+}
+
 onMounted(() => {
-  startTimer()
+  scheduleIdle()
 })
 
 onUnmounted(() => {
   stopTimer()
+  cancelIdle()
 })
 </script>
 
@@ -121,9 +137,10 @@ onUnmounted(() => {
           :key="mod.key"
           class="module-card fade-up"
           :class="{ active: activeModule === index }"
-          :style="{ '--card-gradient': mod.gradient, '--card-color': mod.color, '--card-color-light': mod.colorLight, transitionDelay: `${index * 0.1}s` }"
-          @mouseenter="() => { activeModule = index; stopTimer(); }"
-          @mouseleave="startTimer"
+          :style="{ '--card-gradient': mod.gradient, '--card-color': mod.color, '--card-color-light': mod.colorLight }"
+          :data-fade-delay="`${index * 0.1}s`"
+          @mouseenter="() => { activeModule = index; stopTimer(); cancelIdle(); }"
+          @mouseleave="() => { activeModule = -1; scheduleIdle(); }"
           @click="router.push(mod.route)"
         >
           <div class="card-header">

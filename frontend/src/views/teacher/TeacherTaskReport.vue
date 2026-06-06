@@ -35,6 +35,14 @@ function getScoreClass(score: number): string {
   return 'score-fail'
 }
 
+function getNormalizedScore(score: number, totalQuestions: number): number {
+  if (totalQuestions <= 0) return 0
+  // 如果分数已是一百分制（大于题目总数），直接返回
+  if (score > totalQuestions) return Math.min(score, 100)
+  // 否则等比例换算为百分制
+  return Math.round(score / totalQuestions * 100)
+}
+
 const route = useRoute()
 const announcements = ref<Announcement[]>([])
 const loading = ref(true)
@@ -246,14 +254,13 @@ onMounted(async () => {
             <el-table-column prop="major" label="专业" width="200"/>
             <el-table-column prop="class_name" label="班级" width="220"/>
             <el-table-column
-              prop="score"
               label="成绩"
               width="100"
               align="center"
             >
               <template #default="scope">
-                <span :class="getScoreClass(scope.row.score)" class="score-cell">
-                  {{ scope.row.score }}分
+                <span :class="getScoreClass(getNormalizedScore(scope.row.score, scope.row.total_questions))" class="score-cell">
+                  {{ getNormalizedScore(scope.row.score, scope.row.total_questions) }}分
                 </span>
               </template>
             </el-table-column>

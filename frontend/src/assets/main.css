@@ -188,7 +188,7 @@ a:focus-visible {
     transform var(--duration-slow) var(--ease-out);
 }
 
-.fade-up.visible {
+.fade-up[data-visible] {
   opacity: 1;
   transform: translateY(0);
 }
