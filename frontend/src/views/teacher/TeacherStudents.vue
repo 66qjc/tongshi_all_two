@@ -4,12 +4,15 @@ import { ElMessage } from 'element-plus'
 import { getStudents, type Student } from '@/api/teacher'
 import { getClasses, type ClassInfo } from '@/api/class'
 import { getTaskOverview, type TaskOverview } from '@/api/announcement'
+import TeacherTaskDetail from './TeacherTaskDetail.vue'
 
 const students = ref<Student[]>([])
 const classes = ref<ClassInfo[]>([])
 const loading = ref(true)
 const selectedClassId = ref<number | null>(null)
 const taskOverview = ref<TaskOverview | null>(null)
+const selectedTaskId = ref<number | null>(null)
+const drawerVisible = ref(false)
 
 // 分页
 const currentPage = ref(1)
@@ -33,6 +36,11 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+function openTaskDetail(taskId: number) {
+  selectedTaskId.value = taskId
+  drawerVisible.value = true
+}
 
 const searchQuery = ref('')
 
@@ -125,6 +133,35 @@ async function exportExcel() {
       </div>
     </div>
 
+    <!-- 作业列表 -->
+    <div v-if="taskOverview && taskOverview.tasks.length > 0" class="task-list">
+      <h3 class="section-title">作业列表</h3>
+      <div class="task-cards">
+        <div
+          v-for="task in taskOverview.tasks"
+          :key="task.id"
+          class="task-card"
+          @click="openTaskDetail(task.id)"
+        >
+          <div class="task-card-header">
+            <span class="task-title">{{ task.title }}</span>
+            <el-tag
+              :type="task.is_expired ? 'warning' : 'success'"
+              size="small"
+            >
+              {{ task.is_expired ? '已截止' : '进行中' }}
+            </el-tag>
+          </div>
+          <div class="task-card-body">
+            <span class="task-classes">{{ task.class_names.join('、') }}</span>
+            <span class="task-progress">
+              完成 <strong>{{ task.completed_count }}</strong> / {{ task.total_students }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="filter-bar">
         <el-select
           v-model="selectedClassId"
@@ -189,6 +226,9 @@ async function exportExcel() {
           @current-change="handlePageChange"
         />
       </div>
+
+    <!-- 作业详情 Drawer -->
+    <TeacherTaskDetail v-model="drawerVisible" :announcement-id="selectedTaskId" />
   </div>
 </template>
 
@@ -244,6 +284,65 @@ async function exportExcel() {
   font-size: 0.8rem;
   color: var(--color-text-muted);
   margin-top: var(--space-xs);
+}
+
+.section-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--space-md);
+  padding-left: var(--space-sm);
+  border-left: 3px solid var(--color-primary);
+}
+
+.task-list {
+  margin-bottom: var(--space-xl);
+}
+
+.task-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.task-card {
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.task-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.task-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+}
+
+.task-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.task-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.task-progress strong {
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 .filter-bar {
