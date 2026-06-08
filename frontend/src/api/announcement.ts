@@ -1,4 +1,5 @@
 import http from './http'
+import type { Question } from './question'
 
 export interface Announcement {
   id: number
@@ -67,6 +68,16 @@ export interface TaskOverview {
   }[]
 }
 
+export interface AnnouncementQuestions {
+  announcement: {
+    id: number
+    course_id: number
+    title: string
+    question_ids: number[]
+  }
+  questions: Question[]
+}
+
 export function getAnnouncements() {
   return http.get<any, Announcement[]>('/announcements')
 }
@@ -100,6 +111,10 @@ export function markAsRead(id: number) {
 
 export function recordCompletion(id: number) {
   return http.post<any, any>(`/announcements/${id}/complete`)
+}
+
+export function getAnnouncementQuestions(id: number) {
+  return http.get<any, AnnouncementQuestions>(`/announcements/${id}/questions`)
 }
 
 export function getCompletionReport(id: number, params?: {

@@ -1,7 +1,11 @@
 import http from './http'
 
-export function submitAnswer(questionId: number, userAnswer: string) {
-  return http.post<any, any>('/quiz/submit', { question_id: questionId, user_answer: userAnswer })
+export function submitAnswer(questionId: number, userAnswer: string, announcementId?: number | null) {
+  return http.post<any, any>('/quiz/submit', {
+    question_id: questionId,
+    user_answer: userAnswer,
+    ...(announcementId ? { announcement_id: announcementId } : {}),
+  })
 }
 
 export function getQuizHistory(limit = 10) {

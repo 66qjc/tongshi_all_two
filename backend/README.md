@@ -19,7 +19,7 @@ backend/
 │   │   ├── __init__.py           # 路由聚合器，挂载所有子路由到 /api
 │   │   └── routes/
 │   │       ├── auth_routes.py    # 登录、注册、获取当前用户
-│   │       ├── chapter_routes.py # 章节列表、详情、状态/排课更新
+│   │       ├── course_routes.py  # 课程列表、详情、增删改
 │   │       ├── material_routes.py# 学习资料（视频/PDF）CRUD
 │   │       ├── question_routes.py# 题库 CRUD + Excel 导入（按题型模板）+ 课程管理
 │   │       ├── quiz_routes.py    # 答题提交、历史、统计
@@ -31,21 +31,26 @@ backend/
 │   │       ├── upload_routes.py # 通用文件上传（含魔数校验）
 │   │       ├── file_routes.py   # 统一文件访问 GET /api/files/{file_id}
 │   │       ├── admin_routes.py  # 管理员：教师账号 CRUD + 批量导入 + 密码重置
+│   │       ├── admin_public_course_routes.py # 管理员：公共课程管理
 │   │       ├── profile_routes.py# 个人中心：错题本 + 收藏作品
+│   │       ├── notification_routes.py # 学生通知列表、未读计数、标记已读
 │   │       └── showcase_routes.py # 悟页面图文内容：管理员 CRUD + 公开只读
 │   │
 │   ├── services/                 # 业务逻辑层
-│   │   ├── auth_service.py       # 登录认证、注册、忘记密码
-│   │   ├── chapter_service.py    # 章节查询 + 进度计算
+│   │   ├── auth_service.py       # 登录认证、注册、忘记密码、密保问题
+│   │   ├── course_response_service.py # 学生端课程列表响应组装
 │   │   ├── material_service.py   # 资料 CRUD
 │   │   ├── question_service.py   # 题目 CRUD + Excel 导入 + 课程管理
-│   │   ├── quiz_service.py       # 答题批改 + 进度更新 + 统计 + 错题本
+│   │   ├── quiz_service.py       # 答题批改 + 统计 + 错题本
 │   │   ├── project_service.py    # 作品 CRUD + 点赞 + 审核 + 收藏列表
 │   │   ├── teacher_service.py    # 教师仪表盘统计 + 学生数据
 │   │   ├── class_service.py      # 班级 CRUD + 学生注册 + Excel 导入
 │   │   ├── announcement_service.py     # 公告/任务 CRUD + 未读计数
 │   │   ├── task_service.py       # 任务完成追踪 + 完成报告
 │   │   ├── portfolio_service.py  # 成长档案数据聚合
+│   │   ├── admin_public_course_service.py # 管理员公共课程管理
+│   │   ├── notification_service.py   # 学生通知（作品审核结果推送）
+│   │   ├── public_course_sync_service.py  # 公共课程同步到教师副本
 │   │   ├── storage_service.py    # 存储抽象协议 + StoredObject
 │   │   ├── storage_local.py      # 本地文件适配器
 │   │   ├── storage_s3.py         # SeaweedFS S3 适配器
@@ -74,7 +79,7 @@ backend/
 │
 ├── tests/
 │   ├── conftest.py               # 测试夹具：SQLite 内存库 + TestClient + 种子数据
-│   ├── test_auth.py              # 集成测试：认证、章节、答题
+│   ├── test_auth.py              # 集成测试：认证、答题
 │   ├── test_integration_bugfixes.py  # 回归测试：存储、上传、文件预览、业务修复
 │   └── test_schema_compat.py     # 数据库结构兼容性测试
 │
@@ -169,28 +174,31 @@ Client 请求
 - 角色：`student`（学生）、`teacher`（教师）、`admin`（管理员），通过 `require_role()` 依赖注入控制
 - 首次登录教师强制修改密码（`needs_password_change` 标记）
 
-### 数据库表（18 张）
+### 数据库表（21 张）
 
 | 表名 | 用途 |
 |------|------|
 | `users` | 用户（学生/教师/管理员），id=学号/工号，含 `needs_password_change` |
-| `classes` | 班级（含 `teacher_id` 归属） |
+| `classes` | 班级（含 `created_by` 归属教师） |
 | `student_class_enrollment` | 学生-班级注册关系 |
-| `courses` | 课程（含 `teacher_id` 归属） |
-| `chapters` | 章节（6 章），含排课时间和 `teacher_id` 归属 |
-| `materials` | 学习资料（视频/PDF，含 `teacher_id` 归属） |
-| `questions` | 题库（选择题/填空题，含 `teacher_id` 归属） |
+| `courses` | 课程（含 `created_by` 归属教师） |
+| `materials` | 学习资料（视频/PDF，含 `file_id` 关联 stored_files） |
+| `questions` | 题库（选择题/填空题，含 `created_by` 归属教师） |
 | `quiz_attempts` | 答题记录 |
-| `student_progress` | 学生学习进度（按章节） |
 | `projects` | 学生 AI 项目作品 |
 | `project_images` | 作品图片 |
 | `project_likes` | 作品点赞关系 |
+| `student_notifications` | 学生通知（作品审核结果等） |
 | `announcements` | 公告/测验任务 |
+| `announcement_classes` | 公告-班级多对多关联 |
 | `announcement_reads` | 公告已读记录 |
 | `task_completions` | 任务完成记录 |
 | `activity_events` | 课程活动时间线 |
 | `stored_files` | 文件元数据（存储后端、桶、路径、原始名称） |
 | `showcase_items` | 悟页面图文展示内容（section、标题、封面、排序） |
+| `showcase_item_images` | 悟页面展示内容图片 |
+| `security_questions` | 用户密保问题（用于忘记密码自助重置） |
+| `password_reset_requests` | 密码重置人工审批请求 |
 
 ### 开发约定
 
@@ -210,7 +218,7 @@ cd backend
 python -m pytest tests/ -v
 ```
 
-测试覆盖认证、章节、答题、数据库兼容性、文件存储、浏览器文件预览、教师数据隔离等核心链路，使用 SQLite 内存数据库（无需 MySQL）。
+测试覆盖认证、答题、数据库兼容性、文件存储、浏览器文件预览、教师数据隔离等核心链路，使用 SQLite 内存数据库（无需 MySQL）。
 
 ---
 

@@ -1,23 +1,36 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { getCourseQuestions, type Question } from '@/api/question'
 import { submitAnswer as apiSubmitAnswer } from '@/api/quiz'
 import { loadQuizDraft, saveQuizDraft, clearQuizDraft } from '@/composables/useQuizDraft'
-import { recordCompletion } from '@/api/announcement'
+import { getAnnouncementQuestions, recordCompletion } from '@/api/announcement'
 
 const route = useRoute()
 const router = useRouter()
-const courseId = computed(() => Number(route.params.courseId) || 1)
+const routeAnnouncementId = computed(() => {
+  const raw = route.params.announcementId
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : null
+})
+const courseId = computed(() => {
+  const id = Number(route.params.courseId)
+  return Number.isFinite(id) && id > 0 ? id : 1
+})
 const questionIds = computed(() => {
   const raw = route.query.question_ids as string | undefined
   if (!raw) return null
   return raw.split(',').map(Number).filter(n => !isNaN(n))
 })
 const announcementId = computed(() => {
+  if (routeAnnouncementId.value) return routeAnnouncementId.value
   const raw = route.query.announcement_id as string | undefined
-  return raw ? Number(raw) : null
+  const id = raw ? Number(raw) : null
+  return id && Number.isFinite(id) ? id : null
 })
+const isAssignmentMode = computed(() => announcementId.value !== null)
 const randomCount = computed(() => {
   const raw = route.query.random as string | undefined
   return raw ? Number(raw) : null
@@ -25,6 +38,8 @@ const randomCount = computed(() => {
 
 const mockQuestions = ref<Question[]>([])
 const loading = ref(true)
+const loadError = ref('')
+const assignmentTitle = ref('')
 
 // Fisher-Yates 洗牌
 function shuffle<T>(arr: T[]): T[] {
@@ -38,15 +53,26 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-watch(courseId, async () => {
+watch([courseId, announcementId], async () => {
   loading.value = true
+  loadError.value = ''
   try {
-    let qs = await getCourseQuestions(courseId.value, questionIds.value?.join(','))
-    // 自由练习：随机选取指定数量题目
-    if (randomCount.value && !questionIds.value) {
-      qs = shuffle(qs).slice(0, randomCount.value)
+    let qs: Question[]
+    if (announcementId.value) {
+      const data = await getAnnouncementQuestions(announcementId.value)
+      assignmentTitle.value = data.announcement.title
+      qs = data.questions
+    } else {
+      qs = await getCourseQuestions(courseId.value, questionIds.value?.join(','))
+      // 自由练习：随机选取指定数量题目
+      if (randomCount.value && !questionIds.value) {
+        qs = shuffle(qs).slice(0, randomCount.value)
+      }
     }
     mockQuestions.value = qs
+  } catch (error) {
+    mockQuestions.value = []
+    loadError.value = error instanceof Error ? error.message : '题目加载失败'
   } finally {
     loading.value = false
   }
@@ -66,7 +92,7 @@ watch(mockQuestions, (qs) => {
   if (!qs.length) return
   practiceFinished.value = false
   // 从作业入口进入时不恢复草稿，每次全新开始
-  if (announcementId.value) {
+  if (isAssignmentMode.value) {
     answers.value = qs.map(() => null)
     results.value = qs.map(() => null)
     currentIndex.value = 0
@@ -132,7 +158,7 @@ async function submitAnswer() {
     if (!fillAnswer.value.trim()) return
     userAnswer = fillAnswer.value.trim()
   }
-  const result = await apiSubmitAnswer(q.id, userAnswer)
+  const result = await apiSubmitAnswer(q.id, userAnswer, announcementId.value)
   answers.value[currentIndex.value] = userAnswer
   results.value[currentIndex.value] = result.is_correct
   submitted.value = true
@@ -208,8 +234,9 @@ async function finishPractice() {
   if (announcementId.value) {
     try {
       await recordCompletion(announcementId.value)
-    } catch {
-      // 后端接口幂等，失败不阻断本地总结展示。
+    } catch (error) {
+      ElMessage.error(error instanceof Error ? error.message : '任务完成失败')
+      return
     }
   }
   practiceFinished.value = true
@@ -218,7 +245,7 @@ async function finishPractice() {
 
 // 自由练习没有作业上下文，全部答完后直接展示总结。
 watch(allDone, (done) => {
-  if (done && !announcementId.value) {
+  if (done && !isAssignmentMode.value) {
     practiceFinished.value = true
   }
 })
@@ -254,14 +281,14 @@ function persistDraft() {
     <section class="quiz-hero">
       <div class="container">
         <div class="quiz-header">
-          <button class="back-btn" @click="router.push('/practice')">
+          <button class="back-btn" @click="router.push(isAssignmentMode ? '/inbox' : '/practice')">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M16 10H4m4-4l-4 4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            退出练习
+            {{ isAssignmentMode ? '返回消息' : '退出练习' }}
           </button>
           <div class="quiz-info">
-            <h2>课程练习</h2>
+            <h2>{{ isAssignmentMode ? assignmentTitle || '任务练习' : '课程练习' }}</h2>
             <span class="quiz-progress-text">{{ currentIndex + 1 }} / {{ totalQuestions }} 题</span>
           </div>
         </div>
@@ -278,13 +305,29 @@ function persistDraft() {
       </div>
     </section>
 
+    <section v-else-if="loadError" class="summary-section">
+      <div class="container">
+        <div class="summary-card">
+          <h2>无法开始练习</h2>
+          <p class="summary-text">{{ loadError }}</p>
+          <div class="summary-actions">
+            <button class="btn-retry" @click="router.push(isAssignmentMode ? '/inbox' : '/practice')">
+              {{ isAssignmentMode ? '返回消息' : '返回练习列表' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section v-else-if="totalQuestions === 0" class="summary-section">
       <div class="container">
         <div class="summary-card">
           <h2>暂无可练习题目</h2>
-          <p class="summary-text">该课程暂未配置题目，请稍后再试。</p>
+          <p class="summary-text">{{ isAssignmentMode ? '该任务暂未配置题目，请联系老师。' : '该课程暂未配置题目，请稍后再试。' }}</p>
           <div class="summary-actions">
-            <button class="btn-retry" @click="router.push('/practice')">返回练习列表</button>
+            <button class="btn-retry" @click="router.push(isAssignmentMode ? '/inbox' : '/practice')">
+              {{ isAssignmentMode ? '返回消息' : '返回练习列表' }}
+            </button>
           </div>
         </div>
       </div>
@@ -306,7 +349,9 @@ function persistDraft() {
           </div>
           <p class="summary-text">正确率 {{ totalQuestions > 0 ? Math.round(correctCount / totalQuestions * 100) : 0 }}%</p>
           <div class="summary-actions">
-            <button class="btn-retry" @click="router.push('/practice')">返回练习列表</button>
+            <button class="btn-retry" @click="router.push(isAssignmentMode ? '/inbox' : '/practice')">
+              {{ isAssignmentMode ? '返回消息' : '返回练习列表' }}
+            </button>
           </div>
         </div>
       </div>

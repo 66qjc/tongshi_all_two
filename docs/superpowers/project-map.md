@@ -16,6 +16,7 @@ User(teacher) -> Course -> Material
 User(teacher) -> Course -> Question -> QuizAttempt
 User(teacher) -> Course -> StudentProgress
 Announcement -> AnnouncementClass -> Class
+Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ```
 
 ## 后端主要文件
@@ -49,6 +50,7 @@ Announcement -> AnnouncementClass -> Class
 - `/learn/course/:courseId`：课程资料
 - `/practice`：按课程练习入口
 - `/practice/quiz/:courseId`：课程练习
+- `/practice/announcement/:announcementId`：题目任务练习
 - `/inbox`：题目任务通知
 
 ## 长期约定
@@ -57,4 +59,5 @@ Announcement -> AnnouncementClass -> Class
 - 资料、题目、学习进度全部直接挂在课程下。
 - 班级必须归属一门课程。
 - 发布题目可一次选择同一课程下的多个班级。
+- 题目任务练习必须通过任务维度记录 `QuizAttempt.announcement_id`；任务完成和教师完成报告按该任务下每题最新一次答题结果统计。
 - 教师只能访问自己创建的课程及其下属班级、资料、题目、学生成绩和作品审核范围。

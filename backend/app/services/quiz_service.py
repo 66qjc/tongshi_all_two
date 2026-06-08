@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Question, QuizAttempt, StudentClassEnrollment
 from app.core.timezone_utils import to_beijing_iso, beijing_today
+from app.services.task_service import get_accessible_assignment, validate_assignment_available
 
 
 def _student_can_access_course(db: Session, user_id: str, course_id: int) -> bool:
@@ -18,12 +19,21 @@ def _student_can_access_course(db: Session, user_id: str, course_id: int) -> boo
     ).first() is not None
 
 
-def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str, role: str = "student"):
+def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str, role: str = "student", announcement_id: int | None = None):
     question = db.query(Question).filter(Question.id == question_id).first()
     if not question:
         raise BusinessException(404, "题目不存在")
-    if role == "student" and not _student_can_access_course(db, user_id, question.course_id):
-        raise BusinessException(404, "题目不存在")
+    if role == "student":
+        if announcement_id is not None:
+            ann = get_accessible_assignment(db, user_id, announcement_id)
+            if not ann:
+                raise BusinessException(404, "题目任务不存在")
+            validate_assignment_available(ann)
+            question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
+            if question.course_id != ann.course_id or question.id not in question_ids:
+                raise BusinessException(404, "题目不存在")
+        elif not _student_can_access_course(db, user_id, question.course_id):
+            raise BusinessException(404, "题目不存在")
 
     if question.type == "multi_choice":
         # 多选题：将用户答案和标准答案各自排序后比较
@@ -35,6 +45,7 @@ def submit_answer(db: Session, user_id: str, question_id: int, user_answer: str,
     attempt = QuizAttempt(
         user_id=user_id,
         question_id=question_id,
+        announcement_id=announcement_id,
         user_answer=user_answer,
         is_correct=is_correct,
     )

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { getUnreadCount } from '@/api/announcement'
 import { getNotificationUnreadCount } from '@/api/notification'
+import { onMessageRefresh } from '@/utils/messageRefresh'
 
 const router = useRouter()
 const route = useRoute()
@@ -13,6 +14,7 @@ const scrolled = ref(false)
 const mobileMenuOpen = ref(false)
 const unreadCount = ref(0)
 let unreadTimer: number | undefined
+let stopMessageRefresh: (() => void) | undefined
 
 async function fetchUnreadCount() {
   if (!authStore.isLoggedIn || authStore.user?.role !== 'student') {
@@ -54,10 +56,12 @@ onMounted(() => {
   window.addEventListener('scroll', handleScroll)
   fetchUnreadCount()
   unreadTimer = window.setInterval(fetchUnreadCount, 15000)
+  stopMessageRefresh = onMessageRefresh(fetchUnreadCount)
 })
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   if (unreadTimer !== undefined) window.clearInterval(unreadTimer)
+  stopMessageRefresh?.()
 })
 
 watch(

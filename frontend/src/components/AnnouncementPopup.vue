@@ -9,6 +9,7 @@ import {
   type StudentNotification,
 } from '@/api/notification'
 import { useAuthStore } from '@/stores/auth'
+import { emitMessageRefresh } from '@/utils/messageRefresh'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -57,10 +58,12 @@ async function dismiss() {
   if (latestNotification.value) {
     try {
       await markNotificationRead(latestNotification.value.id)
+      emitMessageRefresh()
     } catch {}
   } else if (latestAnnouncement.value) {
     try {
       await markAsRead(latestAnnouncement.value.id)
+      emitMessageRefresh()
     } catch {}
   }
   visible.value = false

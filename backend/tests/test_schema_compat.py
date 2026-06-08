@@ -261,3 +261,26 @@ def test_ensure_schema_compatibility_creates_announcement_classes_table():
 
     assert "announcement_classes" in table_names
     assert {"id", "announcement_id", "class_id"}.issubset(columns)
+
+
+def test_ensure_schema_compatibility_adds_quiz_attempt_announcement_id():
+    """旧库 quiz_attempts 表应自动补齐任务答题关联字段"""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE quiz_attempts (
+                id INTEGER PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL,
+                question_id INTEGER NOT NULL,
+                user_answer VARCHAR(128),
+                is_correct BOOLEAN,
+                answered_at TIMESTAMP
+            )
+        """))
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("quiz_attempts")}
+
+    assert "announcement_id" in columns

@@ -81,6 +81,12 @@ const router = createRouter({
       meta: { title: '练 · 在线练习' },
     },
     {
+      path: '/practice/announcement/:announcementId',
+      name: 'practice-announcement',
+      component: () => import('../views/PracticeQuizView.vue'),
+      meta: { title: '任务练习' },
+    },
+    {
       path: '/create/project/:id',
       name: 'project-detail',
       component: () => import('../views/ProjectDetailView.vue'),

@@ -120,12 +120,15 @@ class QuizAttempt(Base):
         "users.id"), nullable=False, index=True)
     question_id = Column(Integer, ForeignKey(
         "questions.id"), nullable=False, index=True)
+    announcement_id = Column(Integer, ForeignKey(
+        "announcements.id", ondelete="CASCADE"), nullable=True, index=True)
     user_answer = Column(String(128), default="")
     is_correct = Column(Boolean, default=False)
     answered_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="quiz_attempts")
     question = relationship("Question")
+    announcement = relationship("Announcement")
 
 
 class Project(Base):

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -11,13 +11,20 @@ import {
   markNotificationRead,
   type StudentNotification,
 } from '@/api/notification'
+import { emitMessageRefresh, onMessageRefresh } from '@/utils/messageRefresh'
 
 const router = useRouter()
 const announcements = ref<Announcement[]>([])
 const notifications = ref<StudentNotification[]>([])
 const loading = ref(true)
+let refreshTimer: number | undefined
+let stopMessageRefresh: (() => void) | undefined
+let loadingMessages = false
 
-onMounted(async () => {
+async function loadMessages(showLoading = false) {
+  if (loadingMessages) return
+  loadingMessages = true
+  if (showLoading) loading.value = true
   try {
     const [announcementList, notificationList] = await Promise.all([
       getAnnouncements(),
@@ -26,8 +33,28 @@ onMounted(async () => {
     announcements.value = announcementList
     notifications.value = notificationList
   } finally {
+    loadingMessages = false
     loading.value = false
   }
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    loadMessages()
+  }
+}
+
+onMounted(() => {
+  loadMessages(true)
+  refreshTimer = window.setInterval(loadMessages, 15_000)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  stopMessageRefresh = onMessageRefresh(loadMessages)
+})
+
+onUnmounted(() => {
+  if (refreshTimer !== undefined) window.clearInterval(refreshTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  stopMessageRefresh?.()
 })
 
 async function handleRead(item: Announcement) {
@@ -35,6 +62,7 @@ async function handleRead(item: Announcement) {
   try {
     await markAsRead(item.id)
     item.is_read = true
+    emitMessageRefresh()
   } catch {}
 }
 
@@ -43,6 +71,7 @@ async function handleNotificationRead(item: StudentNotification) {
   try {
     await markNotificationRead(item.id)
     item.is_read = true
+    emitMessageRefresh()
   } catch {}
 }
 
@@ -61,8 +90,8 @@ async function handleComplete(item: Announcement) {
   try {
     await recordCompletion(item.id)
     ElMessage.success('已标记完成')
-    // refresh
-    announcements.value = await getAnnouncements()
+    await loadMessages()
+    emitMessageRefresh()
   } catch {
     ElMessage.error('操作失败')
   }
@@ -71,6 +100,22 @@ async function handleComplete(item: Announcement) {
 function isExpired(item: Announcement) {
   if (!item.end_time) return false
   return new Date(item.end_time) < new Date()
+}
+
+function canPractice(item: Announcement) {
+  return item.question_ids.length > 0 && !item.is_completed && !isExpired(item) && !isNotStarted(item)
+}
+
+function canManualComplete(item: Announcement) {
+  return item.question_ids.length === 0 && !item.is_completed && !isExpired(item) && !isNotStarted(item)
+}
+
+function actionDisabledText(item: Announcement) {
+  if (item.is_completed) return '已完成'
+  if (isNotStarted(item)) return '未开始'
+  if (isExpired(item)) return '已截止'
+  if (item.question_ids.length > 0) return '请先练习'
+  return '不可完成'
 }
 
 /** 判断任务是否尚未开始 */
@@ -180,11 +225,11 @@ function formatDate(dateStr: string) {
               <div v-if="item.question_ids.length > 0" class="item-quiz">
                 <span>包含 {{ item.question_ids.length }} 道题目</span>
                 <router-link
-                  v-if="!isExpired(item) && !isNotStarted(item)"
-                  :to="`/practice/quiz/${item.course_id}?question_ids=${item.question_ids.join(',')}&announcement_id=${item.id}`"
+                  v-if="canPractice(item)"
+                  :to="`/practice/announcement/${item.id}`"
                   class="quiz-link"
                 >去练习</router-link>
-                <span v-else class="quiz-link-disabled">{{ isExpired(item) ? '已截止' : '未开始' }}</span>
+                <span v-else class="quiz-link-disabled">{{ item.is_completed ? '已完成' : isExpired(item) ? '已截止' : '未开始' }}</span>
               </div>
               <div class="item-time">
                 <span v-if="item.start_time && isNotStarted(item)" class="not-started">
@@ -196,14 +241,15 @@ function formatDate(dateStr: string) {
               </div>
               <div v-if="item.is_read" class="item-actions">
                 <el-button
-                  v-if="!isExpired(item)"
+                  v-if="canManualComplete(item)"
                   size="small"
                   type="primary"
                   plain
                   round
                   @click.stop="handleComplete(item)"
                 >标记完成</el-button>
-                <el-button v-else size="small" disabled round>已截止</el-button>
+                <el-button v-else-if="item.question_ids.length > 0 && canPractice(item)" size="small" type="primary" plain round @click.stop="router.push(`/practice/announcement/${item.id}`)">去练习</el-button>
+                <el-button v-else size="small" disabled round>{{ actionDisabledText(item) }}</el-button>
               </div>
             </div>
           </div>

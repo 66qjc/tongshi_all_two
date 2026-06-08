@@ -24,8 +24,8 @@ def _get_now_beijing() -> datetime:
 def _to_beijing_time(dt: datetime) -> datetime:
     """将时间转换为北京时间（确保带时区信息）"""
     if dt.tzinfo is None:
-        # 如果没有时区信息，假设是北京时间
-        return dt.replace(tzinfo=BEIJING_TZ)
+        # 数据库存储的 naive 时间按 UTC 处理，再转换为北京时间。
+        return dt.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
     # 如果有时区信息，转换为北京时间
     return dt.astimezone(BEIJING_TZ)
 
@@ -44,19 +44,89 @@ def _student_can_access(db: Session, user_id: str, announcement_id: int) -> bool
     ).first() is not None
 
 
-def mark_completed(db: Session, user_id: str, announcement_id: int):
+def _is_not_started(ann: Announcement) -> bool:
+    """判断任务是否尚未开始。"""
+    return bool(ann.start_time and _get_now_beijing() < _to_beijing_time(ann.start_time))
+
+
+def _is_expired(end_time: datetime | None) -> bool:
+    """判断任务是否已过期（使用北京时间）"""
+    if not end_time:
+        return False
+    return _get_now_beijing() > _to_beijing_time(end_time)
+
+
+def validate_assignment_available(ann: Announcement) -> None:
+    """校验任务是否处于可答题/可完成时间窗口。"""
+    if _is_not_started(ann):
+        raise BusinessException(400, "该任务尚未开始")
+    if _is_expired(ann.end_time):
+        raise BusinessException(400, "该任务已截止，无法继续操作")
+
+
+def get_accessible_assignment(db: Session, user_id: str, announcement_id: int) -> Announcement | None:
+    """获取学生可访问的任务。"""
     ann = db.query(Announcement).filter(Announcement.id == announcement_id).first()
     if not ann or not _student_can_access(db, user_id, announcement_id):
         return None
-    # 截止时间校验：已过期的任务不允许标记完成（使用北京时间）
-    if ann.end_time and _get_now_beijing() > _to_beijing_time(ann.end_time):
-        raise BusinessException(400, "该任务已截止，无法标记完成")
+    return ann
+
+
+def get_assignment_questions(db: Session, user_id: str, announcement_id: int) -> tuple[Announcement, list]:
+    """获取学生任务题目，并统一校验权限和时间窗口。"""
+    from app.models.entities import Question
+
+    ann = get_accessible_assignment(db, user_id, announcement_id)
+    if not ann:
+        raise BusinessException(404, "题目任务不存在")
+    validate_assignment_available(ann)
+
+    question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
+    if not question_ids:
+        raise BusinessException(400, "该任务暂无题目")
+
+    questions = db.query(Question).filter(
+        Question.course_id == ann.course_id,
+        Question.id.in_(question_ids),
+    ).order_by(Question.id).all()
+    question_by_id = {question.id: question for question in questions}
+    ordered_questions = [question_by_id[qid] for qid in question_ids if qid in question_by_id]
+    if len(ordered_questions) != len(set(question_ids)):
+        raise BusinessException(400, "该任务题目配置异常")
+    return ann, ordered_questions
+
+
+def _answered_question_ids_for_assignment(db: Session, user_id: str, announcement_id: int) -> set[int]:
+    """获取学生在指定任务下已答题目 ID。"""
+    return {
+        row.question_id for row in db.query(QuizAttempt.question_id)
+        .filter(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.announcement_id == announcement_id,
+        )
+        .distinct()
+        .all()
+    }
+
+
+def mark_completed(db: Session, user_id: str, announcement_id: int):
+    ann = get_accessible_assignment(db, user_id, announcement_id)
+    if not ann:
+        return None
+    validate_assignment_available(ann)
     existing = db.query(TaskCompletion).filter(
         TaskCompletion.user_id == user_id,
         TaskCompletion.announcement_id == announcement_id,
     ).first()
     if existing:
         return existing
+
+    question_ids = set(ann.question_ids if isinstance(ann.question_ids, list) else [])
+    if question_ids:
+        answered_ids = _answered_question_ids_for_assignment(db, user_id, announcement_id)
+        if not question_ids.issubset(answered_ids):
+            raise BusinessException(400, "请先完成全部题目后再标记完成")
+
     try:
         completion = TaskCompletion(user_id=user_id, announcement_id=announcement_id)
         db.add(completion)
@@ -114,23 +184,29 @@ def completion_report(
     question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
     total_questions = len(question_ids)
 
-    # 预计算每个学生在此任务中的成绩
+    # 预计算每个学生在此任务中的成绩：按任务上下文、每题最新一次答题结果统计。
     student_scores: dict[str, int] = {}
     if question_ids:
-        # 获取所有学生在这些题目上的答题记录
+        latest_attempt_ids = (
+            db.query(func.max(QuizAttempt.id).label("attempt_id"))
+            .filter(
+                QuizAttempt.announcement_id == announcement_id,
+                QuizAttempt.question_id.in_(question_ids),
+            )
+            .group_by(QuizAttempt.user_id, QuizAttempt.question_id)
+            .subquery()
+        )
         attempts = (
             db.query(QuizAttempt.user_id, QuizAttempt.question_id, QuizAttempt.is_correct)
-            .filter(QuizAttempt.question_id.in_(question_ids))
+            .join(latest_attempt_ids, QuizAttempt.id == latest_attempt_ids.c.attempt_id)
             .all()
         )
-        # 统计每个学生的正确题数
         score_counts: dict[str, int] = {}
         for user_id, question_id, is_correct in attempts:
             if is_correct:
                 score_counts[user_id] = score_counts.get(user_id, 0) + 1
-        # 计算百分比成绩
         for user_id, correct_count in score_counts.items():
-            student_scores[user_id] = round(correct_count / total_questions * 100) if total_questions > 0 else 0
+            student_scores[user_id] = min(100, round(correct_count / total_questions * 100)) if total_questions > 0 else 0
 
     for class_id in class_ids:
         class_students = [(student, cid) for student, cid in students if cid == class_id]
@@ -158,12 +234,6 @@ def completion_report(
             "total": len(class_students),
             "completed": class_completed,
         })
-
-    def _is_expired(end_time: datetime | None) -> bool:
-        """判断任务是否已过期（使用北京时间）"""
-        if not end_time:
-            return False
-        return _get_now_beijing() > _to_beijing_time(end_time)
 
     # 对已完成/未完成学生列表进行分页
     completed_total = len(completed_students)
@@ -254,12 +324,6 @@ def task_overview(db: Session, teacher_id: str) -> dict:
     student_assigned: dict[str, set[int]] = {}
     student_completed: dict[str, set[int]] = {}
     tasks = []
-
-    def _is_expired(end_time: datetime | None) -> bool:
-        """判断任务是否已过期（使用北京时间）"""
-        if not end_time:
-            return False
-        return _get_now_beijing() > _to_beijing_time(end_time)
 
     for ann in anns:
         cids = ann_class_ids.get(ann.id, [])

@@ -192,6 +192,7 @@ class AdminQuestionUpdate(AdminQuestionCreate):
 class QuizSubmitRequest(BaseModel):
     question_id: int
     user_answer: str
+    announcement_id: Optional[int] = None
 
 
 class QuizAttemptOut(BaseModel):

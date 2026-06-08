@@ -8,34 +8,38 @@
 |------|------|------|
 | `/learn` | `src/views/LearnView.vue` | 学生端课程列表 |
 | `/learn/course/:courseId` | `src/views/CourseDetailView.vue` | 学生端课程详情页 |
-| `/learn/:chapterId` | `src/views/ChapterView.vue` | 章节学习页，展示视频和 PDF |
-| `/practice` | `src/views/PracticeView.vue` | 学生端在线测验 |
+| `/practice` | `src/views/PracticeView.vue` | 学生端在线练习入口 |
+| `/practice/assignments` | `src/views/PracticeAssignmentsView.vue` | 学生端作业练习列表 |
+| `/practice/quiz/:courseId` | `src/views/PracticeQuizView.vue` | 学生端答题页 |
+| `/inbox` | `src/views/InboxView.vue` | 学生端消息通知（任务/公告） |
 | `/create` | `src/views/CreateView.vue` | 学生端作品广场 |
 | `/create/upload` | `src/views/ProjectUploadView.vue` | 学生端提交/编辑作品 |
 | `/create/project/:id` | `src/views/ProjectDetailView.vue` | 作品详情页 |
 | `/act` | `src/views/ActView.vue` | 课程活动时间线 |
 | `/portfolio` | `src/views/PortfolioView.vue` | 成长档案（雷达图） |
-| `/profile` | `src/views/ProfileView.vue` | 个人中心（错题本 + 收藏作品） |
+| `/profile` | `src/views/ProfileView.vue` | 个人中心（错题本 + 收藏作品 + 密保设置） |
 | `/change-password` | `src/views/ChangePasswordView.vue` | 修改密码（首次登录强制） |
-| `/teacher/dashboard` | `src/views/teacher/TeacherDashboard.vue` | 教师端工作台概览 |
-| `/teacher/materials` | `src/views/teacher/TeacherMaterials.vue` | 教师端资料、课程、章节和排课管理 |
+| `/teacher` | `src/views/teacher/TeacherDashboard.vue` | 教师端工作台概览 |
+| `/teacher/materials` | `src/views/teacher/TeacherMaterials.vue` | 教师端资料管理 |
 | `/teacher/courses` | `src/views/teacher/TeacherCourses.vue` | 教师端课程管理 |
 | `/teacher/questions` | `src/views/teacher/TeacherQuestions.vue` | 教师端题库管理 |
-| `/teacher/students` | `src/views/teacher/TeacherStudents.vue` | 教师端学生数据 |
+| `/teacher/students` | `src/views/teacher/TeacherStudents.vue` | 教师端学生成绩 |
 | `/teacher/classes` | `src/views/teacher/TeacherClasses.vue` | 教师端班级管理 |
-| `/teacher/announcements` | `src/views/teacher/TeacherAnnouncements.vue` | 教师端公告/任务管理 |
+| `/teacher/publish` | `src/views/teacher/TeacherAnnouncements.vue` | 教师端发布题目 |
 | `/teacher/task-report` | `src/views/teacher/TeacherTaskReport.vue` | 教师端任务完成报告 |
 | `/teacher/reviews` | `src/views/teacher/TeacherReviews.vue` | 教师端作品审核 |
+| `/teacher/student-admin` | `src/views/teacher/TeacherStudentAdmin.vue` | 教师端学生管理（导入/密保审批） |
 | `/admin/teachers` | `src/views/admin/AdminTeachers.vue` | 管理员端教师账号管理 |
+| `/admin/public-courses` | `src/views/admin/AdminPublicCourses.vue` | 管理员端公共课程管理 |
+| `/admin/password-reset` | `src/views/admin/AdminPasswordReset.vue` | 管理员端密码重置审批 |
 | `/admin/showcase` | `src/views/admin/AdminShowcase.vue` | 管理员端悟页面内容管理 |
 
 ## API 封装
 
 | 文件 | 说明 |
 |------|------|
-| `src/api/auth.ts` | 登录、注册、获取当前用户、修改密码、忘记密码 |
+| `src/api/auth.ts` | 登录、注册、获取当前用户、修改密码、忘记密码、密保问题 |
 | `src/api/course.ts` | 课程列表、课程详情、课程增删改 |
-| `src/api/chapter.ts` | 章节列表、章节增删改、章节排课 |
 | `src/api/material.ts` | 学习资料列表、上传后登记、删除（含 file_id） |
 | `src/api/question.ts` | 题库 CRUD + Excel 导入 |
 | `src/api/quiz.ts` | 答题提交、历史、统计 |
@@ -46,14 +50,16 @@
 | `src/api/announcement.ts` | 公告/任务 CRUD + 已读/完成追踪 |
 | `src/api/portfolio.ts` | 成长档案数据 |
 | `src/api/admin.ts` | 管理员：教师账号 CRUD + 批量导入 + 密码重置 |
-| `src/api/profile.ts` | 个人中心：错题本 + 收藏作品 |
+| `src/api/adminPublicCourse.ts` | 管理员：公共课程管理 + 内容管理 |
+| `src/api/profile.ts` | 个人中心：错题本 + 收藏作品 + 密保设置 |
+| `src/api/notification.ts` | 学生通知列表、未读计数、标记已读 |
 | `src/api/showcase.ts` | 悟页面图文内容：管理员增删改查 + 公开只读 |
 
 课程体系的前端关系：
 
-- 教师端在“资料管理”页维护课程、章节、资料和课程时间安排。
-- 学生端先进入课程列表，再进入课程详情查看章节。
-- 章节学习仍复用原 `/learn/:chapterId` 页面。
+- 教师端在”课程管理”页维护课程，在”资料管理”页上传资料。
+- 学生端先进入课程列表，再进入课程详情查看资料。
+- 资料、题目、学习进度全部直接挂在课程下，不使用独立章节。
 
 ## Recommended IDE Setup
 

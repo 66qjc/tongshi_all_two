@@ -11,9 +11,24 @@ from app.services.announcement_service import (
     list_announcements, create_announcement, delete_announcement,
     unread_count, mark_read, get_announcement,
 )
-from app.services.task_service import mark_completed, completion_report, task_overview
+from app.services.task_service import mark_completed, completion_report, task_overview, get_assignment_questions
 
 router = APIRouter(prefix="/announcements", tags=["announcements"])
+
+
+def _format_question(q):
+    return {
+        "id": q.id,
+        "type": q.type,
+        "course_id": q.course_id,
+        "course_name": q.course.name if q.course else "",
+        "stem": q.stem,
+        "options": q.options or [],
+        "answer": q.answer,
+        "explanation": q.explanation or "",
+        "source_question_id": q.source_question_id,
+        "is_synced": bool(q.source_question_id),
+    }
 
 
 @router.get("", summary="获取发布题目列表", description="教师：自己发布的题目；学生：所在班级的题目任务（含已读/未读状态）")
@@ -59,6 +74,20 @@ def detail(announcement_id: int, db: Session = Depends(get_db), current_user: Au
     if not ann:
         raise BusinessException(404, "题目任务不存在")
     return success(ann)
+
+
+@router.get("/{announcement_id}/questions", summary="获取任务题目", description="学生端：获取指定题目任务的题目列表")
+def questions(announcement_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("student"))):
+    ann, question_list = get_assignment_questions(db, current_user.id, announcement_id)
+    return success({
+        "announcement": {
+            "id": ann.id,
+            "course_id": ann.course_id,
+            "title": ann.title,
+            "question_ids": ann.question_ids or [],
+        },
+        "questions": [_format_question(q) for q in question_list],
+    })
 
 
 @router.post("/{announcement_id}/complete", summary="标记任务完成", description="学生端：标记题目任务为已完成（幂等）")

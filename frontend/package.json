@@ -8,6 +8,7 @@
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
+    "test:message-refresh": "node ./tests/message-refresh-static.test.mjs",
     "type-check": "vue-tsc --build"
   },
   "dependencies": {
