@@ -158,6 +158,8 @@ def ensure_schema_compatibility(engine) -> None:
         _add_column_if_missing(
             conn, inspector, "questions", "source_question_id", "INTEGER")
         _add_column_if_missing(
+            conn, inspector, "questions", "tags", "JSON")
+        _add_column_if_missing(
             conn, inspector, "quiz_attempts", "announcement_id", "INTEGER")
         _add_column_if_missing(
             conn, inspector, "announcements", "course_id", "INTEGER")

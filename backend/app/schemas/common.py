@@ -153,6 +153,7 @@ class QuestionOut(BaseModel):
     options: List[str] = []
     answer: str
     explanation: str = ""
+    tags: List[str] = []
     source_question_id: Optional[int] = None
     is_synced: bool = False
 
@@ -164,6 +165,7 @@ class QuestionCreate(BaseModel):
     options: List[str] = []
     answer: str
     explanation: str = ""
+    tags: List[str] = []
 
     @field_validator("type")
     @classmethod
@@ -206,6 +208,7 @@ class AdminQuestionCreate(BaseModel):
     options: List[str] = []
     answer: str
     explanation: str = ""
+    tags: List[str] = []
 
     @field_validator("type")
     @classmethod

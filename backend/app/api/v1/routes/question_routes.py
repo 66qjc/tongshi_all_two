@@ -36,6 +36,7 @@ def _format_question(q):
         "options": q.options or [],
         "answer": q.answer,
         "explanation": q.explanation or "",
+        "tags": q.tags or [],
         "source_question_id": q.source_question_id,
         "is_synced": bool(q.source_question_id),
     }
@@ -149,17 +150,17 @@ def _build_question_template(question_type: str) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "题目导入模板"
-    ws.append(["题型", "课程名称", "题干", "选项（选择题用 | 分隔）", "答案", "解析"])
+    ws.append(["题型", "课程名称", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"])
     if question_type == "choice":
-        ws.append(["choice", "示例课程", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
+        ws.append(["choice", "示例课程", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
     elif question_type == "fill":
-        ws.append(["fill", "示例课程", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
+        ws.append(["fill", "示例课程", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
     elif question_type == "multi_choice":
-        ws.append(["multi_choice", "示例课程", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
+        ws.append(["multi_choice", "示例课程", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
     else:
-        ws.append(["choice", "示例课程", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
-        ws.append(["fill", "示例课程", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
-        ws.append(["multi_choice", "示例课程", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
+        ws.append(["choice", "示例课程", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
+        ws.append(["fill", "示例课程", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
+        ws.append(["multi_choice", "示例课程", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -207,13 +208,35 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         content), allowed_extensions=ALLOWED_EXCEL_EXTENSIONS, max_size=MAX_EXCEL_SIZE)
     if err:
         raise BusinessException(400, err)
-    wb = load_workbook(filename=BytesIO(content), data_only=True)
+    try:
+        wb = load_workbook(filename=BytesIO(content), data_only=True)
+    except Exception:
+        raise BusinessException(400, "Excel 文件读取失败，请确认文件是 .xlsx/.xls 格式，且没有损坏或被加密")
     ws = wb.active
+    if ws.max_row < 2:
+        raise BusinessException(400, "Excel 中没有可导入的题目数据，请至少保留表头并填写一行题目")
     headers = [str(c.value).strip() if c.value is not None else "" for c in next(
         ws.iter_rows(min_row=1, max_row=1))]
+    required_header_groups = [
+        ("题型", ["题型", "type"]),
+        ("课程名称", ["课程名称", "课程", "course", "course_name"]),
+        ("题干", ["题干", "stem"]),
+        ("答案", ["答案", "answer"]),
+    ]
+    missing_headers = [
+        label
+        for label, candidates in required_header_groups
+        if not any(candidate in headers for candidate in candidates)
+    ]
+    if missing_headers:
+        raise BusinessException(400, f"Excel 表头缺少：{', '.join(missing_headers)}。请下载题库导入模板后按模板填写")
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
+        if all(cell is None or str(cell).strip() == "" for cell in row):
+            continue
         item = {headers[i]: row[i] if i < len(
             row) else None for i in range(len(headers))}
         rows.append(item)
+    if not rows:
+        raise BusinessException(400, "Excel 中没有可导入的题目数据，请填写题目内容后再上传")
     return success(import_questions_from_excel(db, rows, current_user.id))

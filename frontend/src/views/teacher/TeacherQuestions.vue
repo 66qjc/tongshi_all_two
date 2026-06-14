@@ -11,17 +11,21 @@ const loading = ref(true)
 const filterCourse = ref<number | ''>('')
 const filterType = ref<'' | 'choice' | 'fill' | 'multi_choice'>('')
 const filterKeyword = ref('')
+const filterTag = ref('')
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
+const selectedQuestions = ref<Question[]>([])
+const batchDeleting = ref(false)
 const importDialogVisible = ref(false)
 const importFile = ref<File | null>(null)
 const importInput = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
 const importErrors = ref<{ row: number; reason: string }[]>([])
 const importErrorDialogVisible = ref(false)
+const importFailureReason = ref('')
 
 const form = reactive({
   course_id: '' as number | '',
@@ -30,7 +34,14 @@ const form = reactive({
   options: ['', '', '', ''],
   answer: '',
   explanation: '',
+  tags: [] as string[],
 })
+
+function hasTag(row: Question, tag: string) {
+  const keyword = tag.trim().toLowerCase()
+  if (!keyword) return true
+  return (row.tags || []).some(item => item.toLowerCase().includes(keyword))
+}
 
 async function loadCourses() {
   const all = await getCourses()
@@ -48,8 +59,8 @@ async function loadQuestions() {
       page: page.value,
       page_size: pageSize.value,
     })
-    questions.value = result.items
-    total.value = result.total
+    questions.value = result.items.filter(item => hasTag(item, filterTag.value))
+    total.value = filterTag.value ? questions.value.length : result.total
   } catch {
     ElMessage.error('题目加载失败，请稍后重试')
   } finally {
@@ -61,6 +72,7 @@ function resetFilter() {
   filterCourse.value = ''
   filterType.value = ''
   filterKeyword.value = ''
+  filterTag.value = ''
   page.value = 1
   loadQuestions()
 }
@@ -79,6 +91,7 @@ function openNew() {
     options: ['', '', '', ''],
     answer: '',
     explanation: '',
+    tags: [],
   })
   dialogVisible.value = true
 }
@@ -92,6 +105,7 @@ function openEdit(row: Question) {
     options: row.options?.length ? [...row.options] : ['', '', '', ''],
     answer: row.answer,
     explanation: row.explanation,
+    tags: [...(row.tags || [])],
   })
   dialogVisible.value = true
 }
@@ -113,6 +127,7 @@ async function handleSave() {
     options: form.type === 'choice' || form.type === 'multi_choice' ? form.options.map(item => item.trim()).filter(Boolean) : [],
     answer: form.answer.trim(),
     explanation: form.explanation.trim(),
+    tags: form.tags.map(item => item.trim()).filter(Boolean),
   }
 
   try {
@@ -142,6 +157,47 @@ async function handleDelete(row: Question) {
     ElMessage.success('已删除')
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error('删除失败，请稍后重试')
+  }
+}
+
+function handleSelectionChange(rows: Question[]) {
+  selectedQuestions.value = rows
+}
+
+function selectableQuestion(row: Question) {
+  return !row.is_synced
+}
+
+async function handleBatchDelete() {
+  const deletableRows = selectedQuestions.value.filter(selectableQuestion)
+  if (deletableRows.length === 0) {
+    ElMessage.warning('请选择可删除的题目')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${deletableRows.length} 道题目？删除后不可恢复。`, '批量删除确认', {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+    })
+    batchDeleting.value = true
+    const results = await Promise.allSettled(deletableRows.map(item => deleteQuestion(item.id)))
+    const successIds = results
+      .map((result, index) => result.status === 'fulfilled' ? deletableRows[index]?.id : undefined)
+      .filter((id): id is number => typeof id === 'number')
+    const failedCount = results.length - successIds.length
+    questions.value = questions.value.filter(item => !successIds.includes(item.id))
+    selectedQuestions.value = []
+    if (failedCount > 0) {
+      ElMessage.warning(`已删除 ${successIds.length} 道题，${failedCount} 道删除失败`)
+    } else {
+      ElMessage.success(`已删除 ${successIds.length} 道题`)
+    }
+    await loadQuestions()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error('批量删除失败，请稍后重试')
+  } finally {
+    batchDeleting.value = false
   }
 }
 
@@ -183,18 +239,26 @@ async function handleImport() {
     return
   }
   importing.value = true
+  importFailureReason.value = ''
+  importErrors.value = []
   try {
     const result = await importQuestions(importFile.value)
     ElMessage.success(`导入完成：成功 ${result.success_count} 题，失败 ${result.fail_count} 题`)
     if (result.errors && result.errors.length > 0) {
       importErrors.value = result.errors
       importErrorDialogVisible.value = true
+    } else {
+      importErrorDialogVisible.value = false
     }
     importDialogVisible.value = false
     page.value = 1
     await loadQuestions()
-  } catch {
-    ElMessage.error('导入失败，请检查文件格式和课程名称')
+  } catch (error) {
+    const message = error instanceof Error && error.message ? error.message : '导入失败，请检查文件格式和课程名称'
+    importFailureReason.value = message
+    importErrors.value = []
+    importErrorDialogVisible.value = true
+    ElMessage.error(message)
   } finally {
     importing.value = false
   }
@@ -225,11 +289,22 @@ onMounted(async () => {
         <el-option label="多选题" value="multi_choice" />
         <el-option label="填空题" value="fill" />
       </el-select>
+      <el-input v-model="filterTag" placeholder="搜索标签" clearable style="width: 160px" @keyup.enter="page = 1; loadQuestions()" @clear="page = 1; loadQuestions()" />
       <el-button @click="resetFilter">重置</el-button>
+      <el-button
+        type="danger"
+        plain
+        :disabled="selectedQuestions.length === 0"
+        :loading="batchDeleting"
+        @click="handleBatchDelete"
+      >
+        批量删除
+      </el-button>
       <span class="filter-count">共 {{ total }} 题</span>
     </div>
 
-    <el-table :data="questions" stripe style="width: 100%" v-loading="loading">
+    <el-table :data="questions" stripe style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="48" :selectable="selectableQuestion" />
       <el-table-column type="index" label="序号" width="70" />
       <el-table-column label="题干" min-width="260">
         <template #default="{ row }">
@@ -248,6 +323,14 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column prop="course_name" label="所属课程" min-width="160" />
+      <el-table-column label="课程标签" min-width="150">
+        <template #default="{ row }">
+          <div class="tag-list">
+            <el-tag v-for="tag in row.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+            <span v-if="!row.tags?.length" class="readonly-text">-</span>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
           <el-button v-if="!row.is_synced" text size="small" @click="openEdit(row)">编辑</el-button>
@@ -288,6 +371,19 @@ onMounted(async () => {
         </el-radio-group>
       </div>
       <div class="form-group">
+        <label>课程标签</label>
+        <el-select
+          v-model="form.tags"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          placeholder="输入标签后回车"
+          size="large"
+          style="width: 100%"
+        />
+      </div>
+      <div class="form-group">
         <label>题干</label>
         <el-input v-model="form.stem" type="textarea" :rows="3" placeholder="请输入题目内容" />
       </div>
@@ -317,15 +413,15 @@ onMounted(async () => {
         <p>请先选择模板类型并下载，再按模板填写后上传。</p>
         <table class="format-table">
           <thead>
-            <tr><th>题型</th><th>课程名称</th><th>题干</th><th>选项（选择题用 | 分隔）</th><th>答案</th><th>解析</th></tr>
+            <tr><th>题型</th><th>课程名称</th><th>标签</th><th>题干</th><th>选项（选择题用 | 分隔）</th><th>答案</th><th>解析</th></tr>
           </thead>
           <tbody>
-            <tr><td>choice</td><td>示例课程</td><td>图灵测试由谁提出？</td><td>A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦</td><td>A</td><td>图灵提出了图灵测试。</td></tr>
-            <tr><td>multi_choice</td><td>示例课程</td><td>以下哪些是编程语言？</td><td>A. Python|B. Java|C. HTML|D. C++</td><td>ABD</td><td>HTML 是标记语言，不是编程语言。</td></tr>
-            <tr><td>fill</td><td>示例课程</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
+            <tr><td>choice</td><td>示例课程</td><td>人工智能</td><td>图灵测试由谁提出？</td><td>A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦</td><td>A</td><td>图灵提出了图灵测试。</td></tr>
+            <tr><td>multi_choice</td><td>示例课程</td><td>编程基础|多选</td><td>以下哪些是编程语言？</td><td>A. Python|B. Java|C. HTML|D. C++</td><td>ABD</td><td>HTML 是标记语言，不是编程语言。</td></tr>
+            <tr><td>fill</td><td>示例课程</td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
           </tbody>
         </table>
-        <p class="import-note">请将"课程名称"填写为当前教师已有课程名称；"题型"支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。</p>
+        <p class="import-note">请将"课程名称"填写为当前教师已有课程名称；"标签"支持用逗号、顿号或 | 分隔多个标签；"题型"支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。</p>
       </div>
       <div class="import-actions">
         <div class="template-block">
@@ -351,7 +447,10 @@ onMounted(async () => {
 
     <!-- 导入失败详情弹窗 -->
     <el-dialog v-model="importErrorDialogVisible" title="导入失败详情" width="560px">
-      <el-table :data="importErrors" stripe max-height="400">
+      <div v-if="importFailureReason" class="import-failure-reason">
+        {{ importFailureReason }}
+      </div>
+      <el-table v-else :data="importErrors" stripe max-height="400">
         <el-table-column prop="row" label="行号" width="80" />
         <el-table-column prop="reason" label="失败原因" />
       </el-table>
@@ -410,6 +509,15 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 
+.import-failure-reason {
+  padding: var(--space-md);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: #b91c1c;
+  line-height: 1.6;
+}
+
 .template-block {
   display: flex;
   flex-direction: column;
@@ -439,6 +547,12 @@ onMounted(async () => {
 .readonly-text {
   color: var(--color-text-muted);
   font-size: 0.85rem;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .form-group {

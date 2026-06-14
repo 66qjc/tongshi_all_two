@@ -25,6 +25,7 @@ const questionDialogVisible = ref(false)
 const questionLoading = ref(false)
 const questionKeyword = ref('')
 const questionTypeFilter = ref<'' | 'choice' | 'fill' | 'multi_choice'>('')
+const questionTagFilter = ref('')
 const questionAddCount = ref<number | null>(null)
 const draftSelectedQuestionIds = ref<number[]>([])
 const questionTableRef = ref<TableInstance>()
@@ -56,10 +57,21 @@ const filteredQuestions = computed(() => {
   const keyword = questionKeyword.value.trim().toLowerCase()
   return questions.value.filter(item => {
     const matchType = !questionTypeFilter.value || item.type === questionTypeFilter.value
+    const matchTag = !questionTagFilter.value || (item.tags || []).includes(questionTagFilter.value)
     const searchable = `${item.stem || ''} ${item.answer || ''} ${item.explanation || ''}`.toLowerCase()
     const matchKeyword = !keyword || searchable.includes(keyword)
-    return matchType && matchKeyword
+    return matchType && matchTag && matchKeyword
   })
+})
+
+const questionTags = computed(() => {
+  const tags = new Set<string>()
+  questions.value.forEach(item => {
+    ;(item.tags || []).forEach(tag => {
+      if (tag) tags.add(tag)
+    })
+  })
+  return Array.from(tags)
 })
 
 const selectedQuestions = computed(() => {
@@ -148,6 +160,7 @@ async function openQuestionPicker() {
   }
   questionKeyword.value = ''
   questionTypeFilter.value = ''
+  questionTagFilter.value = ''
   questionAddCount.value = null
   draftSelectedQuestionIds.value = [...form.question_ids]
   questionDialogVisible.value = true
@@ -193,6 +206,7 @@ function clearDraftQuestions() {
 function resetQuestionFilters() {
   questionKeyword.value = ''
   questionTypeFilter.value = ''
+  questionTagFilter.value = ''
   questionAddCount.value = null
 }
 
@@ -381,6 +395,9 @@ onMounted(async () => {
               <el-option label="多选题" value="multi_choice" />
               <el-option label="填空题" value="fill" />
             </el-select>
+            <el-select v-model="questionTagFilter" placeholder="全部标签" clearable size="large" style="width: 150px">
+              <el-option v-for="tag in questionTags" :key="tag" :label="tag" :value="tag" />
+            </el-select>
             <el-button size="large" @click="resetQuestionFilters">重置</el-button>
           </div>
 
@@ -420,6 +437,14 @@ onMounted(async () => {
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="标签" min-width="130">
+              <template #default="{ row }">
+                <div class="question-tag-list">
+                  <el-tag v-for="tag in row.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+                  <span v-if="!row.tags?.length" class="question-muted">-</span>
+                </div>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
 
@@ -437,6 +462,7 @@ onMounted(async () => {
                 <el-tag :type="item.type === 'choice' ? '' : item.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
                   {{ getQuestionTypeLabel(item.type) }}
                 </el-tag>
+                <el-tag v-for="tag in item.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
                 <span>{{ getQuestionPreview(item.stem, 34) }}</span>
               </div>
               <el-button type="danger" text size="small" @click="removeDraftQuestion(item.id)">移除</el-button>
@@ -534,6 +560,17 @@ onMounted(async () => {
   color: var(--color-text-muted);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+
+.question-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.question-muted {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
 }
 
 .question-picker-tip {

@@ -107,6 +107,7 @@ class Question(Base):
     options = Column(JSON, default=list)
     answer = Column(String(128), nullable=False)
     explanation = Column(Text, default="")
+    tags = Column(JSON, default=list)
     source_question_id = Column(Integer, ForeignKey(
         "questions.id"), nullable=True, index=True)
 

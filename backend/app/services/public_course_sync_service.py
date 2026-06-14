@@ -34,6 +34,7 @@ def copy_question_to_course(source: Question, course_id: int) -> Question:
         options=list(source.options or []),
         answer=source.answer,
         explanation=source.explanation,
+        tags=list(source.tags or []),
         source_question_id=source.id,
     )
 
@@ -84,6 +85,7 @@ def sync_question_to_course_copies(db: Session, source: Question) -> None:
         mirrored.options = list(source.options or [])
         mirrored.answer = source.answer
         mirrored.explanation = source.explanation
+        mirrored.tags = list(source.tags or [])
 
 
 def delete_synced_questions(db: Session, source_question_id: int) -> None:
