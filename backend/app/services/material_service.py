@@ -15,11 +15,15 @@ def list_materials(
     keyword: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
+    include_public_sources: bool = True,
 ):
     query = db.query(Material).join(Course, Course.id == Material.course_id)
     if teacher_id is not None:
-        query = query.filter(
-            or_(Course.created_by == teacher_id, Course.is_public.is_(True)))
+        if include_public_sources:
+            query = query.filter(
+                or_(Course.created_by == teacher_id, Course.is_public.is_(True)))
+        else:
+            query = query.filter(Course.created_by == teacher_id)
     if course_id is not None:
         query = query.filter(Material.course_id == course_id)
     if keyword:

@@ -1,4 +1,5 @@
 """Central configuration loaded from .env"""
+
 import os
 from pathlib import Path
 
@@ -27,12 +28,12 @@ def _env_int(*keys: str, default: int) -> int:
 
 
 class Settings:
-    secret_key: str = _env("SECRET_KEY", default="tongshi-demo-secret")
+    secret_key: str = _env("SECRET_KEY")
     algorithm: str = "HS256"
     access_token_expire_minutes: int = _env_int("ACCESS_TOKEN_EXPIRE_MINUTES", default=10080)
     allowed_origins: str = _env("ALLOWED_ORIGINS", default="*")
     database_url: str = _env("DATABASE_URL", default="mysql+pymysql://root:123456@127.0.0.1:3306/tongshi?charset=utf8mb4")
-    # 文件存储配置
+    allow_query_token_for_files: bool = _env("ALLOW_QUERY_TOKEN_FOR_FILES", default="false").lower() == "true"
     storage_backend: str = _env("STORAGE_BACKEND", default="local").lower()
     local_upload_dir: str = _env("LOCAL_UPLOAD_DIR", default=str(BACKEND_ROOT / "uploads"))
     s3_endpoint: str = _env("S3_ENDPOINT", default="")
@@ -42,6 +43,10 @@ class Settings:
     s3_bucket_private: str = _env("S3_BUCKET_PRIVATE", default="tongshi-private")
     s3_region: str = _env("S3_REGION", default="us-east-1")
     s3_force_path_style: bool = _env("S3_FORCE_PATH_STYLE", default="true").lower() == "true"
+
+    def __init__(self):
+        if not self.secret_key:
+            raise ValueError("SECRET_KEY 未配置，禁止启动")
 
 
 settings = Settings()

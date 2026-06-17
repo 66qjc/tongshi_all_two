@@ -155,14 +155,26 @@ def delete_class(db: Session, class_id: int, teacher_id: str):
             for row in db.query(AnnouncementClass.announcement_id).filter(AnnouncementClass.class_id == class_id).all()
         ]
         if class_announcement_ids:
-            db.query(AnnouncementRead).filter(
-                AnnouncementRead.announcement_id.in_(class_announcement_ids)
-            ).delete(synchronize_session=False)
-            db.query(TaskCompletion).filter(
-                TaskCompletion.announcement_id.in_(class_announcement_ids)
-            ).delete(synchronize_session=False)
             db.query(AnnouncementClass).filter(AnnouncementClass.class_id == class_id).delete(synchronize_session=False)
-            db.query(Announcement).filter(Announcement.id.in_(class_announcement_ids)).delete(synchronize_session=False)
+            remaining_announcement_ids = {
+                row.announcement_id
+                for row in db.query(AnnouncementClass.announcement_id)
+                .filter(AnnouncementClass.announcement_id.in_(class_announcement_ids))
+                .all()
+            }
+            orphan_announcement_ids = [
+                announcement_id
+                for announcement_id in class_announcement_ids
+                if announcement_id not in remaining_announcement_ids
+            ]
+            if orphan_announcement_ids:
+                db.query(AnnouncementRead).filter(
+                    AnnouncementRead.announcement_id.in_(orphan_announcement_ids)
+                ).delete(synchronize_session=False)
+                db.query(TaskCompletion).filter(
+                    TaskCompletion.announcement_id.in_(orphan_announcement_ids)
+                ).delete(synchronize_session=False)
+                db.query(Announcement).filter(Announcement.id.in_(orphan_announcement_ids)).delete(synchronize_session=False)
         db.delete(cls)
         db.commit()
         logger.info(f"班级删除: class_id={class_id}, name={cls.name}")
@@ -377,6 +389,8 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
                     db.add(student)
                     db.flush()
                     is_new = True
+                elif student.role != "student":
+                    raise BusinessException(400, f"学号 {student_id} 已存在但不是学生账号，已跳过")
                 else:
                     student.name = name
                     student.major = major
@@ -401,7 +415,7 @@ def import_students_from_excel(db: Session, file_bytes: bytes, teacher_id: str, 
                     result["success_count"] += 1
                 else:
                     result["skip_count"] += 1
-        except (SQLAlchemyError, IntegrityError) as exc:
+        except (BusinessException, SQLAlchemyError, IntegrityError) as exc:
             result["fail_count"] += 1
             result["errors"].append({"row": row_idx, "reason": str(exc)[:120]})
             continue

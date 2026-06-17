@@ -12,7 +12,7 @@ export function resolveFileUrl(url: string | undefined | null): string {
   if (/^https?:\/\//i.test(url)) return url
   const base = import.meta.env.VITE_API_BASE as string | undefined
   const fullUrl = base ? `${base.replace(/\/$/, '')}${url}` : url
-  if (url.startsWith('/api/')) {
+  if (url.startsWith('/api/files/')) {
     const token = localStorage.getItem('auth_token')
     if (token) {
       const separator = fullUrl.includes('?') ? '&' : '?'

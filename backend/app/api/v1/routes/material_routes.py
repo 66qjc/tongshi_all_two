@@ -49,7 +49,15 @@ def get_all_materials(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    materials, total = list_materials(db, course_id, current_user.id, keyword, page, page_size)
+    materials, total = list_materials(
+        db,
+        course_id,
+        current_user.id,
+        keyword,
+        page,
+        page_size,
+        include_public_sources=False,
+    )
     return paginated_success([_format_material(m) for m in materials], total, page, page_size)
 
 

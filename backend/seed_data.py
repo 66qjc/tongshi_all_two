@@ -1,19 +1,11 @@
 """Seed data for the tongshi AI course platform"""
-from datetime import datetime, timedelta, timezone
 
-from app.core.security import get_password_hash
 from app.db.session import SessionLocal
 from app.models.entities import Course, User
 
 
-# 测试用种子账号：id, name, role, password（需要时取消注释）
-_SEED_USERS: list[tuple[str, str, str, str]] = [
-    ("admin", "系统管理员", "admin", "admin123456"),
-    # ("T001", "测试教师", "teacher", "abc123456"),
-    # ("2025001", "测试学生一", "student", "abc123456"),
-    # ("2025002", "测试学生二", "student", "abc123456"),
-    # ("2025003", "测试学生三", "student", "abc123456"),
-]
+# 仅保留非敏感共享种子，禁止在此处创建默认管理员或其他默认账号。
+_SEED_USERS: list[tuple[str, str, str, str]] = []
 
 
 def seed():
@@ -24,18 +16,9 @@ def seed():
         if existing:
             print(f"  {role} {uid} 已存在，跳过")
             continue
-        db.add(User(
-            id=uid,
-            name=name,
-            role=role,
-            hashed_password=get_password_hash(pwd),
-            needs_password_change=False,
-        ))
-        db.commit()
-        print(f"  已创建 {role}: {uid} / {pwd}")
+        print(f"  跳过敏感账号创建: {uid}")
 
-    public_course_names = [
-    ]
+    public_course_names: list[str] = []
     for name in public_course_names:
         course = db.query(Course).filter(
             Course.name == name,

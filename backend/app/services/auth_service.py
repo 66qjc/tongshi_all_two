@@ -34,6 +34,9 @@ def login_user(db: Session, user_id: str, password: str) -> dict:
 
 
 def register_user(db: Session, data: RegisterRequest) -> dict:
+    allowed_roles = {"student", "teacher"}
+    if data.role not in allowed_roles:
+        raise BusinessException(400, "注册角色不合法")
     existing = db.query(User).filter(User.id == data.id).first()
     if existing:
         raise BusinessException(400, "该学号已注册")

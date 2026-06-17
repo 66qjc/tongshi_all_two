@@ -54,6 +54,17 @@ export function importTeachers(file: File) {
     })
 }
 
+export async function downloadTeacherImportTemplate() {
+    const token = localStorage.getItem('auth_token')
+    const response = await fetch('/api/admin/teachers/import/template', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!response.ok) {
+        throw new Error('模板下载失败')
+    }
+    return await response.blob()
+}
+
 // 修改密码（任何登录用户可用）
 export function changePassword(data: { old_password: string; new_password: string }) {
     return http.put<any, any>('/change-password', data)

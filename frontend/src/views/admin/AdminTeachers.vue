@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadFile } from 'element-plus'
+import type { UploadFile, UploadInstance } from 'element-plus'
 import {
   getTeachers,
   createTeacher,
@@ -9,6 +9,7 @@ import {
   getTeacherDependencies,
   resetTeacherPassword,
   importTeachers,
+  downloadTeacherImportTemplate,
 } from '../../api/admin'
 import type { TeacherItem, ImportResult } from '../../api/admin'
 
@@ -25,6 +26,9 @@ const showImportDialog = ref(false)
 const importFile = ref<File | null>(null)
 const importLoading = ref(false)
 const importResult = ref<ImportResult | null>(null)
+const uploadRef = ref<UploadInstance>()
+const selectedFileName = ref('')
+const templateDownloading = ref(false)
 
 const fetchTeachers = async () => {
   loading.value = true
@@ -113,6 +117,31 @@ const handleResetPassword = async (teacherId: string) => {
 
 const handleFileChange = (uploadFile: UploadFile) => {
   importFile.value = uploadFile.raw || null
+  selectedFileName.value = uploadFile.name || ''
+  importResult.value = null
+}
+
+const handleFileExceed = () => {
+  ElMessage.warning('一次只能上传一个 Excel 文件，请先移除已选文件')
+}
+
+const handleDownloadTemplate = async () => {
+  templateDownloading.value = true
+  try {
+    const blob = await downloadTeacherImportTemplate()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '教师批量导入模板.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '模板下载失败')
+  } finally {
+    templateDownloading.value = false
+  }
 }
 
 const handleImport = async () => {
@@ -126,6 +155,9 @@ const handleImport = async () => {
     const data = await importTeachers(importFile.value)
     importResult.value = data || null
     ElMessage.success(importResult.value?.message || '导入完成')
+    uploadRef.value?.clearFiles()
+    importFile.value = null
+    selectedFileName.value = ''
     await fetchTeachers()
   } catch (err: any) {
     ElMessage.error(err?.message || '导入失败')
@@ -138,6 +170,8 @@ const closeImportDialog = () => {
   showImportDialog.value = false
   importFile.value = null
   importResult.value = null
+  selectedFileName.value = ''
+  uploadRef.value?.clearFiles()
 }
 
 const formatDate = (dateStr: string) => {
@@ -254,22 +288,35 @@ onMounted(fetchTeachers)
       @close="closeImportDialog"
     >
       <div class="import-tips">
-        <p class="tips-title">Excel 文件格式要求：</p>
+        <div class="tips-header">
+          <p class="tips-title">Excel 文件格式要求：</p>
+          <el-button
+            type="primary"
+            link
+            :loading="templateDownloading"
+            @click="handleDownloadTemplate"
+          >
+            下载导入模板
+          </el-button>
+        </div>
         <ul>
           <li>第一行为表头（内容可自定义）</li>
           <li>第一列：姓名</li>
           <li>第二列：工号</li>
+          <li>第三列：学院（可选）</li>
           <li>仅支持 .xlsx 格式</li>
         </ul>
         <p class="tips-note">初始密码均为 123456，教师首次登录需修改密码。</p>
       </div>
 
       <el-upload
+        ref="uploadRef"
         action="#"
         :auto-upload="false"
         accept=".xlsx"
         :limit="1"
         :on-change="handleFileChange"
+        :on-exceed="handleFileExceed"
         drag
         style="margin-top: 16px"
       >
@@ -278,6 +325,14 @@ onMounted(fetchTeachers)
         </el-icon>
         <div class="el-upload__text">将 .xlsx 文件拖到此处，或<em>点击上传</em></div>
       </el-upload>
+
+      <el-alert
+        v-if="selectedFileName"
+        :title="`已选择：${selectedFileName}`"
+        type="info"
+        :closable="false"
+        style="margin-top: 12px"
+      />
 
       <!-- 导入结果 -->
       <el-alert
@@ -332,9 +387,17 @@ onMounted(fetchTeachers)
   line-height: 1.8;
 }
 
+.tips-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
 .tips-title {
   font-weight: 600;
-  margin-bottom: 6px;
+  margin: 0;
   color: var(--color-text, #303133);
 }
 

@@ -48,7 +48,12 @@ async def get_current_user(
     # 回退：Authorization header 无 token 时，从 ?token= query 参数读取
     # 支持 <a> / <iframe> / <img> 等无法携带自定义请求头的场景
     if not token:
-        token = request.query_params.get("token")
+        allow_query = (
+            settings.allow_query_token_for_files
+            and request.url.path.startswith("/api/files/")
+        )
+        if allow_query:
+            token = request.query_params.get("token")
     if not token:
         raise BusinessException(401, "无效的认证凭据")
     try:

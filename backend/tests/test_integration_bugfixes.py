@@ -7,6 +7,21 @@ from app.models.entities import Announcement, AnnouncementClass, Class, Course, 
 from tests.conftest import auth_header
 
 
+def _build_student_import_file(rows: list[list[str]]) -> io.BytesIO:
+    """构造学生导入接口使用的 Excel 文件。"""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["学号", "姓名", "专业"])
+    for row in rows:
+        ws.append(row)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 class TestTeacherRefactor:
     """覆盖课程锚定、教师隔离、班级和发布题目核心行为。"""
 
@@ -47,6 +62,11 @@ class TestTeacherRefactor:
         assert created["course_name"] == "测试课程"
         assert created["url"] == "/uploads/test-material.pdf"
         assert created["size"] == "2 MB"
+        assert created["source_material_id"] is None
+        assert created["is_synced"] is False
+
+        delete_data = client.delete(f"/api/materials/{created['id']}", headers=auth_header(teacher_token)).json()
+        assert delete_data["code"] == 0
 
     def test_teacher_cannot_create_material_for_other_teacher_course(self, client, other_teacher_token):
         resp = client.post(
@@ -179,7 +199,7 @@ class TestTeacherRefactor:
         other_teacher_token,
     ):
         admin_token = client.post(
-            "/api/token", json={"id": "admin", "password": "admin123"}).json()["data"]["access_token"]
+            "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
 
         create_resp = client.post(
             "/api/admin/public-courses",
@@ -217,7 +237,7 @@ class TestTeacherRefactor:
         teacher_token,
     ):
         admin_token = client.post(
-            "/api/token", json={"id": "admin", "password": "admin123"}).json()["data"]["access_token"]
+            "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
             "/api/admin/public-courses",
             json={"name": "公共题库课程"},
@@ -268,7 +288,7 @@ class TestTeacherRefactor:
 
     def test_teacher_cannot_delete_synced_material(self, client, db_session, teacher_token):
         admin_token = client.post(
-            "/api/token", json={"id": "admin", "password": "admin123"}).json()["data"]["access_token"]
+            "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
             "/api/admin/public-courses",
             json={"name": "公共资料课程"},
@@ -297,9 +317,41 @@ class TestTeacherRefactor:
         assert delete_resp.json()["code"] == 400
         assert "公共课程同步内容" in delete_resp.json()["message"]
 
+    def test_teacher_materials_list_excludes_public_source_materials(self, client, db_session, teacher_token):
+        public_course = Course(name="Public Materials List Scope", created_by="admin", is_public=True)
+        db_session.add(public_course)
+        db_session.flush()
+        public_material = Material(
+            course_id=public_course.id,
+            type="pdf",
+            title="Public Source Material",
+            url="/uploads/public-source.pdf",
+            size="1 MB",
+            date="2026-06-17",
+        )
+        db_session.add(public_material)
+        db_session.commit()
+
+        add_resp = client.post(
+            f"/api/questions/courses/{public_course.id}/add",
+            headers=auth_header(teacher_token),
+        )
+        assert add_resp.json()["code"] == 0
+        copied_course_id = add_resp.json()["data"]["id"]
+
+        list_resp = client.get("/api/materials", headers=auth_header(teacher_token))
+        assert list_resp.json()["code"] == 0
+        items = list_resp.json()["data"]["items"]
+
+        matched = [item for item in items if item["title"] == "Public Source Material"]
+        assert len(matched) == 1
+        assert matched[0]["course_id"] == copied_course_id
+        assert matched[0]["source_material_id"] == public_material.id
+        assert matched[0]["is_synced"] is True
+
     def test_delete_public_course_unlinks_teacher_copy_content(self, client, db_session, teacher_token):
         admin_token = client.post(
-            "/api/token", json={"id": "admin", "password": "admin123"}).json()["data"]["access_token"]
+            "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
             "/api/admin/public-courses",
             json={"name": "可删除公共课程"},
@@ -399,6 +451,83 @@ class TestTeacherRefactor:
 
         resp = client.delete(f"/api/classes/{cls.id}", headers=auth_header(teacher_token))
         assert resp.json()["code"] == 0
+
+    def test_delete_empty_class_unlinks_shared_task_without_deleting_task(self, client, db_session, teacher_token):
+        course = db_session.query(Course).filter(Course.created_by == "T001").first()
+        owned_class = db_session.query(Class).filter(
+            Class.course_id == course.id,
+            Class.created_by == "T001",
+        ).first()
+        empty_class = Class(name="待删除空班", course_id=course.id, created_by="T001")
+        task = Announcement(course_id=course.id, teacher_id="T001", type="quiz", title="多班共享任务", question_ids=[1])
+        db_session.add_all([empty_class, task])
+        db_session.flush()
+        db_session.add_all([
+            AnnouncementClass(announcement_id=task.id, class_id=owned_class.id),
+            AnnouncementClass(announcement_id=task.id, class_id=empty_class.id),
+            TaskCompletion(announcement_id=task.id, user_id="2025001"),
+        ])
+        task_id = task.id
+        owned_class_id = owned_class.id
+        empty_class_id = empty_class.id
+        db_session.commit()
+
+        resp = client.delete(f"/api/classes/{empty_class_id}", headers=auth_header(teacher_token))
+        assert resp.json()["code"] == 0
+
+        assert db_session.query(Announcement).filter(Announcement.id == task_id).first() is not None
+        assert db_session.query(AnnouncementClass).filter(
+            AnnouncementClass.announcement_id == task_id,
+            AnnouncementClass.class_id == owned_class_id,
+        ).first() is not None
+        assert db_session.query(AnnouncementClass).filter(
+            AnnouncementClass.announcement_id == task_id,
+            AnnouncementClass.class_id == empty_class_id,
+        ).first() is None
+        assert db_session.query(TaskCompletion).filter(
+            TaskCompletion.announcement_id == task_id,
+            TaskCompletion.user_id == "2025001",
+        ).first() is not None
+
+    def test_import_students_rejects_existing_non_student_account(self, client, db_session, teacher_token):
+        teacher = db_session.query(User).filter(User.id == "T002").one()
+        original_name = teacher.name
+        original_major = teacher.major
+        file_obj = _build_student_import_file([
+            ["T002", "被误导入的教师", "错误专业"],
+            ["2025777", "新学生", "人工智能"],
+        ])
+
+        resp = client.post(
+            "/api/classes/import",
+            data={"class_id": "1"},
+            files={
+                "file": (
+                    "students.xlsx",
+                    file_obj,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            headers=auth_header(teacher_token),
+        )
+        data = resp.json()
+
+        assert data["code"] == 0
+        assert data["data"]["success_count"] == 1
+        assert data["data"]["fail_count"] == 1
+        assert data["data"]["errors"][0]["row"] == 2
+        db_session.refresh(teacher)
+        assert teacher.role == "teacher"
+        assert teacher.name == original_name
+        assert teacher.major == original_major
+        assert db_session.query(StudentClassEnrollment).filter(
+            StudentClassEnrollment.user_id == "T002",
+            StudentClassEnrollment.class_id == 1,
+        ).first() is None
+        assert db_session.query(StudentClassEnrollment).filter(
+            StudentClassEnrollment.user_id == "2025777",
+            StudentClassEnrollment.class_id == 1,
+        ).first() is not None
 
     def test_teacher_students_only_include_owned_classes(self, client, teacher_token):
         resp = client.get("/api/teacher/students", headers=auth_header(teacher_token))

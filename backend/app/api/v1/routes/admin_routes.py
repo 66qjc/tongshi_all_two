@@ -1,5 +1,7 @@
 """管理员路由 - 教师账号管理"""
 from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi.responses import Response
+from openpyxl import Workbook
 from sqlalchemy.orm import Session
 import io
 
@@ -23,6 +25,23 @@ from app.services.auth_service import (
 router = APIRouter()
 
 DEFAULT_PASSWORD = "123456"
+
+
+def _build_teacher_import_template() -> bytes:
+    """生成教师批量导入模板。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "教师导入模板"
+    ws.append(["姓名", "工号", "学院"])
+    ws.append(["张老师", "T1001", "人工智能学院"])
+    ws.append(["李老师", "T1002", "电子信息学院"])
+
+    for column, width in {"A": 16, "B": 16, "C": 20}.items():
+        ws.column_dimensions[column].width = width
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
 def _build_teacher_info(user: User) -> dict:
@@ -70,13 +89,28 @@ def create_teacher(
     return success(_build_teacher_info(new_teacher))
 
 
-@router.post("/teachers/import", summary="批量导入教师", description="管理员：通过 Excel 批量导入教师账号（第一列=姓名，第二列=工号，第一行为表头）")
+@router.get("/teachers/import/template", summary="下载教师导入模板", description="管理员：下载教师 Excel 批量导入模板")
+def download_teacher_import_template(
+    _: AuthUser = Depends(require_role("admin")),
+):
+    content = _build_teacher_import_template()
+    headers = {
+        "Content-Disposition": 'attachment; filename="teacher-import-template.xlsx"',
+    }
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@router.post("/teachers/import", summary="批量导入教师", description="管理员：通过 Excel 批量导入教师账号（第一列=姓名，第二列=工号，第三列=学院可选，第一行为表头）")
 async def import_teachers(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    """通过 Excel 批量导入教师账号（第一列=姓名，第二列=工号，第一行为表头）"""
+    """通过 Excel 批量导入教师账号（第一列=姓名，第二列=工号，第三列=学院可选，第一行为表头）"""
     try:
         import openpyxl
     except ImportError:
@@ -101,6 +135,7 @@ async def import_teachers(
             continue
         name = str(row[0]).strip() if row[0] is not None else ""
         teacher_id = str(row[1]).strip() if row[1] is not None else ""
+        major = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
         if not name or not teacher_id:
             continue
         existing = db.query(User).filter(User.id == teacher_id).first()
@@ -110,7 +145,7 @@ async def import_teachers(
         new_teacher = User(
             id=teacher_id,
             name=name,
-            major="",
+            major=major,
             role="teacher",
             hashed_password=get_password_hash(DEFAULT_PASSWORD),
             needs_password_change=True,
