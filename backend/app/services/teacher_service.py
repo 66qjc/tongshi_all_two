@@ -466,6 +466,8 @@ def list_all_projects(
         query = _apply_teacher_project_scope(query, db, teacher_id)
     if status:
         query = query.filter(Project.status == status)
+    else:
+        query = query.filter(Project.status != "withdrawn")
     if keyword:
         query = query.filter(Project.title.like(f"%{keyword}%"))
     query = query.order_by(Project.date.desc())
