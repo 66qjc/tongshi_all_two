@@ -35,7 +35,7 @@ def stats(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    return success(get_quiz_stats(db, current_user.id))
+    return success(get_quiz_stats(db, current_user.id, current_user.role))
 
 
 @router.get("/stats/{course_id}", summary="课程答题统计", description="学生端：返回指定课程的答题完成数和正确率")
@@ -44,4 +44,4 @@ def course_stats(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    return success(get_course_quiz_stats(db, current_user.id, course_id))
+    return success(get_course_quiz_stats(db, current_user.id, course_id, current_user.role))

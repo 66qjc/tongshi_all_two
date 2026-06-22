@@ -1,6 +1,7 @@
 """练习与错题本服务。"""
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import BusinessException
@@ -82,29 +83,50 @@ def get_quiz_history(db: Session, user_id: str, limit: int = 10):
     return result
 
 
-def get_quiz_stats(db: Session, user_id: str):
-    student_course_ids = (
-        db.query(Question.course_id)
-        .join(Class, Class.course_id == Question.course_id)
-        .join(StudentClassEnrollment, StudentClassEnrollment.class_id == Class.id)
-        .filter(StudentClassEnrollment.user_id == user_id)
-        .distinct()
-        .all()
-    )
-    student_course_id_list = [row.course_id for row in student_course_ids]
-    if not student_course_id_list:
-        return {
-            "total_questions": 0,
-            "questions_done": 0,
-            "accuracy": 0,
-            "today_count": 0,
-        }
-
-    course_question_ids = db.query(Question.id).filter(Question.course_id.in_(student_course_id_list))
-
-    total_questions = db.query(Question).filter(
-        Question.course_id.in_(student_course_id_list)
-    ).count()
+def get_quiz_stats(db: Session, user_id: str, role: str = "student"):
+    if role == "teacher":
+        teacher_course_ids = (
+            db.query(Course.id)
+            .filter(or_(Course.created_by == user_id, Course.is_public.is_(True)))
+            .all()
+        )
+        teacher_course_id_list = [row.id for row in teacher_course_ids]
+        if not teacher_course_id_list:
+            return {
+                "total_questions": 0,
+                "questions_done": 0,
+                "accuracy": 0,
+                "today_count": 0,
+            }
+        course_question_ids = db.query(Question.id).filter(
+            Question.course_id.in_(teacher_course_id_list)
+        )
+        total_questions = db.query(Question).filter(
+            Question.course_id.in_(teacher_course_id_list)
+        ).count()
+    else:
+        student_course_ids = (
+            db.query(Question.course_id)
+            .join(Class, Class.course_id == Question.course_id)
+            .join(StudentClassEnrollment, StudentClassEnrollment.class_id == Class.id)
+            .filter(StudentClassEnrollment.user_id == user_id)
+            .distinct()
+            .all()
+        )
+        student_course_id_list = [row.course_id for row in student_course_ids]
+        if not student_course_id_list:
+            return {
+                "total_questions": 0,
+                "questions_done": 0,
+                "accuracy": 0,
+                "today_count": 0,
+            }
+        course_question_ids = db.query(Question.id).filter(
+            Question.course_id.in_(student_course_id_list)
+        )
+        total_questions = db.query(Question).filter(
+            Question.course_id.in_(student_course_id_list)
+        ).count()
     questions_done = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.question_id.in_(course_question_ids),
@@ -131,8 +153,18 @@ def get_quiz_stats(db: Session, user_id: str):
     }
 
 
-def get_course_quiz_stats(db: Session, user_id: str, course_id: int):
-    if not student_can_access_course(db, user_id, course_id):
+def _can_access_course(db: Session, user_id: str, course_id: int, role: str) -> bool:
+    """检查用户是否有权限访问课程（教师看归属，学生看班级关联）。"""
+    if role == "teacher":
+        return db.query(Course).filter(
+            Course.id == course_id,
+            or_(Course.created_by == user_id, Course.is_public.is_(True)),
+        ).first() is not None
+    return student_can_access_course(db, user_id, course_id)
+
+
+def get_course_quiz_stats(db: Session, user_id: str, course_id: int, role: str = "student"):
+    if not _can_access_course(db, user_id, course_id, role):
         raise BusinessException(404, "课程不存在或无权限访问")
 
     course_question_ids = db.query(Question.id).filter(Question.course_id == course_id)

@@ -429,7 +429,7 @@ function handleTabChange(name: string) {
 .profile-page {
   max-width: 960px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 92px 24px 32px;
 }
 
 .page-header {

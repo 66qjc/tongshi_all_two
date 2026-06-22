@@ -10,7 +10,7 @@ const useTransition = computed(() => !route.path.startsWith('/admin') && !route.
 </script>
 
 <template>
-  <AppHeader />
+  <AppHeader v-if="!route.path.startsWith('/teacher') && !route.path.startsWith('/admin')" />
   <main>
     <RouterView v-slot="{ Component, route: viewRoute }">
       <template v-if="Component">
