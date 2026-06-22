@@ -816,6 +816,7 @@ class TestTeacherRefactor:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/pdf")
         assert "inline" in resp.headers["content-disposition"]
+        assert resp.headers["content-length"] == str(len(pdf_content))
         assert resp.content.startswith(b"%PDF")
 
     def test_uploaded_mp4_supports_browser_range_without_auth_header(self, client, teacher_token):

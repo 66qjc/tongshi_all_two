@@ -95,6 +95,9 @@ def get_file(
     }
 
     file_size = record.size_bytes or 0
+    if file_size > 0:
+        headers["Content-Length"] = str(file_size)
+
     range_header = request.headers.get("range")
     if range_header and file_size > 0:
         byte_range = _parse_range_header(range_header, file_size)

@@ -54,6 +54,8 @@ ALLOW_QUERY_TOKEN_FOR_FILES=false
 - `SECRET_KEY` 不再有默认值，未配置时后端禁止启动。
 - `ALLOW_QUERY_TOKEN_FOR_FILES` 默认建议为 `false`。
 - 公开业务接口必须使用 `Authorization` 请求头；仅文件预览兼容场景才允许按配置启用 URL token。
+- 使用本地文件存储时，`LOCAL_UPLOAD_DIR` 如有配置，必须指向实际上传目录；未配置时默认使用 `backend/uploads`。
+- 如果生产环境通过浏览器新窗口、iframe 或 video 标签访问 `/api/files/{id}`，需要启用 `ALLOW_QUERY_TOKEN_FOR_FILES=true`，普通业务接口仍不会接受 URL token。
 
 ## 管理员初始化
 
@@ -93,4 +95,6 @@ py -m pytest tests/ -q
 - 数据库中不存在默认管理员账号
 - 已手工执行 `scripts/create_admin.py`
 - `/api/register` 无法创建 `admin`
-- 文件预览链路正常，普通接口不接受 URL token
+- Nginx 已按 `deploy/nginx.conf` 代理 `/api/` 和 `/uploads/` 到后端 `8050`
+- 文件预览链路正常：PDF 新窗口查看不超时，视频 Range 请求返回 `206 Partial Content`
+- 普通接口不接受 URL token；仅 `/api/files/{id}` 可按配置用于文件预览

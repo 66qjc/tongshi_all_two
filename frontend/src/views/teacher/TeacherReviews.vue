@@ -287,12 +287,10 @@ async function handleBatchDownload() {
         <div class="detail-section">
           <label>课程报告</label>
           <div v-if="reportPreviewUrl" class="pdf-preview">
-            <div class="pdf-actions">
-              <a :href="reportPreviewUrl" target="_blank" rel="noopener" class="detail-link">
-                新开查看 PDF
-              </a>
-            </div>
-            <iframe :src="reportPreviewUrl" title="PDF 预览" class="pdf-frame"></iframe>
+            <p class="pdf-preview-hint">服务器环境下内嵌预览可能不稳定，请使用新窗口查看 PDF 报告。</p>
+            <a :href="reportPreviewUrl" target="_blank" rel="noopener" class="detail-link">
+              新窗口查看 PDF
+            </a>
           </div>
           <p v-else class="empty-inline">学生未上传 PDF 报告。</p>
         </div>
@@ -443,19 +441,18 @@ async function handleBatchDownload() {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-}
-
-.pdf-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.pdf-frame {
-  width: 100%;
-  height: 320px;
+  align-items: flex-start;
+  padding: var(--space-lg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg-alt);
+}
+
+.pdf-preview-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
 }
 
 .image-grid {

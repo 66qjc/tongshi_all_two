@@ -4,6 +4,7 @@
 
 - 前端：`frontend/`，Vue 3 + TypeScript + Vite + Element Plus。
 - 后端：`backend/`，FastAPI + SQLAlchemy。
+- 部署：`deploy/nginx.conf` 提供生产 Nginx 示例，托管前端 `dist` 并反代 `/api/`、`/uploads/` 到后端 `8050`。
 - 测试：`backend/tests/`，SQLite 内存库。
 
 ## 核心业务结构
@@ -57,6 +58,8 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 
 - 不再使用独立章节表、章节 API 或章节页面。
 - 资料、题目和作品全部直接挂在课程下；答题统计以 `QuizAttempt` 为事实来源。
+- 新上传文件统一通过 `file_id` 访问 `/api/files/{id}`；旧 `/uploads/xxx` 仅作兼容。
+- 生产环境预览 PDF/视频优先新窗口查看，Nginx 必须代理 `/api/` 和 `/uploads/`，并透传 `Range`/`If-Range` 以支持视频分段读取。
 - 班级必须归属一门课程。
 - 发布题目可一次选择同一课程下的多个班级。
 - 题目任务练习必须通过任务维度记录 `QuizAttempt.announcement_id`；任务完成和教师完成报告按该任务下每题最新一次答题结果统计。
