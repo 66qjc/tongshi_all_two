@@ -10,6 +10,7 @@ backend/
 ├── database_setup.py
 ├── seed_data.py
 ├── scripts/
+│   ├── check_deploy_env.py
 │   └── create_admin.py
 ├── app/
 │   ├── api/v1/routes/
@@ -41,21 +42,61 @@ py main.py
 
 ```env
 SECRET_KEY=请替换为至少32位随机字符串
-DATABASE_URL=mysql+pymysql://root:密码@127.0.0.1:3306/tongshi?charset=utf8mb4
-DB_POOL_SIZE=3
-DB_MAX_OVERFLOW=2
+DATABASE_URL=mysql+pymysql://tongshi_user:强密码@127.0.0.1:3306/tongshi?charset=utf8mb4
+ALLOWED_ORIGINS=https://你的前端域名
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=5
 DB_POOL_RECYCLE=3600
-DB_POOL_TIMEOUT=10
+DB_POOL_TIMEOUT=30
+STORAGE_BACKEND=local
+LOCAL_UPLOAD_DIR=/data/tongshi/uploads
 ALLOW_QUERY_TOKEN_FOR_FILES=false
 ```
 
 说明：
 
 - `SECRET_KEY` 不再有默认值，未配置时后端禁止启动。
+- 第一阶段上线默认使用 `STORAGE_BACKEND=local`，把 `LOCAL_UPLOAD_DIR` 指向服务器持久化目录，并确保运行后端的系统用户可读写。
 - `ALLOW_QUERY_TOKEN_FOR_FILES` 默认建议为 `false`。
 - 公开业务接口必须使用 `Authorization` 请求头；仅文件预览兼容场景才允许按配置启用 URL token。
 - 使用本地文件存储时，`LOCAL_UPLOAD_DIR` 如有配置，必须指向实际上传目录；未配置时默认使用 `backend/uploads`。
 - 如果生产环境通过浏览器新窗口、iframe 或 video 标签访问 `/api/files/{id}`，需要启用 `ALLOW_QUERY_TOKEN_FOR_FILES=true`，普通业务接口仍不会接受 URL token。
+- S3/SeaweedFS/MinIO 属于第二阶段对象存储接入任务；只有确认 S3 端点、bucket、权限和备份策略后，才把 `STORAGE_BACKEND` 切换为 `s3`。
+
+## 部署检查
+
+配置 `.env` 后先执行只读检查：
+
+```bash
+cd backend
+py scripts/check_deploy_env.py
+```
+
+检查内容包括：
+
+- `SECRET_KEY` 至少 32 位
+- `ALLOWED_ORIGINS` 不能为 `*`
+- `DATABASE_URL` 不能使用 `root:123456` 默认账号口令
+- MySQL 端口可连接
+- `STORAGE_BACKEND=local` 时上传目录存在且可写
+- `STORAGE_BACKEND=s3` 时 S3 端点必须配置且可连接
+
+如只想在离线环境验证配置格式，可临时使用：
+
+```bash
+py scripts/check_deploy_env.py --skip-mysql --skip-s3
+```
+
+## 生产启动
+
+本地开发可以继续使用 `py main.py`。生产环境不要使用 `reload=True` 的开发入口，建议使用：
+
+```bash
+cd backend
+py -m uvicorn main:app --host 127.0.0.1 --port 8050 --workers 4
+```
+
+Nginx 按仓库根目录 `deploy/nginx.conf` 托管前端构建产物，并反代 `/api/`、兼容 `/uploads/` 到后端 `8050`。
 
 ## 管理员初始化
 
