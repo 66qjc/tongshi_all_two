@@ -54,3 +54,4 @@ backend/.seed_lock
 backend/.backend-*.log
 backend/setup_mysql.sh
 tongshi_all_two/
+output/

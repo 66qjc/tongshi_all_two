@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getTaskOverview, type TaskOverview } from '@/api/announcement'
 import { getCourses, type Course } from '@/api/course'
 
 const router = useRouter()
+const route = useRoute()
 
 const courses = ref<Course[]>([])
 const taskOverview = ref<TaskOverview | null>(null)
@@ -43,6 +44,16 @@ function goToDetail(taskId: number) {
   router.push({ name: 'teacher-task-report-detail', params: { taskId } })
 }
 
+function openTaskFromQuery() {
+  const queryTaskId = Number(route.query.task_id)
+  if (!Number.isInteger(queryTaskId) || queryTaskId <= 0) return
+  if (tasks.value.some(task => task.id === queryTaskId)) {
+    goToDetail(queryTaskId)
+    return
+  }
+  ElMessage.warning('未找到对应作业，请在列表中选择')
+}
+
 onMounted(async () => {
   try {
     const [courseList] = await Promise.all([
@@ -50,6 +61,7 @@ onMounted(async () => {
       loadTaskOverview(),
     ])
     courses.value = courseList.filter(course => course.is_owner)
+    openTaskFromQuery()
   } catch {
     ElMessage.error('作业数据加载失败，请稍后重试')
   } finally {

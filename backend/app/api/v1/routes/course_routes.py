@@ -18,6 +18,7 @@ from app.core.security import get_current_user, require_role
 from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, CourseCreateRequest, CourseUpdateRequest
+from app.services.access_control_service import student_can_access_course
 from app.services.question_service import (
     create_course,
     update_course,
@@ -71,6 +72,8 @@ def get_course(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
+    if current_user.role == "student" and not student_can_access_course(db, current_user.id, course_id):
+        raise BusinessException(404, "课程不存在")
     teacher_id = current_user.id if current_user.role == "teacher" else None
     detail = get_course_detail(db, course_id, teacher_id)
     if not detail:
