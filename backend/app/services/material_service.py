@@ -5,7 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Class, Course, Material, StudentClassEnrollment
+from app.models.entities import Class, Course, CourseStage, Material, StudentClassEnrollment
 
 
 def list_materials(
@@ -61,6 +61,7 @@ def create_material(
     url: str = "",
     size: str = "0 MB",
     file_id: int | None = None,
+    stage_id: int | None = None,
     teacher_id: str | None = None,
 ):
     query = db.query(Course).filter(Course.id == course_id)
@@ -69,6 +70,13 @@ def create_material(
     course = query.first()
     if not course:
         return None
+    if stage_id is not None:
+        stage = db.query(CourseStage).filter(
+            CourseStage.id == stage_id,
+            CourseStage.course_id == course_id,
+        ).first()
+        if not stage:
+            raise BusinessException(400, "阶段不存在或不属于该课程")
     material = Material(
         course_id=course_id,
         type=type_,
@@ -77,8 +85,43 @@ def create_material(
         size=size,
         date=datetime.now().strftime("%Y-%m-%d"),
         file_id=file_id,
+        stage_id=stage_id,
     )
     db.add(material)
+    db.commit()
+    db.refresh(material)
+    return material
+
+
+def update_material(
+    db: Session,
+    material_id: int,
+    title: str | None = None,
+    stage_id: int | None = None,
+    teacher_id: str | None = None,
+    clear_stage_id: bool = False,
+):
+    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(Material.id == material_id)
+    if teacher_id is not None:
+        query = query.filter(Course.created_by == teacher_id)
+    material = query.first()
+    if not material:
+        return None
+    if material.source_material_id is not None:
+        raise BusinessException(400, "公共课程同步内容不能编辑")
+    if title is not None:
+        material.title = title
+    if clear_stage_id:
+        # 前端显式发送 stage_id: null，表示将资料移出阶段
+        material.stage_id = None
+    elif stage_id is not None:
+        stage = db.query(CourseStage).filter(
+            CourseStage.id == stage_id,
+            CourseStage.course_id == material.course_id,
+        ).first()
+        if not stage:
+            raise BusinessException(400, "阶段不存在或不属于该课程")
+        material.stage_id = stage_id
     db.commit()
     db.refresh(material)
     return material

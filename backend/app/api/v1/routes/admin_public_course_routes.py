@@ -13,7 +13,7 @@ from app.core.response import success
 from app.core.security import require_role
 from app.core.upload_validation import ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE, validate_upload
 from app.db.session import get_db
-from app.models.entities import Question
+from app.models.entities import CourseStage, Material, Question
 from app.schemas.common import (
     AdminMaterialUpdate,
     AdminPublicCourseCreate,
@@ -21,8 +21,12 @@ from app.schemas.common import (
     AdminQuestionCreate,
     AdminQuestionUpdate,
     AuthUser,
+    CourseStageCreate,
+    CourseStageUpdate,
 )
 from app.services import admin_public_course_service as service
+from app.services.course_stage_service import create_stage, delete_stage, format_stage_out, list_stages_for_course, update_stage
+from app.services.public_course_sync_service import sync_stages_to_course_copies
 
 router = APIRouter(prefix="/public-courses", tags=["admin-public-courses"])
 
@@ -31,6 +35,7 @@ def _format_course(course, sync_info: dict | None = None) -> dict:
     data = {
         "id": course.id,
         "name": course.name,
+        "description": course.description or "",
         "created_at": course.created_at.isoformat() if course.created_at else "",
         "created_by": course.created_by,
         "is_public": bool(course.is_public),
@@ -57,6 +62,7 @@ def _format_material(material) -> dict:
         "file_id": material.file_id,
         "source_material_id": material.source_material_id,
         "is_synced": bool(material.source_material_id),
+        "stage_id": material.stage_id,
     }
 
 
@@ -95,7 +101,7 @@ def add_public_course(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    course = service.create_public_course(db, data.name.strip(), current_user.id)
+    course = service.create_public_course(db, data.name.strip(), current_user.id, data.description or "")
     return success(_format_course(course))
 
 
@@ -106,7 +112,7 @@ def edit_public_course(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    course = service.update_public_course(db, course_id, data.name.strip())
+    course = service.update_public_course(db, course_id, data.name.strip(), data.description)
     if not course:
         raise BusinessException(404, "公共课程不存在")
     return success(_format_course(course))
@@ -120,6 +126,89 @@ def remove_public_course(
 ):
     if not service.delete_public_course(db, course_id):
         raise BusinessException(404, "公共课程不存在")
+    return success()
+
+
+@router.get("/{course_id}/stages", summary="公共课程阶段列表", description="管理员：获取公共课程阶段/目录")
+def get_public_stages(
+    course_id: int,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    stages = list_stages_for_course(db, course_id)
+    if stages is None:
+        raise BusinessException(404, "公共课程不存在")
+    return success([format_stage_out(stage) for stage in stages])
+
+
+@router.post("/{course_id}/stages", summary="新增公共课程阶段", description="管理员：为公共课程创建阶段/目录并同步教师副本")
+def add_public_stage(
+    course_id: int,
+    data: CourseStageCreate,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("admin")),
+):
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
+    stage = create_stage(db, course_id, data.name.strip(), data.sort_order)
+    sync_stages_to_course_copies(db, course)
+    db.commit()
+    db.refresh(stage)
+    return success(format_stage_out(stage))
+
+
+@router.put("/{course_id}/stages/{stage_id}", summary="编辑公共课程阶段", description="管理员：修改阶段名称/排序并同步教师副本")
+def edit_public_stage(
+    course_id: int,
+    stage_id: int,
+    data: CourseStageUpdate,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
+    # 先验证阶段归属，避免 update_stage 内部 flush 后才发现 course_id 不匹配
+    pre_check = db.query(CourseStage).filter(CourseStage.id == stage_id).first()
+    if not pre_check or pre_check.course_id != course_id:
+        raise BusinessException(404, "阶段不存在")
+    name = data.name.strip() if data.name is not None else None
+    stage = update_stage(db, stage_id, name, data.sort_order)
+    if not stage:
+        raise BusinessException(404, "阶段不存在")
+    sync_stages_to_course_copies(db, course)
+    db.commit()
+    db.refresh(stage)
+    return success(format_stage_out(stage))
+
+
+@router.delete("/{course_id}/stages/{stage_id}", summary="删除公共课程阶段", description="管理员：删除阶段（阶段下必须没有资料）并同步教师副本")
+def remove_public_stage(
+    course_id: int,
+    stage_id: int,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
+    stage = db.query(CourseStage).filter(CourseStage.id == stage_id, CourseStage.course_id == course_id).first()
+    if not stage:
+        raise BusinessException(404, "阶段不存在")
+    # 删除源阶段前，先清理教师副本中引用该阶段的副本阶段
+    copy_stages = db.query(CourseStage).filter(CourseStage.source_stage_id == stage_id).all()
+    for copy_stage in copy_stages:
+        if copy_stage.materials:
+            # 将副本阶段下的资料设为未分类，避免级联阻塞
+            db.query(Material).filter(Material.stage_id == copy_stage.id).update(
+                {Material.stage_id: None}, synchronize_session=False,
+            )
+        db.delete(copy_stage)
+    if not delete_stage(db, stage_id):
+        raise BusinessException(400, "阶段删除失败")
+    sync_stages_to_course_copies(db, course)
+    db.commit()
     return success()
 
 
@@ -151,7 +240,7 @@ def edit_public_material(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    material = service.update_public_material(material_id=material_id, db=db, data=data.model_dump())
+    material = service.update_public_material(material_id=material_id, db=db, data=data.model_dump(exclude_unset=True))
     if not material or material.course_id != course_id:
         raise BusinessException(404, "公共资料不存在")
     return success(_format_material(material))
@@ -282,7 +371,7 @@ def edit_public_question(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    question = service.update_public_question(db, question_id, data.model_dump())
+    question = service.update_public_question(db, question_id, data.model_dump(exclude_unset=True))
     if not question or question.course_id != course_id:
         raise BusinessException(404, "公共题目不存在")
     return success(_format_question(question))

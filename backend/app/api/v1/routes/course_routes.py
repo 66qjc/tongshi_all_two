@@ -17,7 +17,7 @@ from app.db.session import get_db
 from app.core.security import get_current_user, require_role
 from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
-from app.schemas.common import AuthUser, CourseCreateRequest, CourseUpdateRequest
+from app.schemas.common import AuthUser, CourseCreateRequest, CourseUpdateRequest, CourseStageCreate
 from app.services.access_control_service import student_can_access_course
 from app.services.question_service import (
     create_course,
@@ -27,6 +27,7 @@ from app.services.question_service import (
     add_public_course,
 )
 from app.services.course_response_service import build_course_detail, build_course_list
+from app.services.course_stage_service import list_stages_for_course, create_stage, format_stage_out
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -56,7 +57,7 @@ def get_courses(
 
 @router.post("", summary="创建课程", description="教师端：创建新课程")
 def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = create_course(db, data.name.strip(), current_user.id)
+    course = create_course(db, data.name.strip(), current_user.id, data.description or "")
     return success({"id": course.id})
 
 
@@ -81,9 +82,37 @@ def get_course(
     return success(build_course_detail(db, detail, current_user))
 
 
+@router.get("/{course_id}/stages", summary="获取课程阶段", description="获取课程下的阶段目录（教师/学生/管理员均可见）")
+def get_course_stages(
+    course_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    if current_user.role == "student" and not student_can_access_course(db, current_user.id, course_id):
+        raise BusinessException(404, "课程不存在")
+    teacher_id = current_user.id if current_user.role == "teacher" else None
+    stages = list_stages_for_course(db, course_id, teacher_id)
+    if stages is None:
+        raise BusinessException(404, "课程不存在")
+    return success([format_stage_out(stage) for stage in stages])
+
+
+@router.post("/{course_id}/stages", summary="创建课程阶段", description="教师端：为课程创建阶段/目录")
+def add_course_stage(
+    course_id: int,
+    data: CourseStageCreate,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("teacher")),
+):
+    stage = create_stage(db, course_id, data.name.strip(), data.sort_order, current_user.id)
+    db.commit()
+    db.refresh(stage)
+    return success(format_stage_out(stage))
+
+
 @router.put("/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")
 def edit_course(course_id: int, data: CourseUpdateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = update_course(db, course_id, data.name.strip(), current_user.id)
+    course = update_course(db, course_id, data.name.strip(), current_user.id, data.description)
     if not course:
         raise BusinessException(404, "课程不存在")
     return success()

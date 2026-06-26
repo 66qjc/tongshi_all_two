@@ -157,10 +157,10 @@ def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None
     return query.order_by(Course.is_public.asc(), Course.id.desc()).all()
 
 
-def create_course(db: Session, name: str, teacher_id: str, is_public: bool = False):
+def create_course(db: Session, name: str, teacher_id: str, description: str = "", is_public: bool = False):
     if db.query(Course).filter(Course.name == name, Course.created_by == teacher_id).first():
         raise BusinessException(400, "课程已存在")
-    course = Course(name=name, created_by=teacher_id, is_public=is_public)
+    course = Course(name=name, created_by=teacher_id, description=description, is_public=is_public)
     db.add(course)
     db.commit()
     db.refresh(course)
@@ -180,6 +180,7 @@ def add_public_course(db: Session, course_id: int, teacher_id: str):
         return existing
 
     course = Course(name=source.name, created_by=teacher_id,
+                    description=source.description or "",
                     is_public=False, source_course_id=source.id)
     db.add(course)
     db.flush()
@@ -191,7 +192,7 @@ def add_public_course(db: Session, course_id: int, teacher_id: str):
     return course
 
 
-def update_course(db: Session, course_id: int, name: str, teacher_id: str, is_public: bool | None = None):
+def update_course(db: Session, course_id: int, name: str, teacher_id: str, description: str | None = None, is_public: bool | None = None):
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
@@ -204,6 +205,8 @@ def update_course(db: Session, course_id: int, name: str, teacher_id: str, is_pu
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
+    if description is not None:
+        course.description = description
     if is_public is not None:
         course.is_public = is_public
     db.commit()

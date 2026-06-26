@@ -1,5 +1,15 @@
-import http from './http'
+﻿import http from './http'
 
+// 图文混排内容块：正文由有序的「文字段落」与「图片」交替组成
+export interface ContentTextBlock {
+    type: 'text'
+    data: { text: string }
+}
+export interface ContentImageBlock {
+    type: 'image'
+    data: { file_id: number; caption?: string }
+}
+export type ContentBlock = ContentTextBlock | ContentImageBlock
 export interface ShowcaseItemImageOut {
     id: number
     file_id: number
@@ -12,6 +22,7 @@ export interface ShowcaseItemOut {
     section: string
     title: string
     content: string
+    content_blocks: ContentBlock[]
     cover_url: string
     images: ShowcaseItemImageOut[]
     link_url: string
@@ -24,6 +35,7 @@ export interface ShowcaseItemCreate {
     section: string
     title: string
     content?: string
+    content_blocks?: ContentBlock[]
     cover_file_id?: number | null
     image_file_ids?: number[]
     link_url?: string
@@ -33,6 +45,7 @@ export interface ShowcaseItemCreate {
 export interface ShowcaseItemUpdate {
     title?: string
     content?: string
+    content_blocks?: ContentBlock[]
     cover_file_id?: number | null
     image_file_ids?: number[]
     link_url?: string

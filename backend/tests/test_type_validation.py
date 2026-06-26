@@ -1,4 +1,4 @@
-"""资料和题目类型校验测试。"""
+﻿"""资料和题目类型校验测试。"""
 
 import pytest
 from pydantic import ValidationError
@@ -26,3 +26,10 @@ def test_question_type_allows_known_values():
 def test_question_type_rejects_unknown_value():
     with pytest.raises(ValidationError):
         QuestionCreate(course_id=1, type="essay", stem="题干", answer="答案")
+
+
+def test_material_title_max_length():
+    """资料标题不能超过 128 个字符。"""
+    with pytest.raises(ValidationError):
+        AdminMaterialUpdate(type="pdf", title="A" * 129)
+    assert AdminMaterialUpdate(type="pdf", title="A" * 128).title == "A" * 128

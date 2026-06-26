@@ -8,8 +8,8 @@ from app.db.session import get_db
 from app.core.security import get_current_user, require_role
 from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
-from app.schemas.common import AuthUser, MaterialCreate
-from app.services.material_service import can_view_course_materials, list_materials, create_material, delete_material
+from app.schemas.common import AuthUser, MaterialCreate, MaterialUpdate
+from app.services.material_service import can_view_course_materials, list_materials, create_material, update_material, delete_material
 
 router = APIRouter(tags=["materials"])
 
@@ -24,6 +24,7 @@ def _format_material(m):
         "file_id": m.file_id,
         "source_material_id": m.source_material_id,
         "is_synced": bool(m.source_material_id),
+        "stage_id": m.stage_id,
     }
 
 
@@ -67,9 +68,23 @@ def add_material(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    m = create_material(db, data.course_id, data.type, data.title, data.url, data.size, data.file_id, current_user.id)
+    m = create_material(db, data.course_id, data.type, data.title, data.url, data.size, data.file_id, data.stage_id, current_user.id)
     if not m:
         raise BusinessException(404, "课程不存在")
+    return success({"id": m.id})
+
+
+@router.put("/materials/{material_id}", summary="更新资料", description="教师端：修改资料标题或所属阶段")
+def edit_material(
+    material_id: int,
+    data: MaterialUpdate,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("teacher")),
+):
+    clear_stage = "stage_id" in data.model_fields_set and data.stage_id is None
+    m = update_material(db, material_id, data.title, data.stage_id, current_user.id, clear_stage_id=clear_stage)
+    if not m:
+        raise BusinessException(404, "资料不存在")
     return success({"id": m.id})
 
 

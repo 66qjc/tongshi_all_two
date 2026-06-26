@@ -7,9 +7,8 @@ import {
   createShowcaseItem,
   updateShowcaseItem,
   deleteShowcaseItem,
-  deleteShowcaseImage,
   type ShowcaseItemOut,
-  type ShowcaseItemImageOut,
+  type ContentBlock,
 } from '../../api/showcase'
 
 const authStore = useAuthStore()
@@ -38,7 +37,6 @@ const saveLoading = ref(false)
 const form = ref({
   section: 'welfare',
   title: '',
-  content: '',
   link_url: '',
   sort_order: 0,
   is_active: true,
@@ -48,9 +46,8 @@ const form = ref({
 const coverFileId = ref<number | null>(null)
 const coverPreviewUrl = ref('')
 
-// 多图片相关
-const imageFileIds = ref<number[]>([])
-const imagePreviewUrls = ref<{ id: number; url: string }[]>([])
+// 图文混排内容块（正文由有序文字段落 + 图片交替组成）
+const contentBlocks = ref<ContentBlock[]>([])
 
 // section 显示名称映射
 const sectionLabels: Record<string, string> = {
@@ -78,15 +75,13 @@ const handleAdd = () => {
   form.value = {
     section: activeTab.value,
     title: '',
-    content: '',
     link_url: '',
     sort_order: 0,
     is_active: true,
   }
   coverFileId.value = null
   coverPreviewUrl.value = ''
-  imageFileIds.value = []
-  imagePreviewUrls.value = []
+  contentBlocks.value = []
   showDialog.value = true
 }
 
@@ -97,7 +92,6 @@ const handleEdit = (item: ShowcaseItemOut) => {
   form.value = {
     section: item.section,
     title: item.title,
-    content: item.content || '',
     link_url: item.link_url || '',
     sort_order: item.sort_order,
     is_active: item.is_active,
@@ -105,9 +99,20 @@ const handleEdit = (item: ShowcaseItemOut) => {
   // 编辑时显示现有封面，新上传后才替换
   coverFileId.value = null
   coverPreviewUrl.value = item.cover_url || ''
-  // 加载多图片数据
-  imageFileIds.value = item.images?.map(img => img.file_id) || []
-  imagePreviewUrls.value = item.images?.map(img => ({ id: img.id, url: img.url })) || []
+
+  // 优先使用图文混排块；旧数据用正文 + 图片自动升级成块
+  if (item.content_blocks && item.content_blocks.length > 0) {
+    contentBlocks.value = JSON.parse(JSON.stringify(item.content_blocks))
+  } else {
+    const blocks: ContentBlock[] = []
+    if (item.content?.trim()) {
+      blocks.push({ type: 'text', data: { text: item.content.trim() } })
+    }
+    item.images?.forEach(img => {
+      blocks.push({ type: 'image', data: { file_id: img.file_id, caption: '' } })
+    })
+    contentBlocks.value = blocks
+  }
   showDialog.value = true
 }
 
@@ -117,16 +122,27 @@ const handleSave = async () => {
     ElMessage.warning('标题不能为空')
     return
   }
+  // 过滤掉空内容块（空段落、未上传图片的图片块）
+  const validBlocks = contentBlocks.value.filter(b => {
+    if (b.type === 'text') return !!b.data.text.trim()
+    if (b.type === 'image') return !!b.data.file_id
+    return false
+  })
+  if (validBlocks.length === 0) {
+    ElMessage.warning('请至少添加一段文字或一张图片')
+    return
+  }
+  const payloadBlocks = JSON.parse(JSON.stringify(validBlocks))
+
   saveLoading.value = true
   try {
     if (isEdit.value && editId.value !== null) {
       // 编辑：只传有变化的字段
       await updateShowcaseItem(editId.value, {
         title: form.value.title.trim(),
-        content: form.value.content.trim() || undefined,
+        content_blocks: payloadBlocks,
         // 若新上传了图片则替换，否则不传（后端保留原图）
         ...(coverFileId.value !== null ? { cover_file_id: coverFileId.value } : {}),
-        image_file_ids: imageFileIds.value,
         link_url: form.value.link_url.trim() || undefined,
         sort_order: form.value.sort_order,
         is_active: form.value.is_active,
@@ -137,9 +153,8 @@ const handleSave = async () => {
       await createShowcaseItem({
         section: form.value.section,
         title: form.value.title.trim(),
-        content: form.value.content.trim() || undefined,
+        content_blocks: payloadBlocks,
         cover_file_id: coverFileId.value ?? null,
-        image_file_ids: imageFileIds.value,
         link_url: form.value.link_url.trim() || undefined,
         sort_order: form.value.sort_order,
       })
@@ -181,39 +196,49 @@ const handleUploadError = () => {
   ElMessage.error('封面上传失败，请检查图片格式或网络后重试')
 }
 
-// ── 多图片上传回调 ─────────────────────────────────────────────
-const handleImageUploadSuccess = (response: any) => {
+// ── 内容块操作 ────────────────────────────────────────────────
+const addTextBlock = () => {
+  contentBlocks.value.push({ type: 'text', data: { text: '' } })
+}
+
+const addImageBlock = () => {
+  contentBlocks.value.push({ type: 'image', data: { file_id: 0, caption: '' } })
+}
+
+const handleBlockImageUploadSuccess = (index: number, response: any) => {
   if (response?.code === 0 && response?.data?.file_id) {
-    imageFileIds.value.push(response.data.file_id)
-    imagePreviewUrls.value.push({
-      id: response.data.file_id,
-      url: response.data.url || '',
-    })
-    ElMessage.success('图片上传成功')
+    const block = contentBlocks.value[index]
+    if (block && block.type === 'image') {
+      block.data.file_id = response.data.file_id
+      ElMessage.success('图片上传成功')
+    }
   } else {
     ElMessage.error(response?.message || '图片上传失败，请重试')
   }
 }
 
-const handleImageUploadError = () => {
+const handleBlockImageUploadError = () => {
   ElMessage.error('图片上传失败，请检查图片格式或网络后重试')
 }
 
-// ── 删除已上传的图片 ───────────────────────────────────────────
-const handleRemoveImage = async (index: number) => {
-  const imageInfo = imagePreviewUrls.value[index]
-  if (!imageInfo) return
-  // 如果是编辑模式且图片已保存到后端，调用后端删除 API
-  if (isEdit.value && editId.value !== null && imageInfo.id != null && !imageFileIds.value.includes(imageInfo.id)) {
-    try {
-      await deleteShowcaseImage(editId.value, imageInfo.id)
-    } catch {
-      ElMessage.error('删除图片失败，请重试')
-      return
-    }
+const updateBlockImageCaption = (index: number, val: string) => {
+  const block = contentBlocks.value[index]
+  if (block && block.type === 'image') {
+    block.data.caption = val
   }
-  imageFileIds.value.splice(index, 1)
-  imagePreviewUrls.value.splice(index, 1)
+}
+
+const moveBlock = (index: number, direction: -1 | 1) => {
+  const newIndex = index + direction
+  if (newIndex < 0 || newIndex >= contentBlocks.value.length) return
+  const blocks = contentBlocks.value
+  const temp = blocks[index] as ContentBlock
+  blocks[index] = blocks[newIndex] as ContentBlock
+  blocks[newIndex] = temp
+}
+
+const removeBlock = (index: number) => {
+  contentBlocks.value.splice(index, 1)
 }
 
 // ── 工具函数 ───────────────────────────────────────────────────
@@ -380,14 +405,79 @@ onMounted(fetchItems)
           />
         </el-form-item>
 
-        <!-- 正文内容 -->
-        <el-form-item label="正文内容">
-          <el-input
-            v-model="form.content"
-            type="textarea"
-            :rows="4"
-            placeholder="请输入正文内容（选填）"
-          />
+        <!-- 图文混排正文 -->
+        <el-form-item label="正文内容" required>
+          <div class="block-editor">
+            <el-empty
+              v-if="contentBlocks.length === 0"
+              description="暂无段落或图片，点击下方按钮添加"
+              :image-size="80"
+            />
+            <div
+              v-for="(block, index) in contentBlocks"
+              :key="index"
+              class="block-item"
+            >
+              <div class="block-header">
+                <span class="block-label">{{ block.type === 'text' ? '文字段落' : '图片' }}</span>
+                <div class="block-actions">
+                  <el-button size="small" text :disabled="index === 0" @click="moveBlock(index, -1)">
+                    上移
+                  </el-button>
+                  <el-button
+                    size="small"
+                    text
+                    :disabled="index === contentBlocks.length - 1"
+                    @click="moveBlock(index, 1)"
+                  >
+                    下移
+                  </el-button>
+                  <el-button size="small" text type="danger" @click="removeBlock(index)">
+                    删除
+                  </el-button>
+                </div>
+              </div>
+              <div v-if="block.type === 'text'" class="block-body">
+                <el-input
+                  v-model="block.data.text"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="请输入正文段落"
+                />
+              </div>
+              <div v-else class="block-body block-image">
+                <template v-if="block.data.file_id">
+                  <img :src="`/api/files/${block.data.file_id}`" alt="图片预览" />
+                  <el-input
+                    :model-value="block.data.caption"
+                    placeholder="可选：输入图片描述"
+                    size="small"
+                    @update:model-value="updateBlockImageCaption(index, $event)"
+                  />
+                </template>
+                <el-upload
+                  v-else
+                  :action="'/api/upload'"
+                  :headers="uploadHeaders"
+                  accept="image/*"
+                  :show-file-list="false"
+                  :on-success="(res: any) => handleBlockImageUploadSuccess(index, res)"
+                  :on-error="handleBlockImageUploadError"
+                >
+                  <el-button size="small" type="primary">选择图片</el-button>
+                  <template #tip>
+                    <div class="upload-tip">支持 jpg / png / gif</div>
+                  </template>
+                </el-upload>
+              </div>
+            </div>
+            <div class="block-toolbar">
+              <el-button size="small" @click="addTextBlock">＋ 添加文字段落</el-button>
+              <el-button size="small" type="primary" plain @click="addImageBlock">
+                ＋ 添加图片
+              </el-button>
+            </div>
+          </div>
         </el-form-item>
 
         <!-- 封面图片 -->
@@ -412,32 +502,6 @@ onMounted(fetchItems)
             <el-button size="small">{{ coverPreviewUrl ? '重新上传封面' : '选择封面图片' }}</el-button>
             <template #tip>
               <div class="upload-tip">支持 jpg / png / gif，上传后立即生效</div>
-            </template>
-          </el-upload>
-        </el-form-item>
-
-        <!-- 多张图片 -->
-        <el-form-item label="内容图片">
-          <!-- 已上传图片预览列表 -->
-          <div v-if="imagePreviewUrls.length > 0" class="image-preview-list">
-            <div v-for="(img, index) in imagePreviewUrls" :key="index" class="image-preview-item">
-              <img :src="img.url" alt="图片预览" />
-              <span class="image-remove-btn" @click="handleRemoveImage(index)">×</span>
-            </div>
-          </div>
-          <!-- 上传控件 -->
-          <el-upload
-            :action="'/api/upload'"
-            :headers="uploadHeaders"
-            accept="image/*"
-            :show-file-list="false"
-            :on-success="handleImageUploadSuccess"
-            :on-error="handleImageUploadError"
-            multiple
-          >
-            <el-button size="small">选择图片（可多选）</el-button>
-            <template #tip>
-              <div class="upload-tip">支持 jpg / png / gif，可上传多张图片</div>
             </template>
           </el-upload>
         </el-form-item>
@@ -694,5 +758,63 @@ onMounted(fetchItems)
 
 .image-remove-btn:hover {
   background: rgba(192, 57, 43, 0.9);
+}
+/* ── 内容块编辑器 ───────────────────────────────────────────── */
+.block-editor {
+  width: 100%;
+  padding: 12px;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.block-item {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.block-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.block-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.block-body :deep(.el-textarea) {
+  width: 100%;
+}
+
+.block-image {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.block-image img {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-alt);
+}
+
+.block-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 </style>

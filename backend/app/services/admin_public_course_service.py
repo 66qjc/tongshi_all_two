@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Course, Material, Question, QuizAttempt
+from app.models.entities import Course, CourseStage, Material, Question, QuizAttempt, StoredFile
 from app.services.public_course_sync_service import (
     delete_synced_materials,
     delete_synced_questions,
@@ -17,8 +18,39 @@ from app.services.public_course_sync_service import (
 )
 
 
+
+
+
+def _validate_material_file(db: Session, type_: str, file_id: int | None) -> None:
+    """校验资料所选类型与上传文件一致，且 file_id 真实存在。"""
+    if type_ not in {"video", "pdf"}:
+        return
+    if file_id is None:
+        raise BusinessException(400, "视频/PDF 资料必须上传文件")
+    stored = db.query(StoredFile).filter(StoredFile.id == file_id).first()
+    if not stored:
+        raise BusinessException(400, "关联文件不存在")
+    ext = (stored.extension or Path(stored.original_name).suffix).lower()
+    content_type = stored.content_type or ""
+    if type_ == "pdf" and ext != ".pdf" and "pdf" not in content_type:
+        raise BusinessException(400, "资料类型为 PDF，但上传文件不是 PDF")
+    if type_ == "video" and ext not in {".mp4", ".webm", ".mov"} and not content_type.startswith("video/"):
+        raise BusinessException(400, "资料类型为视频，但上传文件不是视频格式")
+
 def _get_public_course(db: Session, course_id: int) -> Course | None:
     return db.query(Course).filter(Course.id == course_id, Course.is_public.is_(True)).first()
+
+
+def _validate_stage_id(db: Session, course_id: int, stage_id: int | None) -> None:
+    """校验 stage_id 存在且属于指定课程，stage_id 为 None 时跳过。"""
+    if stage_id is None:
+        return
+    stage = db.query(CourseStage).filter(
+        CourseStage.id == stage_id,
+        CourseStage.course_id == course_id,
+    ).first()
+    if not stage:
+        raise BusinessException(400, "阶段不存在或不属于该课程")
 
 
 def list_public_courses(db: Session) -> list[Course]:
@@ -53,21 +85,23 @@ def get_course_sync_status(db: Session, course: Course) -> dict:
     }
 
 
-def create_public_course(db: Session, name: str, admin_id: str) -> Course:
+def create_public_course(db: Session, name: str, admin_id: str, description: str = "") -> Course:
     if db.query(Course).filter(Course.name == name, Course.created_by == admin_id).first():
         raise BusinessException(400, "公共课程已存在")
-    course = Course(name=name, created_by=admin_id, is_public=True)
+    course = Course(name=name, created_by=admin_id, description=(description or "").strip(), is_public=True)
     db.add(course)
     db.commit()
     db.refresh(course)
     return course
 
 
-def update_public_course(db: Session, course_id: int, name: str) -> Course | None:
+def update_public_course(db: Session, course_id: int, name: str, description: str | None = None) -> Course | None:
     course = _get_public_course(db, course_id)
     if not course:
         return None
-    course.name = name
+    course.name = name.strip()
+    if description is not None:
+        course.description = description.strip()
     sync_course_name_to_copies(db, course)
     db.commit()
     db.refresh(course)
@@ -81,8 +115,13 @@ def delete_public_course(db: Session, course_id: int) -> bool:
     copies = db.query(Course).filter(Course.source_course_id == course.id).all()
     source_material_ids = [material.id for material in course.materials]
     source_question_ids = [question.id for question in course.questions]
+    source_stage_ids = [stage.id for stage in course.stages]
     for copy in copies:
         copy.source_course_id = None
+    if source_stage_ids:
+        db.query(CourseStage).filter(
+            CourseStage.source_stage_id.in_(source_stage_ids),
+        ).update({CourseStage.source_stage_id: None}, synchronize_session=False)
     if source_material_ids:
         db.query(Material).filter(
             Material.source_material_id.in_(source_material_ids),
@@ -128,6 +167,8 @@ def create_public_material(db: Session, course_id: int, data: dict) -> Material:
     course = _get_public_course(db, course_id)
     if not course:
         raise BusinessException(404, "公共课程不存在")
+    _validate_material_file(db, data.get("type", ""), data.get("file_id"))
+    _validate_stage_id(db, course_id, data.get("stage_id"))
     material = Material(
         course_id=course.id,
         date=datetime.now().strftime("%Y-%m-%d"),
@@ -148,9 +189,18 @@ def update_public_material(db: Session, material_id: int, data: dict) -> Materia
     ).first()
     if not material:
         return None
+    if data.get("file_id") is not None:
+        new_type = data.get("type", material.type)
+        _validate_material_file(db, new_type, data.get("file_id"))
+    if "stage_id" in data:
+        _validate_stage_id(db, material.course_id, data.get("stage_id"))
+    _MATERIAL_PROTECTED = {"id", "course_id", "source_material_id", "created_at"}
     for key, value in data.items():
-        if value is not None and hasattr(material, key):
-            setattr(material, key, value)
+        if key in _MATERIAL_PROTECTED:
+            continue
+        if hasattr(material, key):
+            if value is not None or key in ("stage_id",):
+                setattr(material, key, value)
     sync_material_to_course_copies(db, material)
     db.commit()
     db.refresh(material)
@@ -198,7 +248,10 @@ def update_public_question(db: Session, question_id: int, data: dict) -> Questio
     ).first()
     if not question:
         return None
+    _PROTECTED_FIELDS = {"id", "course_id", "source_question_id", "created_at"}
     for key, value in data.items():
+        if key in _PROTECTED_FIELDS:
+            continue
         if value is not None and hasattr(question, key):
             setattr(question, key, _normalize_tags(value) if key == "tags" else value)
     sync_question_to_course_copies(db, question)
@@ -260,6 +313,7 @@ def import_questions_to_public_course(db: Session, course_id: int, rows: list[di
     errors = []
     for idx, row in enumerate(rows, start=2):
         try:
+            savepoint = db.begin_nested()
             q_type = str(_row_value(row, "题型", "type")).strip()
             stem = str(_row_value(row, "题干", "stem")).strip()
             if not stem:
@@ -280,6 +334,7 @@ def import_questions_to_public_course(db: Session, course_id: int, rows: list[di
             db.add(question)
             db.flush()
             sync_question_to_course_copies(db, question)
+            savepoint.commit()
             success_count += 1
         except Exception as exc:
             fail_count += 1

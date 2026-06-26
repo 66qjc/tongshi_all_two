@@ -158,6 +158,12 @@ const router = createRouter({
           meta: { title: '课程管理' },
         },
         {
+          path: 'courses/:courseId',
+          name: 'teacher-course-detail',
+          component: () => import('../views/teacher/TeacherCourseDetail.vue'),
+          meta: { title: '课程详情管理' },
+        },
+        {
           path: 'publish',
           name: 'teacher-publish',
           component: () => import('../views/teacher/TeacherAnnouncements.vue'),

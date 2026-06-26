@@ -1,4 +1,4 @@
-"""Pydantic request / response schemas"""
+﻿"""Pydantic request / response schemas"""
 import re
 from datetime import datetime
 from typing import List, Optional
@@ -98,12 +98,34 @@ class AnnouncementCreate(BaseModel):
 
 class CourseCreateRequest(BaseModel):
     name: str = Field(min_length=1)
+    description: Optional[str] = ""
     is_public: bool = False
 
 
 class CourseUpdateRequest(BaseModel):
     name: str = Field(min_length=1)
+    description: Optional[str] = None
     is_public: Optional[bool] = None
+
+
+# ── Course Stage ────────────────────────────────────────────────────────────
+class CourseStageCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    sort_order: int = 0
+
+
+class CourseStageUpdate(BaseModel):
+    name: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class CourseStageOut(BaseModel):
+    id: int
+    course_id: int
+    source_stage_id: Optional[int] = None
+    name: str
+    sort_order: int
+    created_at: Optional[str] = None
 
 
 # ── Material ────────────────────────────────────────────────────────────────
@@ -123,15 +145,21 @@ class MaterialOut(BaseModel):
     file_id: Optional[int] = None
     source_material_id: Optional[int] = None
     is_synced: bool = False
+    stage_id: Optional[int] = None
+
+
+class CourseStageWithMaterials(CourseStageOut):
+    materials: List[MaterialOut] = []
 
 
 class MaterialCreate(BaseModel):
     course_id: int
     type: str = "video"
-    title: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=128)
     url: str = ""
     size: str = "0 MB"
     file_id: Optional[int] = None
+    stage_id: Optional[int] = None
 
     @field_validator("type")
     @classmethod
@@ -139,6 +167,11 @@ class MaterialCreate(BaseModel):
         if value not in MATERIAL_TYPES:
             raise ValueError("资料类型必须为 video、pdf 或 link")
         return value
+
+
+class MaterialUpdate(BaseModel):
+    title: Optional[str] = None
+    stage_id: Optional[int] = None
 
 
 # ── Question ────────────────────────────────────────────────────────────────
@@ -181,18 +214,21 @@ class QuestionUpdate(QuestionCreate):
 
 class AdminPublicCourseCreate(BaseModel):
     name: str = Field(min_length=1)
+    description: Optional[str] = ""
 
 
 class AdminPublicCourseUpdate(BaseModel):
     name: str = Field(min_length=1)
+    description: Optional[str] = None
 
 
 class AdminMaterialUpdate(BaseModel):
     type: str = "video"
-    title: str = Field(min_length=1)
+    title: str = Field(min_length=1, max_length=128)
     url: str = ""
     size: str = "0 MB"
     file_id: Optional[int] = None
+    stage_id: Optional[int] = None
 
     @field_validator("type")
     @classmethod
@@ -499,6 +535,7 @@ class ShowcaseItemCreate(BaseModel):
     section: str
     title: str = Field(min_length=1, max_length=128)
     content: str = ""
+    content_blocks: Optional[List[dict]] = None
     cover_file_id: Optional[int] = None
     image_file_ids: List[int] = Field(default_factory=list)
     link_url: str = ""
@@ -509,6 +546,7 @@ class ShowcaseItemUpdate(BaseModel):
     """管理员修改图文内容"""
     title: Optional[str] = None
     content: Optional[str] = None
+    content_blocks: Optional[List[dict]] = None
     cover_file_id: Optional[int] = None
     image_file_ids: Optional[List[int]] = None
     link_url: Optional[str] = None
@@ -534,6 +572,7 @@ class ShowcaseItemOut(BaseModel):
     section: str
     title: str
     content: str
+    content_blocks: list = Field(default_factory=list)
     cover_url: str = ""
     images: List[ShowcaseItemImageOut] = Field(default_factory=list)
     link_url: str = ""
