@@ -17,7 +17,7 @@ const routeAnnouncementId = computed(() => {
 })
 const courseId = computed(() => {
   const id = Number(route.params.courseId)
-  return Number.isFinite(id) && id > 0 ? id : 1
+  return Number.isFinite(id) && id > 0 ? id : null
 })
 const questionIds = computed(() => {
   const raw = route.query.question_ids as string | undefined
@@ -59,13 +59,18 @@ watch([courseId, announcementId], async () => {
   loading.value = true
   loadError.value = ''
   try {
+    if (!announcementId.value && !courseId.value) {
+      mockQuestions.value = []
+      loadError.value = '无效的课程链接'
+      return
+    }
     let qs: Question[]
     if (announcementId.value) {
       const data = await getAnnouncementQuestions(announcementId.value)
       assignmentTitle.value = data.announcement.title
       qs = data.questions
     } else {
-      qs = await getCourseQuestions(courseId.value, questionIds.value?.join(','))
+      qs = await getCourseQuestions(courseId.value!, questionIds.value?.join(','))
       // 自由练习：随机选取指定数量题目
       if (randomCount.value && !questionIds.value) {
         qs = shuffle(qs).slice(0, randomCount.value)
@@ -277,7 +282,13 @@ function persistDraft() {
   })
 }
 
-function backToPrevious() {
+async function backToPrevious() {
+  // 作业模式下全部答完但未点"完成练习"时，自动记录完成
+  if (isAssignmentMode.value && allDone.value && !practiceFinished.value && announcementId.value) {
+    await recordCompletion(announcementId.value).catch(() => {})
+    practiceFinished.value = true
+    clearQuizDraft(courseId.value)
+  }
   if (window.history.length > 1) {
     router.back()
     return

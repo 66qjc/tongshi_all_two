@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { createProject, getProject, updateProject, type Project, type ProjectPayload } from '@/api/project'
 import { getCourseList, type Course } from '@/api/course'
 import { uploadFile } from '@/api/upload'
+import { resolveFileUrl } from '@/utils/url'
 
 const router = useRouter()
 const route = useRoute()
@@ -22,7 +23,7 @@ const tags = ref<string[]>([])
 const tagInput = ref('')
 const reportFile = ref<File | null>(null)
 const imageFiles = ref<File[]>([])
-const existingImageUrls = ref<string[]>([])
+const existingImageUrls = ref<{ url: string; file_id?: number }[]>([])
 const reportInput = ref<HTMLInputElement | null>(null)
 const imageInput = ref<HTMLInputElement | null>(null)
 const submitting = ref(false)
@@ -38,7 +39,7 @@ const editProjectId = computed(() => Number(route.query.projectId || 0))
 const isEditMode = computed(() => editProjectId.value > 0)
 
 const displayedImageNames = computed(() => [
-  ...existingImageUrls.value.map((url, index) => `已上传图片 ${index + 1}`),
+  ...existingImageUrls.value.map((_, index) => `已上传图片 ${index + 1}`),
   ...imageFiles.value.map(file => file.name),
 ])
 
@@ -127,7 +128,7 @@ async function loadProjectForEdit() {
     form.linkUrl = project.link_url || project.video_url || ''
     form.courseId = project.course_id ?? null
     tags.value = [...(project.tags || [])]
-    existingImageUrls.value = project.images?.map(item => item.image_url) || (project.image_url ? [project.image_url] : [])
+    existingImageUrls.value = project.images?.map(item => ({ url: item.image_url, file_id: item.file_id })) || (project.image_url ? [{ url: project.image_url }] : [])
   } catch {
     ElMessage.error('作品信息加载失败，请稍后重试')
     router.push('/create')
@@ -156,8 +157,8 @@ async function handleSubmit() {
   try {
     let reportUrl = editingProject.value?.report_url || ''
     let reportFileId = editingProject.value?.report_file_id
-    const uploadedImageUrls = [...existingImageUrls.value]
-    const uploadedImageFileIds: number[] = []
+    const uploadedImageUrls = [...existingImageUrls.value.map(img => img.url)]
+    const uploadedImageFileIds: (number | null)[] = [...existingImageUrls.value.map(img => img.file_id ?? null)]
 
     if (reportFile.value) {
       const result = await uploadFile(reportFile.value, 'project_report')
@@ -325,8 +326,8 @@ onMounted(() => {
           </div>
 
           <div v-if="displayedImageNames.length > 0" class="image-list">
-            <div v-for="(url, index) in existingImageUrls" :key="`existing-${index}`" class="image-item">
-              <img :src="url" :alt="`已上传图片 ${index + 1}`" class="image-thumb" />
+            <div v-for="(img, index) in existingImageUrls" :key="`existing-${index}`" class="image-item">
+              <img :src="resolveFileUrl(img.file_id ? `/api/files/${img.file_id}` : img.url)" :alt="`已上传图片 ${index + 1}`" class="image-thumb" />
               <span>已上传图片 {{ index + 1 }}</span>
               <button class="tag-remove" @click="removeExistingImage(index)">&times;</button>
             </div>
