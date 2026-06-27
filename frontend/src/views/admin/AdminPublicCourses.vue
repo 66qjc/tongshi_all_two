@@ -7,19 +7,24 @@ import PdfPreviewDialog from '../../components/common/PdfPreviewDialog.vue'
 import { useUploadWithProgress } from '../../composables/useUploadWithProgress'
 import {
   createAdminPublicCourse,
+  createAdminPublicCourseStage,
   createAdminPublicMaterial,
   createAdminPublicQuestion,
   deleteAdminPublicCourse,
+  deleteAdminPublicCourseStage,
   deleteAdminPublicMaterial,
   deleteAdminPublicQuestion,
   downloadAdminQuestionTemplate,
+  getAdminPublicCourseStages,
   getAdminPublicCourses,
   getAdminPublicMaterials,
   getAdminPublicQuestions,
   importAdminPublicQuestions,
   updateAdminPublicCourse,
+  updateAdminPublicCourseStage,
   updateAdminPublicMaterial,
   updateAdminPublicQuestion,
+  type AdminCourseStage,
   type AdminPublicCourse,
 } from '../../api/adminPublicCourse'
 
@@ -37,7 +42,7 @@ function formatFileSize(bytes: number) {
 
 const courses = ref<AdminPublicCourse[]>([])
 const selectedCourse = ref<AdminPublicCourse | null>(null)
-const activeTab = ref<'materials' | 'questions'>('materials')
+const activeTab = ref<'stages' | 'materials' | 'questions'>('stages')
 
 const courseLoading = ref(false)
 const contentLoading = ref(false)
@@ -46,6 +51,13 @@ const { uploading, percent: uploadPercent, upload } = useUploadWithProgress()
 
 const materials = ref<Material[]>([])
 const questions = ref<Question[]>([])
+
+const stages = ref<AdminCourseStage[]>([])
+const stageLoading = ref(false)
+const newStageName = ref('')
+const newStageOrder = ref(0)
+const savingStage = ref(false)
+const defaultStageId = ref<number | null>(null)
 
 const showCourseDialog = ref(false)
 const editingCourseId = ref<number | null>(null)
@@ -60,6 +72,7 @@ const materialForm = ref({
   url: '',
   size: '0 MB',
   file_id: undefined as number | undefined,
+  stage_id: null as number | null,
   file: null as File | null,
 })
 
@@ -73,8 +86,6 @@ const questionForm = ref({
   explanation: '',
   tags: [] as string[],
 })
-
-const selectedCourseId = computed(() => selectedCourse.value?.id || 0)
 
 const previewVisible = ref(false)
 const previewUrl = ref('')
@@ -126,21 +137,26 @@ async function fetchContent() {
   if (!selectedCourse.value) {
     materials.value = []
     questions.value = []
+    stages.value = []
     return
   }
   contentLoading.value = true
+  stageLoading.value = true
   try {
     const courseId = selectedCourse.value.id
-    const [materialData, questionData] = await Promise.all([
+    const [materialData, questionData, stageData] = await Promise.all([
       getAdminPublicMaterials(courseId),
       getAdminPublicQuestions(courseId),
+      getAdminPublicCourseStages(courseId),
     ])
     materials.value = materialData || []
     questions.value = questionData || []
+    stages.value = stageData || []
   } catch (err: any) {
     ElMessage.error(err?.message || '加载课程内容失败')
   } finally {
     contentLoading.value = false
+    stageLoading.value = false
   }
 }
 
@@ -202,13 +218,15 @@ async function removeCourse(course: AdminPublicCourse) {
   }
 }
 
-function openCreateMaterial() {
+function openCreateMaterial(stageId: number | null = null) {
   if (!selectedCourse.value) return
   editingMaterialId.value = null
-  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined, file: null }
+  defaultStageId.value = stageId
+  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined, stage_id: stageId, file: null }
   if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
 }
+
 
 function openEditMaterial(material: Material) {
   editingMaterialId.value = material.id
@@ -218,12 +236,12 @@ function openEditMaterial(material: Material) {
     url: material.url || '',
     size: material.size || '0 MB',
     file_id: material.file_id,
+    stage_id: material.stage_id ?? null,
     file: null,
   }
   if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
 }
-
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] || null
@@ -257,6 +275,8 @@ async function saveMaterial() {
       url: materialForm.value.url.trim(),
       size: materialForm.value.size || '0 MB',
       file_id: materialForm.value.file_id,
+      stage_id: materialForm.value.stage_id,
+
     }
     if (editingMaterialId.value) {
       await updateAdminPublicMaterial(selectedCourse.value.id, editingMaterialId.value, payload)
@@ -367,6 +387,81 @@ async function removeQuestion(question: Question) {
 }
 
 // ── Excel 批量导入题目 ─────────────────────────────────────────────────
+
+const sortedStages = computed(() => [...stages.value].sort((a, b) => a.sort_order - b.sort_order))
+function stageMaterials(stageId: number) {
+  return materials.value.filter(m => m.stage_id === stageId)
+}
+function uncategorizedMaterials() {
+  return materials.value.filter(m => m.stage_id === null || m.stage_id === undefined)
+}
+
+async function handleAddStage() {
+  if (!selectedCourse.value) return
+  const name = newStageName.value.trim()
+  if (!name) {
+    ElMessage.warning('请输入阶段名称')
+    return
+  }
+  savingStage.value = true
+  try {
+    await createAdminPublicCourseStage(selectedCourse.value.id, { name, sort_order: newStageOrder.value })
+    ElMessage.success('阶段已添加')
+    newStageName.value = ''
+    newStageOrder.value = sortedStages.value.length
+    await fetchContent()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '添加阶段失败')
+  } finally {
+    savingStage.value = false
+  }
+}
+
+async function handleStageNameChange(stage: AdminCourseStage) {
+  const name = stage.name.trim()
+  if (!name) {
+    ElMessage.warning('阶段名称不能为空')
+    await fetchContent()
+    return
+  }
+  try {
+    await updateAdminPublicCourseStage(stage.course_id, stage.id, { name, sort_order: stage.sort_order })
+    ElMessage.success('阶段已更新')
+  } catch (err: any) {
+    ElMessage.error(err?.message || '更新阶段失败')
+    await fetchContent()
+  }
+}
+
+async function handleStageOrderChange(stage: AdminCourseStage) {
+  try {
+    await updateAdminPublicCourseStage(stage.course_id, stage.id, { name: stage.name, sort_order: stage.sort_order })
+    await fetchContent()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '排序更新失败')
+    await fetchContent()
+  }
+}
+
+async function handleDeleteStage(stage: AdminCourseStage) {
+  if (!selectedCourse.value) return
+  const hasMaterials = stageMaterials(stage.id).length > 0
+  if (hasMaterials) {
+    ElMessage.warning('该阶段下仍有资料，请先删除或移出资料')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定删除阶段「' + stage.name + '」？', '删除确认', { type: 'warning' })
+    await deleteAdminPublicCourseStage(selectedCourse.value.id, stage.id)
+    ElMessage.success('已删除')
+    await fetchContent()
+  } catch (err: any) {
+    if (err !== 'cancel' && err !== 'close') {
+      ElMessage.error(err?.message || '删除阶段失败')
+    }
+  }
+}
+
 
 function openImportQuestions() {
   if (!selectedCourse.value) return
@@ -493,15 +588,84 @@ onMounted(() => fetchCourses())
           </div>
 
           <el-tabs v-model="activeTab">
-            <el-tab-pane label="资料" name="materials">
+            <el-tab-pane label="阶段与资料" name="stages">
+              <div class="tab-toolbar stage-toolbar">
+                <span class="toolbar-tip">阶段名称与排序修改后会同步到教师副本</span>
+                <el-button type="primary" size="small" @click="openCreateMaterial(null)">新增资料</el-button>
+              </div>
+              <div v-loading="stageLoading" class="stage-section">
+                <div class="stage-add-row">
+                  <el-input v-model="newStageName" placeholder="新阶段名称" style="width: 220px" />
+                  <el-input-number v-model="newStageOrder" :min="0" :step="1" step-strictly controls-position="right" style="width: 110px" />
+                  <el-button type="primary" :loading="savingStage" @click="handleAddStage">添加阶段</el-button>
+                </div>
+                <el-empty v-if="sortedStages.length === 0" description="暂无阶段，可在上方添加" />
+                <div v-else class="stage-list">
+                  <div v-for="(stage, index) in sortedStages" :key="stage.id" class="stage-card">
+                    <div class="stage-header">
+                      <span class="stage-index">阶段 {{ index + 1 }}</span>
+                      <el-input v-model="stage.name" style="width: 220px" @change="handleStageNameChange(stage)" />
+                      <el-input-number v-model="stage.sort_order" :min="0" :step="1" step-strictly controls-position="right" style="width: 110px" @change="handleStageOrderChange(stage)" />
+                      <span class="stage-meta">{{ stageMaterials(stage.id).length }} 份资料</span>
+                      <el-button type="primary" size="small" @click="openCreateMaterial(stage.id)">上传资料</el-button>
+                      <el-button type="danger" text size="small" @click="handleDeleteStage(stage)">删除</el-button>
+                    </div>
+                    <div v-if="stageMaterials(stage.id).length" class="material-grid">
+                      <div v-for="material in stageMaterials(stage.id)" :key="material.id" class="material-card">
+                        <div class="card-head">
+                          <el-tag size="small" effect="plain">{{ material.type === 'video' ? '视频' : 'PDF' }}</el-tag>
+                        </div>
+                        <h4>{{ material.title }}</h4>
+                        <p class="material-meta">{{ material.size }} · {{ material.date || '未记录日期' }}</p>
+                        <div class="card-actions">
+                          <el-button type="primary" size="small" @click="previewMaterial(material)">预览</el-button>
+                          <el-button size="small" @click="openEditMaterial(material)">编辑</el-button>
+                          <el-button type="danger" size="small" @click="removeMaterial(material)">删除</el-button>
+                        </div>
+                      </div>
+                    </div>
+                    <el-empty v-else description="该阶段暂无资料" :image-size="60" />
+                  </div>
+                  <div v-if="uncategorizedMaterials().length" class="stage-card">
+                    <div class="stage-header">
+                      <span class="stage-index other">其他</span>
+                      <span class="stage-title-other">未分类资料</span>
+                      <span class="stage-meta">{{ uncategorizedMaterials().length }} 份资料</span>
+                      <el-button type="primary" size="small" @click="openCreateMaterial(null)">上传资料</el-button>
+                    </div>
+                    <div class="material-grid">
+                      <div v-for="material in uncategorizedMaterials()" :key="material.id" class="material-card">
+                        <div class="card-head">
+                          <el-tag size="small" effect="plain">{{ material.type === 'video' ? '视频' : 'PDF' }}</el-tag>
+                        </div>
+                        <h4>{{ material.title }}</h4>
+                        <p class="material-meta">{{ material.size }} · {{ material.date || '未记录日期' }}</p>
+                        <div class="card-actions">
+                          <el-button type="primary" size="small" @click="previewMaterial(material)">预览</el-button>
+                          <el-button size="small" @click="openEditMaterial(material)">编辑</el-button>
+                          <el-button type="danger" size="small" @click="removeMaterial(material)">删除</el-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane label="全部资料" name="materials">
               <div class="tab-toolbar">
-                <el-button type="primary" size="small" @click="openCreateMaterial">新增资料</el-button>
+                <el-button type="primary" size="small" @click="openCreateMaterial(null)">新增资料</el-button>
               </div>
               <el-table :data="materials" v-loading="contentLoading" border stripe style="width: 100%">
                 <el-table-column prop="title" label="资料标题" min-width="180" />
                 <el-table-column prop="type" label="类型" width="90" />
+                <el-table-column label="所属阶段" min-width="140">
+                  <template #default="{ row }">
+                    <span>{{ sortedStages.find(s => s.id === row.stage_id)?.name || '未分类' }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="size" label="大小" width="100" />
-                <el-table-column prop="url" label="地址" min-width="180" show-overflow-tooltip />
+                <el-table-column prop="url" label="地址" min-width="160" show-overflow-tooltip />
                 <el-table-column label="操作" width="180" fixed="right">
                   <template #default="{ row }">
                     <el-button v-if="row.url || row.file_id" size="small" text @click="previewMaterial(row)">预览</el-button>
@@ -515,35 +679,28 @@ onMounted(() => fetchCourses())
               </el-table>
             </el-tab-pane>
 
-            <el-tab-pane label="题库" name="questions">
+            <el-tab-pane label="题库管理" name="questions">
               <div class="tab-toolbar">
-                <el-button size="small" @click="openImportQuestions">导入题目</el-button>
-                <el-button type="primary" size="small" @click="openCreateQuestion">新增题目</el-button>
+                <el-button type="primary" size="small" @click="openCreateQuestion()">新增题目</el-button>
+                <el-button size="small" @click="importDialogVisible = true">批量导入</el-button>
               </div>
               <el-table :data="questions" v-loading="contentLoading" border stripe style="width: 100%">
-                <el-table-column label="题干" min-width="260">
-                  <template #default="{ row }">
-                    <span>{{ row.stem.length > 48 ? row.stem.slice(0, 48) + '…' : row.stem }}</span>
-                    <span v-if="row.type === 'multi_choice'" class="multi-tag">（多选题）</span>
-                  </template>
-                </el-table-column>
                 <el-table-column label="题型" width="100">
                   <template #default="{ row }">
-                    <el-tag :type="row.type === 'choice' ? '' : row.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
+                    <el-tag size="small" :type="row.type === 'choice' ? '' : row.type === 'multi_choice' ? 'warning' : 'info'">
                       {{ row.type === 'choice' ? '选择题' : row.type === 'multi_choice' ? '多选题' : '填空题' }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="course_name" label="所属课程" min-width="160" />
-                <el-table-column label="课程标签" min-width="150">
+                <el-table-column prop="stem" label="题干" min-width="240" show-overflow-tooltip />
+                <el-table-column prop="answer" label="答案" width="140" show-overflow-tooltip />
+                <el-table-column label="标签" min-width="160">
                   <template #default="{ row }">
-                    <div class="tag-list">
-                      <el-tag v-for="tag in row.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
-                      <span v-if="!row.tags?.length" class="readonly-text">-</span>
-                    </div>
+                    <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">{{ tag }}</el-tag>
+                    <span v-if="!row.tags || row.tags.length === 0" style="color: var(--el-text-color-placeholder)">无标签</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="130" fixed="right">
+                <el-table-column label="操作" width="140" fixed="right">
                   <template #default="{ row }">
                     <el-button size="small" text @click="openEditQuestion(row)">编辑</el-button>
                     <el-button size="small" type="danger" text @click="removeQuestion(row)">删除</el-button>
@@ -554,6 +711,7 @@ onMounted(() => fetchCourses())
                 </template>
               </el-table>
             </el-tab-pane>
+
           </el-tabs>
         </template>
         <el-empty v-else description="请先新建或选择一个公共课程" />
@@ -582,6 +740,12 @@ onMounted(() => fetchCourses())
         </el-form-item>
         <el-form-item label="资料标题" required>
           <el-input v-model="materialForm.title" placeholder="请输入资料标题" clearable />
+        </el-form-item>
+        <el-form-item label="所属阶段">
+          <el-select v-model="materialForm.stage_id" placeholder="未分类" clearable style="width: 100%">
+            <el-option label="未分类" :value="null" />
+            <el-option v-for="stage in sortedStages" :key="stage.id" :label="stage.name" :value="stage.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="上传文件">
           <input ref="uploadInput" type="file" accept=".pdf,video/*" hidden @change="handleFileChange" />
@@ -855,4 +1019,88 @@ onMounted(() => fetchCourses())
   font-size: 0.8rem;
 }
 
+
+.stage-toolbar {
+  justify-content: space-between;
+}
+.toolbar-tip {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+.stage-section {
+  min-height: 160px;
+}
+.stage-add-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stage-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--color-bg-card);
+}
+.stage-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.stage-index {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  background: var(--color-learn);
+  color: #fff;
+  border-radius: 12px;
+}
+.stage-index.other {
+  background: var(--color-text-muted);
+}
+.stage-title-other {
+  font-weight: 700;
+  color: var(--color-text);
+  margin-right: auto;
+}
+.stage-meta {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  margin-right: auto;
+}
+.material-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.material-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--color-bg-card);
+}
+.material-card h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 8px 0 4px;
+  line-height: 1.4;
+  min-height: 2.8em;
+}
+.material-meta {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+}
 </style>

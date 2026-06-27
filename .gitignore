@@ -5,6 +5,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 backend/.pytest_cache/
+backend/.test-uploads/
 frontend/dist/
 
 # 2. 机密环境变量 (核心安全底线)
@@ -53,3 +54,4 @@ backend/.seed_lock
 backend/.backend-*.log
 backend/setup_mysql.sh
 tongshi_all_two/
+output/

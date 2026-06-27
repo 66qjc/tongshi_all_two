@@ -10,7 +10,8 @@ const teacherApi = readFileSync(resolve(root, 'src/api/teacher.ts'), 'utf8')
 
 assert.match(taskReport, /getTaskOverview/, '作业完成页应使用作业概览接口展示作业列表')
 assert.match(taskReport, /taskSearchQuery/, '作业完成页应保留作业名称搜索能力')
-assert.match(taskReport, /openTaskReport/, '作业完成页应通过作业卡片进入完成详情')
+assert.match(taskReport, /goToDetail/, '作业完成页应通过作业卡片进入完成详情')
+assert.match(taskReport, /teacher-task-report-detail/, '作业完成页应跳转到任务完成详情路由')
 assert.match(taskReport, /route\.query\.task_id/, '作业完成页应保留从教师端其他页面带 task_id 跳转定位')
 
 assert.doesNotMatch(studentGrades, /getTaskOverview/, '学生成绩页不应再加载作业概览')

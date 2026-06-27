@@ -48,6 +48,59 @@ def test_ensure_schema_compatibility_adds_course_anchor_columns():
     assert "course_id" in {column["name"] for column in inspector.get_columns("questions")}
 
 
+def test_ensure_schema_compatibility_adds_course_description_without_mysql_text_default(monkeypatch):
+    """MySQL 补齐 TEXT 列时不能生成 DEFAULT，否则生产启动会失败。"""
+    from app.db import schema_compat
+
+    statements: list[str] = []
+
+    class FakeDialect:
+        name = "mysql"
+
+    class FakeConn:
+        dialect = FakeDialect()
+
+        def execute(self, statement):
+            statements.append(str(statement))
+
+    class FakeBegin:
+        def __enter__(self):
+            return FakeConn()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeEngine:
+        def begin(self):
+            return FakeBegin()
+
+    class FakeInspector:
+        def get_table_names(self):
+            return ["courses"]
+
+        def get_columns(self, table):
+            if table == "courses":
+                return [{"name": "id"}, {"name": "name"}]
+            return []
+
+        def get_indexes(self, table):
+            return []
+
+        def get_foreign_keys(self, table):
+            return []
+
+    monkeypatch.setattr(schema_compat, "inspect", lambda conn: FakeInspector())
+
+    schema_compat.ensure_schema_compatibility(FakeEngine())
+
+    description_sql = [
+        statement
+        for statement in statements
+        if "ALTER TABLE courses ADD COLUMN description" in statement
+    ]
+    assert description_sql == ["ALTER TABLE courses ADD COLUMN description TEXT NULL"]
+
+
 def test_ensure_schema_compatibility_creates_project_images_table():
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:

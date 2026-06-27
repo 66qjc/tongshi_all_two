@@ -15,6 +15,7 @@ export interface Material {
   file_id?: number
   source_material_id?: number | null
   is_synced?: boolean
+  stage_id?: number | null
 }
 
 export interface MaterialCreatePayload {
@@ -24,6 +25,7 @@ export interface MaterialCreatePayload {
   url: string
   size: string
   file_id?: number
+  stage_id?: number | null
 }
 
 export function getAllMaterials(params?: {
@@ -43,6 +45,10 @@ export function getCourseContents(courseId: number, keyword?: string) {
 
 export function createMaterial(data: MaterialCreatePayload) {
   return http.post<any, { id: number }>('/materials', data)
+}
+
+export function updateMaterial(id: number, data: { title?: string; stage_id?: number | null }) {
+  return http.put<any, any>(`/materials/${id}`, data)
 }
 
 export function deleteMaterial(id: number) {

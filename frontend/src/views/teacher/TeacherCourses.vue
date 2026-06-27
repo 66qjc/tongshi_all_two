@@ -34,6 +34,7 @@ const isEdit = ref(false)
 const editingId = ref<number | null>(null)
 const formData = reactive({
   name: '',
+  description: '',
 })
 const saving = ref(false)
 
@@ -114,6 +115,7 @@ function openCreate() {
   isEdit.value = false
   editingId.value = null
   formData.name = ''
+  formData.description = ''
   dialogVisible.value = true
 }
 
@@ -125,11 +127,17 @@ function openEdit(course: Course) {
   isEdit.value = true
   editingId.value = course.id
   formData.name = course.name
+  formData.description = course.description || ''
   dialogVisible.value = true
+}
+
+function openCourseDetail(course: Course) {
+  router.push(`/teacher/courses/${course.id}`)
 }
 
 async function handleSave() {
   const name = formData.name.trim()
+    const description = formData.description.trim()
   if (!name) {
     ElMessage.warning('请输入课程名称')
     return
@@ -137,10 +145,10 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value && editingId.value !== null) {
-      await updateCourse(editingId.value, { name })
+      await updateCourse(editingId.value, { name, description })
       ElMessage.success('课程更新成功')
     } else {
-      await createCourse({ name })
+      await createCourse({ name, description })
       ElMessage.success('课程创建成功')
     }
     dialogVisible.value = false
@@ -211,8 +219,9 @@ function formatDate(dateStr: string) {
           {{ formatDate(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
+          <el-button text size="small" @click="openCourseDetail(row)">管理课程</el-button>
           <el-button text size="small" @click="openMaterials(row)">查看资料</el-button>
           <el-button text size="small" @click="openEdit(row)">编辑</el-button>
           <el-button type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
@@ -300,6 +309,18 @@ function formatDate(dateStr: string) {
           maxlength="100"
           show-word-limit
           @keyup.enter="handleSave"
+        />
+      </div>
+      <div class="form-group">
+        <label>课程简介</label>
+        <el-input
+          v-model="formData.description"
+          type="textarea"
+          :rows="3"
+          placeholder="请输入课程简介（可选）"
+          size="large"
+          maxlength="500"
+          show-word-limit
         />
       </div>
       <template #footer>

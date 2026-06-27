@@ -4,7 +4,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Class, Course, StudentClassEnrollment
+from app.models.entities import Class, Course, CourseStage, StudentClassEnrollment
 from app.schemas.common import AuthUser
 from app.services.question_service import list_courses
 
@@ -19,6 +19,7 @@ def _format_course(db: Session, course: Course, current_user: AuthUser, class_co
     return {
         "id": course.id,
         "name": course.name,
+        "description": course.description or "",
         "created_at": to_beijing_iso(course.created_at),
         "created_by": course.created_by,
         "is_public": bool(course.is_public),
@@ -73,6 +74,25 @@ def build_course_list(db: Session, current_user: AuthUser, keyword: str | None =
     return [_format_course(db, course, current_user) for course in courses]
 
 
+def _format_material(material):
+    return {
+        "id": material.id,
+        "course_id": material.course_id,
+        "course_name": material.course.name if material.course else "",
+        "type": material.type,
+        "title": material.title,
+        "url": material.url,
+        "duration": material.duration,
+        "pages": material.pages,
+        "size": material.size,
+        "date": material.date,
+        "file_id": material.file_id,
+        "source_material_id": material.source_material_id,
+        "is_synced": bool(material.source_material_id),
+        "stage_id": material.stage_id,
+    }
+
+
 def build_course_detail(db: Session, detail: tuple[Course, int, int, int], current_user: AuthUser) -> dict:
     course, material_count, question_count, class_count = detail
     visible_class_count = (
@@ -83,4 +103,22 @@ def build_course_detail(db: Session, detail: tuple[Course, int, int, int], curre
     data = _format_course(db, course, current_user, visible_class_count)
     data["material_count"] = material_count
     data["question_count"] = question_count
+
+    stages = []
+    for stage in sorted(course.stages, key=lambda s: (s.sort_order, s.id)):
+        stage_data = {
+            "id": stage.id,
+            "course_id": stage.course_id,
+            "source_stage_id": stage.source_stage_id,
+            "name": stage.name,
+            "sort_order": stage.sort_order,
+            "created_at": to_beijing_iso(stage.created_at),
+            "materials": [_format_material(m) for m in stage.materials],
+        }
+        stages.append(stage_data)
+    data["stages"] = stages
+
+    uncategorized = [_format_material(m) for m in course.materials if m.stage_id is None]
+    data["uncategorized_materials"] = uncategorized
+
     return data

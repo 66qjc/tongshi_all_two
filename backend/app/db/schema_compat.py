@@ -135,6 +135,39 @@ def ensure_schema_compatibility(engine) -> None:
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
 
+        # ── showcase_item_images 表（依赖 showcase_items）─────────────────
+        if "showcase_item_images" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE showcase_item_images (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        showcase_item_id INTEGER NOT NULL,
+                        file_id INTEGER NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(showcase_item_id) REFERENCES showcase_items(id) ON DELETE CASCADE,
+                        FOREIGN KEY(file_id) REFERENCES stored_files(id)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE showcase_item_images (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        showcase_item_id INTEGER NOT NULL,
+                        file_id INTEGER NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_showcase_item_images_showcase_item_id
+                            FOREIGN KEY (showcase_item_id) REFERENCES showcase_items(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_showcase_item_images_file_id
+                            FOREIGN KEY (file_id) REFERENCES stored_files(id)
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_showcase_item_images_showcase_item_id ON showcase_item_images (showcase_item_id)"
+            ))
+
         # ── 为业务表补齐 file_id 列 ─────────────────────────────────────
         _add_column_if_missing(
             conn, inspector, "materials", "file_id", "INTEGER")
@@ -179,6 +212,12 @@ def ensure_schema_compatibility(engine) -> None:
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
         _add_column_if_missing(
             conn, inspector, "password_reset_requests", "temp_password", "VARCHAR(32) NULL")
+
+        # ── showcase_items 表新增 content_blocks 列（图文混排）──────────
+        _showcase_cb_type = "JSON" if conn.dialect.name == "mysql" else "TEXT"
+        _add_column_if_missing(
+            conn, inspector, "showcase_items", "content_blocks", _showcase_cb_type)
+
 
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
@@ -342,6 +381,69 @@ def ensure_schema_compatibility(engine) -> None:
             conn.execute(text(
                 "CREATE INDEX ix_password_reset_requests_resolved_by ON password_reset_requests (resolved_by)"
             ))
+
+        # course_stages
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "course_stages" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE course_stages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_id INTEGER NOT NULL,
+                        source_stage_id INTEGER,
+                        name VARCHAR(64) NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE course_stages (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        course_id INTEGER NOT NULL,
+                        source_stage_id INTEGER NULL,
+                        name VARCHAR(64) NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_course_stages_course_id
+                            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_course_stages_course_id ON course_stages (course_id)"
+            ))
+
+        # materials.stage_id
+        if "materials" in table_names:
+            _add_column_if_missing(conn, inspector, "materials", "stage_id", "INTEGER NULL")
+            indexes = inspector.get_indexes("materials")
+            if not any(index.get("name") == "ix_materials_stage_id" for index in indexes):
+                conn.execute(text("CREATE INDEX ix_materials_stage_id ON materials (stage_id)"))
+
+        # course_stages.source_stage_id 索引和外键约束补齐
+        if "course_stages" in table_names:
+            inspector = inspect(conn)
+            stage_indexes = {idx["name"] for idx in inspector.get_indexes("course_stages")}
+            if "ix_course_stages_source_stage_id" not in stage_indexes:
+                conn.execute(text(
+                    "CREATE INDEX ix_course_stages_source_stage_id ON course_stages (source_stage_id)"
+                ))
+            # MySQL 旧库迁移可能缺少 source_stage_id 的 FK 约束
+            if conn.dialect.name == "mysql":
+                fks = {fk["name"] for fk in inspector.get_foreign_keys("course_stages")}
+                if "fk_course_stages_source_stage_id" not in fks:
+                    conn.execute(text("""
+                        ALTER TABLE course_stages
+                        ADD CONSTRAINT fk_course_stages_source_stage_id
+                            FOREIGN KEY (source_stage_id) REFERENCES course_stages(id) ON DELETE SET NULL
+                    """))
+
+        # courses.description
+        if "courses" in table_names:
+            _add_column_if_missing(conn, inspector, "courses", "description", "TEXT NULL")
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:

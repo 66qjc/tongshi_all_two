@@ -1,4 +1,4 @@
-"""Database models"""
+﻿"""Database models"""
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
@@ -67,14 +67,33 @@ class Course(Base):
     created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     is_public = Column(Boolean, nullable=False, default=False, index=True)
     source_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
+    description = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     creator = relationship("User", foreign_keys=[created_by])
     classes = relationship("Class", back_populates="course", cascade="all, delete-orphan")
+    stages = relationship(
+        "CourseStage", back_populates="course", cascade="all, delete-orphan",
+        order_by="CourseStage.sort_order")
     materials = relationship(
         "Material", back_populates="course", cascade="all, delete-orphan")
     questions = relationship(
         "Question", back_populates="course", cascade="all, delete-orphan")
+
+
+class CourseStage(Base):
+    """课程阶段/目录"""
+    __tablename__ = "course_stages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
+    source_stage_id = Column(Integer, ForeignKey("course_stages.id"), nullable=True, index=True)
+    name = Column(String(64), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    course = relationship("Course", back_populates="stages")
+    materials = relationship("Material", back_populates="stage")
 
 
 class Material(Base):
@@ -93,8 +112,11 @@ class Material(Base):
         "stored_files.id"), nullable=True, index=True)
     source_material_id = Column(Integer, ForeignKey(
         "materials.id"), nullable=True, index=True)
+    stage_id = Column(Integer, ForeignKey(
+        "course_stages.id", ondelete="SET NULL"), nullable=True, index=True)
 
     course = relationship("Course", back_populates="materials")
+    stage = relationship("CourseStage", back_populates="materials")
 
 
 class Question(Base):
@@ -324,7 +346,9 @@ class ShowcaseItem(Base):
     # "welfare" | "reading_club"
     section = Column(String(32), nullable=False)
     title = Column(String(128), nullable=False)
-    content = Column(Text, default="")
+    content = Column(Text, default="")  # 纯文本摘要，用于列表预览与旧版回退
+    # 有序内容块（图文混排）：[{type:text,data:{text}}, {type:image,data:{file_id,caption}}]
+    content_blocks = Column(JSON, nullable=True)
     cover_file_id = Column(Integer, ForeignKey(
         "stored_files.id"), nullable=True)
     link_url = Column(String(512), default="")

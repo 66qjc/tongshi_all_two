@@ -30,32 +30,47 @@ function openInNewWindow() {
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="title || '资料预览'"
-    width="80%"
-    top="5vh"
+    :title="title || '资料查看'"
+    width="520px"
     destroy-on-close
   >
-    <div v-if="previewUrl" class="preview-container">
-      <iframe :src="previewUrl" class="pdf-iframe" />
+    <div v-if="previewUrl" class="preview-card">
+      <p class="preview-title">文件已准备好</p>
+      <p class="preview-desc">请使用新窗口查看资料。若浏览器无法直接预览，可在新窗口中下载后查看。</p>
+      <el-button type="primary" @click="openInNewWindow">新窗口查看</el-button>
     </div>
-    <div v-else class="preview-empty">暂无可预览的文件。</div>
+    <div v-else class="preview-empty">暂无可查看的文件。</div>
     <template #footer>
-      <el-button @click="openInNewWindow">新窗口打开</el-button>
       <el-button @click="dialogVisible = false">关闭</el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.preview-container {
-  width: 100%;
-  height: 70vh;
+.preview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
 }
 
-.pdf-iframe {
-  width: 100%;
-  height: 100%;
-  border: none;
+.preview-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.preview-desc {
+  max-width: 360px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
 }
 
 .preview-empty {

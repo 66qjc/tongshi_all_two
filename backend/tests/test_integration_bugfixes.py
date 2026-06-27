@@ -7,6 +7,26 @@ from app.models.entities import Announcement, AnnouncementClass, Class, Course, 
 from tests.conftest import auth_header
 
 
+
+def make_stored_file(db_session, content_type="application/pdf", extension=".pdf", owner="admin"):
+    """为公共课程资料测试快速构造一条 stored_files 记录。"""
+    sf = StoredFile(
+        biz_type="public_course_material",
+        storage_provider="local",
+        object_key=f"test/file{extension}",
+        original_name=f"file{extension}",
+        stored_name=f"file{extension}",
+        extension=extension,
+        content_type=content_type,
+        size_bytes=100,
+        sha256="0" * 64,
+        status="active",
+        created_by=owner,
+    )
+    db_session.add(sf)
+    db_session.commit()
+    db_session.refresh(sf)
+    return sf.id
 def _build_student_import_file(rows: list[list[str]]) -> io.BytesIO:
     """构造学生导入接口使用的 Excel 文件。"""
     from openpyxl import Workbook
@@ -226,10 +246,11 @@ class TestTeacherRefactor:
 
         client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(other_teacher_token))
+        pdf_file_id = make_stored_file(db_session)
 
         material_resp = client.post(
             f"/api/admin/public-courses/{public_course_id}/materials",
-            json={"type": "pdf", "title": "同步资料", "url": "/uploads/sync.pdf", "size": "1 MB"},
+            json={"type": "pdf", "title": "同步资料", "url": "/uploads/sync.pdf", "size": "1 MB", "file_id": pdf_file_id},
             headers=auth_header(admin_token),
         )
         assert material_resp.json()["code"] == 0
@@ -426,9 +447,10 @@ class TestTeacherRefactor:
         public_course_id = course_resp.json()["data"]["id"]
         copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = copy_resp.json()["data"]["id"]
+        pdf_file_id = make_stored_file(db_session)
         material_resp = client.post(
             f"/api/admin/public-courses/{public_course_id}/materials",
-            json={"type": "pdf", "title": "只读资料", "url": "/uploads/readonly.pdf", "size": "1 MB"},
+            json={"type": "pdf", "title": "只读资料", "url": "/uploads/readonly.pdf", "size": "1 MB", "file_id": pdf_file_id},
             headers=auth_header(admin_token),
         )
         source_material_id = material_resp.json()["data"]["id"]
@@ -487,9 +509,10 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
+        pdf_file_id = make_stored_file(db_session)
         material_resp = client.post(
             f"/api/admin/public-courses/{public_course_id}/materials",
-            json={"type": "pdf", "title": "公共资料", "url": "/uploads/delete-source.pdf", "size": "1 MB"},
+            json={"type": "pdf", "title": "公共资料", "url": "/uploads/delete-source.pdf", "size": "1 MB", "file_id": pdf_file_id},
             headers=auth_header(admin_token),
         )
         question_resp = client.post(
@@ -816,6 +839,7 @@ class TestTeacherRefactor:
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/pdf")
         assert "inline" in resp.headers["content-disposition"]
+        assert resp.headers["content-length"] == str(len(pdf_content))
         assert resp.content.startswith(b"%PDF")
 
     def test_uploaded_mp4_supports_browser_range_without_auth_header(self, client, teacher_token):

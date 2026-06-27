@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getShowcase } from '../api/showcase'
-import type { ShowcaseItemOut } from '../api/showcase'
+import type { ShowcaseItemOut, ContentBlock } from '../api/showcase'
 import { resolveFileUrl } from '../utils/url'
 
 const route = useRoute()
@@ -25,6 +25,22 @@ const imageUrls = computed(() => {
   return item.value.images
     .map(image => resolveFileUrl(image.url))
     .filter(Boolean)
+})
+
+// 是否有图文混排内容块；有则优先按块顺序渲染，否则回退到旧版纯文本 + 图片网格
+const hasContentBlocks = computed(() =>
+  item.value?.content_blocks !== undefined && item.value.content_blocks.length > 0
+)
+
+const getBlockImageUrl = (fileId?: number) => fileId ? resolveFileUrl(`/api/files/${fileId}`) : ''
+
+const renderableBlocks = computed(() => {
+  if (!item.value?.content_blocks) return []
+  return item.value.content_blocks.filter((b: ContentBlock) => {
+    if (b.type === 'text') return !!b.data.text?.trim()
+    if (b.type === 'image') return !!b.data.file_id
+    return false
+  })
 })
 
 onMounted(async () => {
@@ -67,12 +83,38 @@ onMounted(async () => {
             <img :src="coverUrl" :alt="item.title" />
           </div>
 
-          <div class="article-content">
+          <!-- 图文混排优先：按 content_blocks 顺序渲染段落与图片 -->
+          <section v-if="hasContentBlocks && renderableBlocks.length > 0" class="article-blocks">
+            <div
+              v-for="(block, index) in renderableBlocks"
+              :key="`block-${item.id}-${index}`"
+              class="article-block"
+            >
+              <p v-if="block.type === 'text'" class="block-text">{{ block.data.text }}</p>
+              <figure v-else-if="block.type === 'image'" class="block-figure">
+                <a
+                  :href="getBlockImageUrl(block.data.file_id)"
+                  target="_blank"
+                  rel="noopener"
+                  class="block-image-link"
+                >
+                  <img
+                    :src="getBlockImageUrl(block.data.file_id)"
+                    :alt="block.data.caption || `${item.title} 图片 ${index + 1}`"
+                  />
+                </a>
+                <figcaption v-if="block.data.caption">{{ block.data.caption }}</figcaption>
+              </figure>
+            </div>
+          </section>
+
+          <!-- 旧版回退：纯文本 + 图片网格 -->
+          <div v-else class="article-content">
             <p v-if="item.content" class="full-content">{{ item.content }}</p>
             <p v-else>当前内容暂未填写正文。</p>
           </div>
 
-          <section v-if="item.images.length > 0" class="image-section">
+          <section v-if="!hasContentBlocks && item.images.length > 0" class="image-section">
             <div class="section-title">
               <span>相关图片</span>
               <small>{{ imageUrls.length }} 张</small>
@@ -319,3 +361,47 @@ onMounted(async () => {
   }
 }
 </style>
+
+.article-blocks {
+  padding: var(--space-xl);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.article-block + .article-block {
+  margin-top: var(--space-lg);
+}
+
+.block-text {
+  color: var(--color-text-secondary);
+  font-size: 0.96rem;
+  line-height: 1.9;
+  white-space: pre-line;
+}
+
+.block-figure {
+  margin: 0;
+}
+
+.block-image-link {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-act-bg);
+}
+
+.block-image-link img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 560px;
+  object-fit: contain;
+}
+
+.block-figure figcaption {
+  margin-top: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}

@@ -1,4 +1,4 @@
-import http from './http'
+﻿import http from './http'
 import type { Material, MaterialCreatePayload } from './material'
 import type { Question } from './question'
 
@@ -16,6 +16,15 @@ export interface AdminPublicCourse {
   sync_status?: 'not_synced' | 'partial' | 'synced'
 }
 
+export interface AdminCourseStage {
+  id: number
+  course_id: number
+  source_stage_id?: number | null
+  name: string
+  sort_order: number
+  created_at?: string
+}
+
 export type AdminMaterialPayload = Omit<MaterialCreatePayload, 'course_id'>
 
 export interface AdminQuestionPayload {
@@ -31,16 +40,32 @@ export function getAdminPublicCourses() {
   return http.get<any, AdminPublicCourse[]>('/admin/public-courses')
 }
 
-export function createAdminPublicCourse(data: { name: string }) {
+export function createAdminPublicCourse(data: { name: string; description?: string }) {
   return http.post<any, AdminPublicCourse>('/admin/public-courses', data)
 }
 
-export function updateAdminPublicCourse(id: number, data: { name: string }) {
+export function updateAdminPublicCourse(id: number, data: { name: string; description?: string }) {
   return http.put<any, AdminPublicCourse>(`/admin/public-courses/${id}`, data)
 }
 
 export function deleteAdminPublicCourse(id: number) {
   return http.delete<any, any>(`/admin/public-courses/${id}`)
+}
+
+export function getAdminPublicCourseStages(courseId: number) {
+  return http.get<any, AdminCourseStage[]>(`/admin/public-courses/${courseId}/stages`)
+}
+
+export function createAdminPublicCourseStage(courseId: number, data: { name: string; sort_order: number }) {
+  return http.post<any, AdminCourseStage>(`/admin/public-courses/${courseId}/stages`, data)
+}
+
+export function updateAdminPublicCourseStage(courseId: number, stageId: number, data: { name?: string; sort_order?: number }) {
+  return http.put<any, AdminCourseStage>(`/admin/public-courses/${courseId}/stages/${stageId}`, data)
+}
+
+export function deleteAdminPublicCourseStage(courseId: number, stageId: number) {
+  return http.delete<any, any>(`/admin/public-courses/${courseId}/stages/${stageId}`)
 }
 
 export function getAdminPublicMaterials(courseId: number) {
@@ -95,3 +120,4 @@ export async function downloadAdminQuestionTemplate(type: 'all' | 'choice' | 'fi
   }
   return await response.blob()
 }
+

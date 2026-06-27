@@ -99,3 +99,13 @@ npm run dev
 ```sh
 npm run build
 ```
+
+### Production Environment
+
+同域部署并由 Nginx 反代 `/api` 时，无需配置 `VITE_API_BASE`。
+
+前后端分域部署时，复制 `.env.production.example` 为 `.env.production`，并设置：
+
+```env
+VITE_API_BASE=https://api.example.com
+```
