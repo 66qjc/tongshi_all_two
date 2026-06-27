@@ -74,6 +74,10 @@ export function updateProject(id: number, data: ProjectPayload) {
   return http.put<any, { id: number }>(`/projects/${id}`, data)
 }
 
+export function withdrawProject(id: number) {
+  return http.post<any, { id: number }>(`/projects/${id}/withdraw`)
+}
+
 export function toggleLike(projectId: number) {
   return http.post<any, { liked: boolean; likes: number }>(`/projects/${projectId}/like`)
 }

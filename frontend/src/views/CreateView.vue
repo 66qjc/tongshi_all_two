@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getProjects, type Project } from '@/api/project'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getMyProjects, getProjects, withdrawProject, type Project } from '@/api/project'
 import { resolveFileUrl } from '@/utils/url'
 
 const router = useRouter()
 const projects = ref<Project[]>([])
+const myProjects = ref<Project[]>([])
 const loading = ref(true)
+const historyLoading = ref(false)
+const withdrawingId = ref<number | null>(null)
 
 // 分页
 const currentPage = ref(1)
@@ -14,7 +18,7 @@ const pageSize = ref(12)
 const total = ref(0)
 
 onMounted(async () => {
-  await loadProjects()
+  await Promise.all([loadProjects(), loadMyProjects()])
 })
 
 async function loadProjects() {
@@ -28,10 +32,66 @@ async function loadProjects() {
   }
 }
 
+async function loadMyProjects() {
+  historyLoading.value = true
+  try {
+    const res = await getMyProjects(1, 100)
+    myProjects.value = res.items
+  } catch {
+    ElMessage.error('提交历史加载失败，请稍后重试')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
 function handlePageChange(page: number) {
   currentPage.value = page
   loadProjects()
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function getStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending: '待审核',
+    approved: '已通过',
+    rejected: '已驳回',
+    withdrawn: '已撤回',
+  }
+  return labels[status] || '未知'
+}
+
+function getStatusType(status: string) {
+  const types: Record<string, 'warning' | 'success' | 'danger' | 'info'> = {
+    pending: 'warning',
+    approved: 'success',
+    rejected: 'danger',
+    withdrawn: 'info',
+  }
+  return types[status] || 'info'
+}
+
+function canWithdraw(project: Project) {
+  return project.status !== 'withdrawn'
+}
+
+async function handleWithdraw(project: Project) {
+  try {
+    await ElMessageBox.confirm(
+      `确定撤回作品「${project.title}」吗？撤回后作品不会继续展示或审核。`,
+      '撤回确认',
+      { type: 'warning', confirmButtonText: '确认撤回', cancelButtonText: '取消' },
+    )
+    withdrawingId.value = project.id
+    await withdrawProject(project.id)
+    ElMessage.success('作品已撤回')
+    await Promise.all([loadProjects(), loadMyProjects()])
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('撤回失败，请稍后重试')
+    }
+  } finally {
+    withdrawingId.value = null
+  }
 }
 </script>
 
@@ -142,6 +202,64 @@ function handlePageChange(page: number) {
           <el-button type="warning" size="large" round @click="router.push('/create/upload')">
             上传作品
           </el-button>
+        </div>
+      </div>
+    </section>
+
+    <section class="history-section">
+      <div class="container">
+        <div class="history-header">
+          <div>
+            <h2>我的提交历史</h2>
+            <p>查看每次作品提交的审核状态，也可以撤回不想继续展示或审核的作品。</p>
+          </div>
+          <el-button round @click="loadMyProjects">刷新</el-button>
+        </div>
+
+        <div v-loading="historyLoading" class="history-panel">
+          <div v-if="myProjects.length === 0" class="history-empty">
+            还没有提交过作品
+          </div>
+          <div v-else class="history-list">
+            <div v-for="project in myProjects" :key="project.id" class="history-item">
+              <div class="history-main">
+                <div class="history-title-row">
+                  <h3>{{ project.title }}</h3>
+                  <el-tag :type="getStatusType(project.status)" size="small" effect="plain">
+                    {{ getStatusLabel(project.status) }}
+                  </el-tag>
+                </div>
+                <p>{{ project.description }}</p>
+                <div class="history-meta">
+                  <span>{{ project.course_name || '未关联课程' }}</span>
+                  <span>{{ project.date || '-' }}</span>
+                  <span v-if="project.reject_reason">驳回原因：{{ project.reject_reason }}</span>
+                </div>
+              </div>
+              <div class="history-actions">
+                <el-button text size="small" @click="router.push(`/create/project/${project.id}`)">查看</el-button>
+                <el-button
+                  v-if="project.status === 'rejected'"
+                  text
+                  size="small"
+                  type="warning"
+                  @click="router.push(`/create/upload?projectId=${project.id}`)"
+                >
+                  修改重交
+                </el-button>
+                <el-button
+                  v-if="canWithdraw(project)"
+                  text
+                  size="small"
+                  type="danger"
+                  :loading="withdrawingId === project.id"
+                  @click="handleWithdraw(project)"
+                >
+                  撤回
+                </el-button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -381,6 +499,105 @@ function handlePageChange(page: number) {
   margin-top: var(--space-xs);
 }
 
+.history-section {
+  padding: 0 0 var(--space-3xl);
+}
+
+.history-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.history-header h2 {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-bottom: var(--space-xs);
+  letter-spacing: 0.05em;
+}
+
+.history-header p,
+.history-empty,
+.history-meta {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.history-panel {
+  min-height: 96px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+}
+
+.history-empty {
+  padding: var(--space-2xl);
+  text-align: center;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.history-main {
+  min-width: 0;
+}
+
+.history-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.history-title-row h3 {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.history-main p {
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin-bottom: var(--space-sm);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-xs);
+}
+
 @media (max-width: 1024px) {
   .projects-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -396,6 +613,17 @@ function handlePageChange(page: number) {
     flex-direction: column;
     text-align: center;
     gap: var(--space-lg);
+  }
+
+  .history-header,
+  .history-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 </style>

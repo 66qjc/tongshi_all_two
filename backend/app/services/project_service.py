@@ -154,6 +154,24 @@ def update_project(db: Session, project_id: int, user_id: str, data: dict):
     return project
 
 
+def withdraw_project(db: Session, project_id: int, user_id: str):
+    project = get_project(db, project_id)
+    if not project:
+        return None
+    if project.author_id != user_id:
+        raise BusinessException(403, "只能撤回自己的作品")
+    if project.status == "withdrawn":
+        raise BusinessException(400, "作品已撤回")
+
+    project.status = "withdrawn"
+    project.reject_reason = ""
+    project.featured = False
+    db.commit()
+    db.refresh(project)
+    logger.info("作品撤回: user_id=%s, project_id=%s, title=%s", user_id, project.id, project.title)
+    return project
+
+
 def toggle_like(db: Session, user_id: str, project_id: int):
     project = get_project(db, project_id)
     if not project:

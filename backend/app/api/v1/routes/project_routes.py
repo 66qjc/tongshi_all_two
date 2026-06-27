@@ -9,7 +9,7 @@ from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, ProjectCreate, ProjectUpdate
 from app.services.project_service import (
     list_approved_projects, get_project, get_accessible_project, get_user_projects,
-    create_project, toggle_like, update_project, format_project,
+    create_project, toggle_like, update_project, withdraw_project, format_project,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -59,6 +59,14 @@ def update_existing_project(
     current_user: AuthUser = Depends(get_current_user),
 ):
     p = update_project(db, project_id, current_user.id, data.model_dump())
+    if not p:
+        raise BusinessException(404, "作品不存在")
+    return success({"id": p.id})
+
+
+@router.post("/{project_id}/withdraw", summary="撤回作品", description="学生端：撤回自己提交的作品，撤回后不再进入展示或审核")
+def withdraw_existing_project(project_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)):
+    p = withdraw_project(db, project_id, current_user.id)
     if not p:
         raise BusinessException(404, "作品不存在")
     return success({"id": p.id})
