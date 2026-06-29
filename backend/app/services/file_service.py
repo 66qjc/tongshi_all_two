@@ -109,3 +109,20 @@ def generate_object_key(filename: str) -> str:
     """生成唯一的 object key"""
     ext = Path(filename).suffix.lower()
     return f"{uuid.uuid4().hex[:12]}{ext}"
+
+
+def normalize_local_object_key(object_key: str) -> str:
+    """规范化本地 object_key，禁止目录穿越。"""
+    cleaned = object_key.replace("\\", "/").lstrip("/")
+    if cleaned.startswith("uploads/"):
+        cleaned = cleaned[len("uploads/"):]
+    parts = [part for part in cleaned.split("/") if part]
+    if any(part == ".." for part in parts):
+        raise ValueError("文件路径不合法")
+    return "/".join(parts)
+
+
+def build_x_accel_redirect_path(object_key: str) -> str:
+    """构建 Nginx 内部跳转路径。"""
+    safe_key = normalize_local_object_key(object_key)
+    return f"/_protected_uploads/{safe_key}"

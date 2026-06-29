@@ -129,6 +129,18 @@ class CourseStageOut(BaseModel):
 
 
 # ── Material ────────────────────────────────────────────────────────────────
+class MaterialPreviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str = "pending"
+    cover_file_id: Optional[int] = None
+    summary: str = ""
+    page_count: int = 0
+    duration_seconds: int = 0
+    resolution: str = ""
+    error_message: str = ""
+
+
 class MaterialOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -146,6 +158,7 @@ class MaterialOut(BaseModel):
     source_material_id: Optional[int] = None
     is_synced: bool = False
     stage_id: Optional[int] = None
+    preview: Optional[MaterialPreviewOut] = None
 
 
 class CourseStageWithMaterials(CourseStageOut):

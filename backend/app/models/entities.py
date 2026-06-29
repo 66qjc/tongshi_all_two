@@ -67,6 +67,7 @@ class Course(Base):
     created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     is_public = Column(Boolean, nullable=False, default=False, index=True)
     source_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
+    question_bank_root_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
     description = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -117,6 +118,36 @@ class Material(Base):
 
     course = relationship("Course", back_populates="materials")
     stage = relationship("CourseStage", back_populates="materials")
+    preview = relationship(
+        "MaterialPreview",
+        back_populates="material",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+
+
+class MaterialPreview(Base):
+    """课程资料预览元数据。"""
+    __tablename__ = "material_previews"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    status = Column(String(16), nullable=False, default="pending")
+    cover_file_id = Column(Integer, ForeignKey("stored_files.id"), nullable=True, index=True)
+    summary = Column(Text, default="")
+    page_count = Column(Integer, nullable=False, default=0)
+    duration_seconds = Column(Integer, nullable=False, default=0)
+    resolution = Column(String(32), default="")
+    error_message = Column(String(256), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    material = relationship("Material", back_populates="preview")
+    cover_file = relationship("StoredFile", foreign_keys=[cover_file_id])
 
 
 class Question(Base):
@@ -134,6 +165,21 @@ class Question(Base):
         "questions.id"), nullable=True, index=True)
 
     course = relationship("Course", back_populates="questions")
+
+
+class QuestionContributionLog(Base):
+    """公共课程题库贡献记录。"""
+    __tablename__ = "question_contribution_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    public_course_id = Column(Integer, nullable=False, index=True)
+    public_course_name = Column(String(128), nullable=False, default="")
+    operator_id = Column(String(32), nullable=False, index=True)
+    operator_name = Column(String(64), nullable=False, default="")
+    operator_role = Column(String(16), nullable=False, default="")
+    action = Column(String(16), nullable=False, index=True)
+    question_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
 
 class QuizAttempt(Base):

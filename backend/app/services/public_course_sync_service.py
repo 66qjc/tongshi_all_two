@@ -1,9 +1,9 @@
-"""公共课程同步服务。"""
+"""公共课程同步服务（仅资料/阶段走副本分发；题库为全站共享，不再复制题目）。"""
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models.entities import Course, CourseStage, Material, Question, QuizAttempt
+from app.models.entities import Course, CourseStage, Material
 
 
 def teacher_course_copies(db: Session, source_course_id: int) -> list[Course]:
@@ -26,20 +26,8 @@ def copy_material_to_course(source: Material, course_id: int) -> Material:
     )
 
 
-def copy_question_to_course(source: Question, course_id: int) -> Question:
-    return Question(
-        course_id=course_id,
-        type=source.type,
-        stem=source.stem,
-        options=list(source.options or []),
-        answer=source.answer,
-        explanation=source.explanation,
-        tags=list(source.tags or []),
-        source_question_id=source.id,
-    )
-
-
 def mirror_public_course_content(db: Session, source: Course, copy: Course) -> None:
+    # 题库为全站共享，不再复制题目到教师副本，只同步资料和阶段
     stage_map = {}
     for stage in source.stages:
         copy_stage = CourseStage(
@@ -59,8 +47,6 @@ def mirror_public_course_content(db: Session, source: Course, copy: Course) -> N
             if copy_stage is not None:
                 copy_mat.stage_id = copy_stage.id
         db.add(copy_mat)
-    for question in source.questions:
-        db.add(copy_question_to_course(question, copy.id))
 
 
 def sync_material_to_course_copies(db: Session, source: Material) -> None:
@@ -98,40 +84,6 @@ def sync_material_to_course_copies(db: Session, source: Material) -> None:
 def delete_synced_materials(db: Session, source_material_id: int) -> None:
     db.query(Material).filter(
         Material.source_material_id == source_material_id,
-    ).delete(synchronize_session=False)
-
-
-def sync_question_to_course_copies(db: Session, source: Question) -> None:
-    for course in teacher_course_copies(db, source.course_id):
-        mirrored = db.query(Question).filter(
-            Question.course_id == course.id,
-            Question.source_question_id == source.id,
-        ).first()
-        if mirrored is None:
-            db.add(copy_question_to_course(source, course.id))
-            continue
-        mirrored.type = source.type
-        mirrored.stem = source.stem
-        mirrored.options = list(source.options or [])
-        mirrored.answer = source.answer
-        mirrored.explanation = source.explanation
-        mirrored.tags = list(source.tags or [])
-
-
-def delete_synced_questions(db: Session, source_question_id: int) -> None:
-    mirrored_ids = [
-        row.id
-        for row in db.query(Question.id)
-        .filter(Question.source_question_id == source_question_id)
-        .all()
-    ]
-    if not mirrored_ids:
-        return
-    db.query(QuizAttempt).filter(
-        QuizAttempt.question_id.in_(mirrored_ids),
-    ).delete(synchronize_session=False)
-    db.query(Question).filter(
-        Question.id.in_(mirrored_ids),
     ).delete(synchronize_session=False)
 
 

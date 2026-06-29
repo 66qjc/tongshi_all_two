@@ -43,7 +43,12 @@ const entries = [
   <section class="hero">
     <div class="container hero-layout">
       <div class="hero-copy">
-        <div class="hero-badge">AI 通识教育课程平台</div>
+        <div class="hero-badge">
+          <span class="hero-badge-mark" aria-hidden="true">
+            <img src="/cjlu-logo.svg" alt="" class="hero-badge-logo" />
+          </span>
+          <span>中国计量大学 · AI 通识教育课程平台</span>
+        </div>
         <h1>
           <span>学 · 思 · 践 · 悟</span>
           <strong>AI 通识，从这里开始</strong>
@@ -102,6 +107,8 @@ const entries = [
 
 .hero-badge {
   display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   margin-bottom: var(--space-lg);
   padding: 0.32rem 0.72rem;
   color: rgba(255, 253, 248, 0.82);
@@ -111,6 +118,25 @@ const entries = [
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+.hero-badge-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  background: rgba(255, 253, 248, 0.86);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.hero-badge-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .hero-copy h1 {

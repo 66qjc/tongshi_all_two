@@ -114,12 +114,14 @@ class TestTeacherRefactor:
         assert data["code"] == 404
         assert "课程不存在" in data["message"]
 
-    def test_delete_course_with_child_data_returns_business_error(self, client, teacher_token):
+    def test_delete_course_with_child_data_cleans_up_related_data(self, client, db_session, teacher_token):
         resp = client.delete("/api/questions/courses/1", headers=auth_header(teacher_token))
         data = resp.json()
 
-        assert data["code"] == 400
-        assert "课程下仍有" in data["message"]
+        assert data["code"] == 0
+        assert db_session.query(Course).filter(Course.id == 1).first() is None
+        assert db_session.query(Class).filter(Class.course_id == 1).count() == 0
+        assert db_session.query(Question).filter(Question.course_id == 1).count() == 0
 
     def test_delete_empty_course_succeeds(self, client, teacher_token):
         create_data = client.post(
@@ -179,15 +181,18 @@ class TestTeacherRefactor:
         assert added.name == "共享公共课程"
         assert added.created_by == "T002"
         assert added.is_public is False
+        # 资料仍复制到教师副本
         assert db_session.query(Material).filter(Material.course_id == added_id).count() == 1
-        assert db_session.query(Question).filter(Question.course_id == added_id).count() == 1
+        # 全站共享题库：题目不再复制副本，副本课程名下没有题目
+        assert db_session.query(Question).filter(Question.course_id == added_id).count() == 0
 
         courses = client.get("/api/questions/courses", headers=auth_header(other_teacher_token)).json()["data"]
         copied = next(item for item in courses if item["id"] == added_id)
         assert copied["is_owner"] is True
         assert copied["is_public"] is False
         assert copied["material_count"] == 1
-        assert copied["question_count"] == 1
+        # 全站共享题库：题目数为全站题目总数（seed 1 题 + 公共课 1 题）
+        assert copied["question_count"] == db_session.query(Question).count()
 
     def test_add_public_course_records_source_ids(self, client, db_session, other_teacher_token):
         public_course = Course(name="公共来源课程", created_by="T001", is_public=True)
@@ -223,8 +228,8 @@ class TestTeacherRefactor:
         copied_material = db_session.query(Material).filter(Material.course_id == copy_id).one()
         assert copied_material.source_material_id == public_material.id
 
-        copied_question = db_session.query(Question).filter(Question.course_id == copy_id).one()
-        assert copied_question.source_question_id == public_question.id
+        # 全站共享题库：题目不再复制到教师副本，副本课程名下没有题目
+        assert db_session.query(Question).filter(Question.course_id == copy_id).count() == 0
 
     def test_admin_create_public_course_and_sync_material_to_teacher_copy(
         self,
@@ -266,7 +271,7 @@ class TestTeacherRefactor:
             assert mirrored is not None
             assert mirrored.title == "同步资料"
 
-    def test_admin_question_changes_sync_and_teacher_cannot_modify_synced_content(
+    def test_admin_question_changes_are_globally_visible_and_teacher_cannot_delete(
         self,
         client,
         db_session,
@@ -289,40 +294,52 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         source_question_id = question_resp.json()["data"]["id"]
-        mirrored = db_session.query(Question).filter(
-            Question.course_id == copy_id,
-            Question.source_question_id == source_question_id,
-        ).one()
-        assert mirrored.stem == "原题干"
+        # 全站共享题库：题目原地保存在公共课程，不再复制副本
+        source_q = db_session.query(Question).filter(Question.id == source_question_id).one()
+        assert source_q.course_id == public_course_id
+        assert source_q.source_question_id is None
 
+        # 教师在自己副本课程入口也能看到这道全站共享题
         list_resp = client.get(f"/api/questions?course_id={copy_id}", headers=auth_header(teacher_token))
-        listed = next(item for item in list_resp.json()["data"]["items"] if item["id"] == mirrored.id)
-        assert listed["source_question_id"] == source_question_id
-        assert listed["is_synced"] is True
+        listed = next(item for item in list_resp.json()["data"]["items"] if item["id"] == source_question_id)
+        assert listed["stem"] == "原题干"
+        assert listed["is_synced"] is False
 
+        # 管理员改题 → 全站可见最新内容（无需同步副本）
         update_resp = client.put(
             f"/api/admin/public-courses/{public_course_id}/questions/{source_question_id}",
             json={"type": "choice", "stem": "新题干", "options": ["A", "B"], "answer": "B", "explanation": "新解析"},
             headers=auth_header(admin_token),
         )
         assert update_resp.json()["code"] == 0
-        db_session.refresh(mirrored)
-        assert mirrored.stem == "新题干"
-        assert mirrored.answer == "B"
+        db_session.refresh(source_q)
+        assert source_q.stem == "新题干"
+        assert source_q.answer == "B"
 
+        # 维持现状：教师不能编辑非自己创建的题（题归属公共课程/管理员）
         teacher_edit = client.put(
-            f"/api/questions/{mirrored.id}",
+            f"/api/questions/{source_question_id}",
             json={"course_id": copy_id, "type": "choice", "stem": "教师改", "options": ["A"], "answer": "A", "explanation": ""},
             headers=auth_header(teacher_token),
         )
-        assert teacher_edit.json()["code"] == 400
-        assert "公共课程同步内容" in teacher_edit.json()["message"]
+        assert teacher_edit.json()["code"] == 404
+        db_session.refresh(source_q)
+        assert source_q.stem == "新题干"
 
-        teacher_delete = client.delete(f"/api/questions/{mirrored.id}", headers=auth_header(teacher_token))
-        assert teacher_delete.json()["code"] == 400
-        assert "公共课程同步内容" in teacher_delete.json()["message"]
+        # 维持现状：教师不能删除题目
+        teacher_delete = client.delete(f"/api/questions/{source_question_id}", headers=auth_header(teacher_token))
+        assert teacher_delete.json()["code"] == 403
+        assert "教师不能删除题目" in teacher_delete.json()["message"]
 
-    def test_admin_public_question_tags_are_normalized_and_synced_to_teacher_copy(
+        # 管理员删除 → 题目全站消失
+        admin_delete = client.delete(
+            f"/api/admin/public-courses/{public_course_id}/questions/{source_question_id}",
+            headers=auth_header(admin_token),
+        )
+        assert admin_delete.json()["code"] == 0
+        assert db_session.query(Question).filter(Question.id == source_question_id).first() is None
+
+    def test_admin_public_question_tags_are_normalized(
         self,
         client,
         db_session,
@@ -336,8 +353,8 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
-        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
-        copy_id = copy_resp.json()["data"]["id"]
+        # 教师添加该公共课，资料和阶段会复制副本；题目仍走全站共享
+        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
 
         create_resp = client.post(
             f"/api/admin/public-courses/{public_course_id}/questions",
@@ -353,13 +370,13 @@ class TestTeacherRefactor:
         )
 
         assert create_resp.json()["code"] == 0
+        # 标签去重、去空白
         assert create_resp.json()["data"]["tags"] == ["AI", "基础"]
         source_question_id = create_resp.json()["data"]["id"]
-        mirrored = db_session.query(Question).filter(
-            Question.course_id == copy_id,
-            Question.source_question_id == source_question_id,
-        ).one()
-        assert mirrored.tags == ["AI", "基础"]
+        # 全站共享题库：题目原地保存在公共课程，无副本
+        source_q = db_session.query(Question).filter(Question.id == source_question_id).one()
+        assert source_q.course_id == public_course_id
+        assert source_q.tags == ["AI", "基础"]
 
         update_resp = client.put(
             f"/api/admin/public-courses/{public_course_id}/questions/{source_question_id}",
@@ -376,8 +393,8 @@ class TestTeacherRefactor:
 
         assert update_resp.json()["code"] == 0
         assert update_resp.json()["data"]["tags"] == ["进阶", "基础"]
-        db_session.refresh(mirrored)
-        assert mirrored.tags == ["进阶", "基础"]
+        db_session.refresh(source_q)
+        assert source_q.tags == ["进阶", "基础"]
 
     def test_admin_import_public_questions_uses_selected_course_and_splits_tags(
         self,
@@ -393,8 +410,7 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
-        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
-        copy_id = copy_resp.json()["data"]["id"]
+        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         excel = _build_question_import_file(
             ["题型", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"],
             [["choice", "人工智能,基础|多选", "公共导入标签题", "A. 对|B. 错", "A", "解析"]],
@@ -410,16 +426,14 @@ class TestTeacherRefactor:
         assert data["code"] == 0
         assert data["data"]["success_count"] == 1
         assert data["data"]["fail_count"] == 0
+        # 全站共享题库：题目原地写入公共课程，不再产生副本
         source = db_session.query(Question).filter(
             Question.course_id == public_course_id,
             Question.stem == "公共导入标签题",
         ).one()
         assert source.tags == ["人工智能", "基础", "多选"]
-        mirrored = db_session.query(Question).filter(
-            Question.course_id == copy_id,
-            Question.source_question_id == source.id,
-        ).one()
-        assert mirrored.tags == ["人工智能", "基础", "多选"]
+        assert source.source_question_id is None
+        assert db_session.query(Question).filter(Question.source_question_id == source.id).count() == 0
 
     def test_admin_public_question_template_omits_course_name_column(self, client):
         admin_token = client.post(
@@ -436,7 +450,7 @@ class TestTeacherRefactor:
         assert headers == ["题型", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"]
         assert "课程名称" not in headers
 
-    def test_teacher_cannot_delete_synced_material(self, client, db_session, teacher_token):
+    def test_teacher_can_delete_synced_material_without_deleting_public_source(self, client, db_session, teacher_token):
         admin_token = client.post(
             "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
@@ -465,8 +479,9 @@ class TestTeacherRefactor:
         assert listed["is_synced"] is True
 
         delete_resp = client.delete(f"/api/materials/{mirrored.id}", headers=auth_header(teacher_token))
-        assert delete_resp.json()["code"] == 400
-        assert "公共课程同步内容" in delete_resp.json()["message"]
+        assert delete_resp.json()["code"] == 0
+        assert db_session.query(Material).filter(Material.id == mirrored.id).first() is None
+        assert db_session.query(Material).filter(Material.id == source_material_id).first() is not None
 
     def test_teacher_materials_list_excludes_public_source_materials(self, client, db_session, teacher_token):
         public_course = Course(name="Public Materials List Scope", created_by="admin", is_public=True)
@@ -500,7 +515,7 @@ class TestTeacherRefactor:
         assert matched[0]["source_material_id"] == public_material.id
         assert matched[0]["is_synced"] is True
 
-    def test_delete_public_course_unlinks_teacher_copy_content(self, client, db_session, teacher_token):
+    def test_delete_public_course_unlinks_teacher_copy_and_preserves_shared_questions(self, client, db_session, teacher_token):
         admin_token = client.post(
             "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
@@ -520,6 +535,7 @@ class TestTeacherRefactor:
             json={"type": "choice", "stem": "公共题目", "options": ["A", "B"], "answer": "A", "explanation": ""},
             headers=auth_header(admin_token),
         )
+        question_id = question_resp.json()["data"]["id"]
         copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = copy_resp.json()["data"]["id"]
 
@@ -535,11 +551,42 @@ class TestTeacherRefactor:
         copied_material = db_session.query(Material).filter(Material.course_id == copy_id).one()
         assert copied_material.source_material_id is None
 
-        copied_question = db_session.query(Question).filter(Question.course_id == copy_id).one()
-        assert copied_question.source_question_id is None
-
+        # 资料源仍按现状删除（mirror 资料分发未变）
         assert db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).first() is None
-        assert db_session.query(Question).filter(Question.id == question_resp.json()["data"]["id"]).first() is None
+        # 全站共享题库：公共课名下的题不会被级联删除，而是转挂到其他课程保留在全站
+        surviving = db_session.query(Question).filter(Question.id == question_id).first()
+        assert surviving is not None
+        assert surviving.course_id != public_course_id
+
+    def test_teacher_can_delete_owned_course_copy_without_affecting_public_source(self, client, db_session, teacher_token):
+        admin_token = client.post(
+            "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
+        course_resp = client.post(
+            "/api/admin/public-courses",
+            json={"name": "课程副本删除测试"},
+            headers=auth_header(admin_token),
+        )
+        public_course_id = course_resp.json()["data"]["id"]
+        pdf_file_id = make_stored_file(db_session)
+        material_resp = client.post(
+            f"/api/admin/public-courses/{public_course_id}/materials",
+            json={"type": "pdf", "title": "副本资料", "url": "/uploads/delete-copy.pdf", "size": "1 MB", "file_id": pdf_file_id},
+            headers=auth_header(admin_token),
+        )
+        question_resp = client.post(
+            f"/api/admin/public-courses/{public_course_id}/questions",
+            json={"type": "choice", "stem": "副本题目", "options": ["A", "B"], "answer": "A", "explanation": ""},
+            headers=auth_header(admin_token),
+        )
+        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        copy_id = copy_resp.json()["data"]["id"]
+
+        delete_resp = client.delete(f"/api/questions/courses/{copy_id}", headers=auth_header(teacher_token))
+        assert delete_resp.json()["code"] == 0
+        assert db_session.query(Course).filter(Course.id == copy_id).first() is None
+        assert db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).first() is not None
+        assert db_session.query(Question).filter(Question.id == question_resp.json()["data"]["id"]).first() is not None
+        assert db_session.query(Course).filter(Course.id == public_course_id).first() is not None
 
     def test_student_without_class_gets_empty_course_hint(self, client, db_session):
         student = User(

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { createQuestion, deleteQuestion, downloadQuestionTemplate, getQuestions, importQuestions, updateQuestion, batchDeleteQuestions, type Question } from '@/api/question'
+import { ElMessage } from 'element-plus'
+import { createQuestion, downloadQuestionTemplate, getQuestions, importQuestions, updateQuestion, type Question } from '@/api/question'
 import { getCourses, type Course } from '@/api/course'
 
 const courses = ref<Course[]>([])
 const writableCourses = ref<Course[]>([])
 const questions = ref<Question[]>([])
 const loading = ref(true)
-const filterCourse = ref<number | ''>('')
+// 全站共享题库：不再按课程筛选题目（后端忽略 course_id 过滤）
 const filterType = ref<'' | 'choice' | 'fill' | 'multi_choice'>('')
 const filterKeyword = ref('')
 const filterTag = ref('')
@@ -17,7 +17,6 @@ const pageSize = ref(20)
 const total = ref(0)
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
-const batchDeleting = ref(false)
 const importDialogVisible = ref(false)
 const importFile = ref<File | null>(null)
 const importInput = ref<HTMLInputElement | null>(null)
@@ -25,7 +24,6 @@ const importing = ref(false)
 const importErrors = ref<{ row: number; reason: string }[]>([])
 const importSkips = ref<{ row: number; reason: string }[]>([])
 const importErrorDialogVisible = ref(false)
-const selectedQuestionIds = ref<number[]>([])
 const importFailureReason = ref('')
 
 const form = reactive({
@@ -54,7 +52,6 @@ async function loadQuestions() {
   loading.value = true
   try {
     const result = await getQuestions({
-      course_id: filterCourse.value || undefined,
       type: filterType.value || undefined,
       keyword: filterKeyword.value || undefined,
       page: page.value,
@@ -70,7 +67,6 @@ async function loadQuestions() {
 }
 
 function resetFilter() {
-  filterCourse.value = ''
   filterType.value = ''
   filterKeyword.value = ''
   filterTag.value = ''
@@ -85,8 +81,9 @@ function handlePageChange(newPage: number) {
 
 function openNew() {
   editingId.value = null
+  const defaultCourse = writableCourses.value.length === 1 ? writableCourses.value[0]?.id : undefined
   Object.assign(form, {
-    course_id: filterCourse.value || '',
+    course_id: defaultCourse ?? '',
     type: 'choice',
     stem: '',
     options: ['', '', '', ''],
@@ -143,58 +140,6 @@ async function handleSave() {
     await loadQuestions()
   } catch {
     ElMessage.error('保存失败，请检查课程和题目内容')
-  }
-}
-
-async function handleDelete(row: Question) {
-  try {
-    await ElMessageBox.confirm('确定删除该题目？删除后不可恢复。', '确认删除', {
-      type: 'warning',
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-    })
-    await deleteQuestion(row.id)
-    questions.value = questions.value.filter(item => item.id !== row.id)
-    ElMessage.success('已删除')
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error('删除失败，请稍后重试')
-  }
-}
-
-function handleSelectionChange(rows: Question[]) {
-  selectedQuestionIds.value = rows.map(row => row.id)
-}
-
-function selectableQuestion(row: Question) {
-  return !row.is_synced
-}
-
-async function handleBatchDelete() {
-  if (selectedQuestionIds.value.length === 0) return
-  try {
-    await ElMessageBox.confirm(
-      `确定删除选中的 ${selectedQuestionIds.value.length} 道题目？删除后不可恢复。`,
-      '确认批量删除',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
-    )
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') ElMessage.error('操作异常')
-    return
-  }
-  batchDeleting.value = true
-  try {
-    const result = await batchDeleteQuestions(selectedQuestionIds.value)
-    let msg = `成功删除 ${result.deleted_count} 道题目`
-    if (result.failed_ids.length > 0) {
-      msg += `，${result.failed_ids.length} 道删除失败（可能为同步题目或已不存在）`
-    }
-    ElMessage.success(msg)
-    selectedQuestionIds.value = []
-    await loadQuestions()
-  } catch {
-    ElMessage.error('批量删除失败，请稍后重试')
-  } finally {
-    batchDeleting.value = false
   }
 }
 
@@ -277,7 +222,6 @@ onMounted(async () => {
     <div class="page-header">
       <h1>题库管理</h1>
       <div class="header-actions">
-        <el-button type="danger" round :disabled="selectedQuestionIds.length === 0" :loading="batchDeleting" @click="handleBatchDelete">删除选中 ({{ selectedQuestionIds.length }})</el-button>
         <el-button round @click="openImport">导入题目</el-button>
         <el-button type="primary" round @click="openNew">新增题目</el-button>
       </div>
@@ -285,9 +229,6 @@ onMounted(async () => {
 
     <div class="filter-bar">
       <el-input v-model="filterKeyword" placeholder="搜索题干" clearable style="width: 200px" @keyup.enter="loadQuestions" @clear="loadQuestions" />
-      <el-select v-model="filterCourse" placeholder="全部课程" clearable style="width: 220px" @change="page = 1; loadQuestions()">
-        <el-option v-for="course in writableCourses" :key="course.id" :label="course.name" :value="course.id" />
-      </el-select>
       <el-select v-model="filterType" placeholder="全部题型" clearable style="width: 140px" @change="page = 1; loadQuestions()">
         <el-option label="选择题" value="choice" />
         <el-option label="多选题" value="multi_choice" />
@@ -295,18 +236,17 @@ onMounted(async () => {
       </el-select>
       <el-input v-model="filterTag" placeholder="搜索标签" clearable style="width: 160px" @keyup.enter="page = 1; loadQuestions()" @clear="page = 1; loadQuestions()" />
       <el-button @click="resetFilter">重置</el-button>
-      <span class="filter-count">共 {{ total }} 题</span>
+      <span class="filter-count">全站题库 共 {{ total }} 题</span>
     </div>
 
-    <el-table :data="questions" stripe style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
-      <el-table-column type="selection" width="50" :selectable="selectableQuestion" />
+    <el-table :data="questions" stripe style="width: 100%" v-loading="loading">
       <el-table-column type="index" label="序号" width="70" />
       <el-table-column label="题干" min-width="260">
         <template #default="{ row }">
           <span>{{ row.stem.length > 48 ? row.stem.slice(0, 48) + '…' : row.stem }}</span>
           <span v-if="row.type === 'multi_choice'" class="multi-tag">（多选题）</span>
-          <el-tag v-if="row.is_synced" class="synced-tag" size="small" type="info" effect="plain">
-            公共同步
+          <el-tag class="scope-tag" :type="row.is_synced ? 'info' : 'success'" size="small" effect="plain">
+            {{ row.is_synced ? '公共' : '私有' }}
           </el-tag>
         </template>
       </el-table-column>
@@ -328,9 +268,15 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="!row.is_synced" text size="small" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="!row.is_synced" type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
-          <span v-else class="readonly-text">只读</span>
+          <el-button
+            text
+            size="small"
+            :disabled="row.is_owner === false"
+            :title="row.is_owner === false ? '该题由其他老师创建，请联系管理员修改' : ''"
+            @click="openEdit(row)"
+          >
+            编辑
+          </el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -542,7 +488,7 @@ onMounted(async () => {
   text-align: center;
 }
 
-.synced-tag,
+.scope-tag,
 .multi-tag {
   margin-left: var(--space-sm);
 }

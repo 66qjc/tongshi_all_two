@@ -158,7 +158,7 @@ async function handleSubmit() {
     let reportUrl = editingProject.value?.report_url || ''
     let reportFileId = editingProject.value?.report_file_id
     const uploadedImageUrls = [...existingImageUrls.value.map(img => img.url)]
-    const uploadedImageFileIds: (number | null)[] = [...existingImageUrls.value.map(img => img.file_id ?? null)]
+    const uploadedImageFileIds: number[] = [...existingImageUrls.value.map(img => img.file_id).filter((file_id): file_id is number => file_id !== undefined)]
 
     if (reportFile.value) {
       const result = await uploadFile(reportFile.value, 'project_report')

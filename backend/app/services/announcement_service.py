@@ -106,9 +106,9 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
     if len(classes) != len(set(class_ids)):
         raise BusinessException(400, "目标班级必须属于所选课程")
 
-    questions = db.query(Question).filter(Question.id.in_(question_ids), Question.course_id == course_id).all()
+    questions = db.query(Question).filter(Question.id.in_(question_ids)).all()
     if len(questions) != len(set(question_ids)):
-        raise BusinessException(400, "题目必须属于所选课程")
+        raise BusinessException(400, "题目必须来自全站题库")
 
     # 前端传来的时间为北京时间 naive 字符串，转为 UTC 后再存储
     def _to_utc(raw: datetime | str | None) -> datetime | None:

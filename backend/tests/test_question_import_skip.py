@@ -81,15 +81,16 @@ class TestImportDuplicateDetection:
         assert len(result["skips"]) == 1
         assert "1+1=?" in result["skips"][0]["reason"]
 
-    def test_same_stem_different_course_not_skipped(self, db_session):
-        """不同课程下的相同题干不应被跳过（不同课程允许相同题目）。"""
+    def test_same_stem_different_course_is_skipped_in_shared_bank(self, db_session):
+        """全站共享题库：不同课程下导入相同题目也会被全站查重拦截并跳过。"""
         rows = [
             {"题型": "choice", "课程名称": "其它课程", "题干": "1+1=?",
              "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": ""},
         ]
         result = import_questions_from_excel(db_session, rows, "T002")
-        assert result["success_count"] == 1
-        assert result["skip_count"] == 0
+        assert result["success_count"] == 0
+        assert result["skip_count"] == 1
+        assert "已存在相同题目" in result["skips"][0]["reason"]
 
     def test_import_via_api_skips_duplicates(self, client, teacher_token):
         """通过 API 上传 Excel，重复题目应返回 skip_count。"""

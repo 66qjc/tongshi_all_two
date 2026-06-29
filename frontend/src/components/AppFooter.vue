@@ -9,30 +9,14 @@ const currentYear = new Date().getFullYear()
         <!-- Brand -->
         <div class="footer-brand">
           <div class="footer-logo">
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-              <defs>
-                <radialGradient id="inkGradFooter" cx="40%" cy="38%" r="60%">
-                  <stop offset="0%" stop-color="#3d2e1a"/>
-                  <stop offset="60%" stop-color="#1a1208"/>
-                  <stop offset="100%" stop-color="#0d0a05"/>
-                </radialGradient>
-              </defs>
-              <!-- 外环描边（金色） -->
-              <circle cx="18" cy="18" r="17" fill="url(#inkGradFooter)" stroke="#c9a84c" stroke-width="1.2" opacity="0.9"/>
-              <!-- 内圈装饰光晕 -->
-              <circle cx="18" cy="18" r="14.5" fill="none" stroke="rgba(201,168,76,0.18)" stroke-width="0.6"/>
-              <!-- 汉字 -->
-              <text
-                x="18" y="24"
-                text-anchor="middle"
-                font-size="16"
-                font-weight="600"
-                font-family="'STKaiti','KaiTi','FangSong','仿宋',serif"
-                fill="rgba(255,255,255,0.95)"
-                letter-spacing="0"
-              >学</text>
-            </svg>
-            <span>学 · 思 · 践 · 悟</span>
+            <img
+              src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+              alt="中国计量大学 AI 通识课平台标识"
+              width="36"
+              height="36"
+              class="footer-logo-icon"
+            />
+            <span>深度学思践行</span>
           </div>
           <p class="footer-desc">AI 通识课教学平台，助力每一位理工科新生探索人工智能的无限可能。</p>
         </div>
@@ -40,10 +24,10 @@ const currentYear = new Date().getFullYear()
         <!-- Quick Links -->
         <div class="footer-links">
           <h4>课程模块</h4>
-          <router-link to="/learn">学 · 积累知识</router-link>
-          <router-link to="/practice">思 · 深化理解</router-link>
-          <router-link to="/create">践 · 动手创作</router-link>
-          <router-link to="/act">悟 · 感悟价值</router-link>
+          <router-link to="/learn">深度学 · 积累知识</router-link>
+          <router-link to="/practice">深度思 · 深化理解</router-link>
+          <router-link to="/create">深度践 · 动手创作</router-link>
+          <router-link to="/act">深度悟 · 感悟价值</router-link>
         </div>
 
         <div class="footer-links">
@@ -62,7 +46,7 @@ const currentYear = new Date().getFullYear()
       </div>
 
       <div class="footer-bottom">
-        <p>&copy; {{ currentYear }} 学 · 思 · 践 · 悟 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
+        <p>&copy; {{ currentYear }} 深度学思践行 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
       </div>
     </div>
   </footer>
@@ -89,6 +73,13 @@ const currentYear = new Date().getFullYear()
   align-items: center;
   gap: var(--space-sm);
   margin-bottom: var(--space-md);
+}
+
+.footer-logo-icon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
 }
 
 .footer-logo span {

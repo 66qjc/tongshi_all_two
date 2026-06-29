@@ -364,3 +364,69 @@ def test_ensure_schema_compatibility_adds_project_course_id():
     columns = {column["name"] for column in inspector.get_columns("projects")}
 
     assert "course_id" in columns
+
+
+def test_ensure_schema_compatibility_creates_question_contribution_logs():
+    """兼容脚本应自动创建题库贡献记录表。"""
+    engine = create_engine("sqlite:///:memory:")
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    columns = {column["name"] for column in inspector.get_columns("question_contribution_logs")}
+
+    assert "question_contribution_logs" in table_names
+    assert {
+        "id",
+        "public_course_id",
+        "public_course_name",
+        "operator_id",
+        "operator_name",
+        "operator_role",
+        "action",
+        "question_count",
+        "created_at",
+    }.issubset(columns)
+
+
+def test_ensure_schema_compatibility_creates_material_previews_table():
+    """兼容脚本应自动创建 material_previews 资料预览元数据表。"""
+    from sqlalchemy.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE materials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                course_id INTEGER,
+                type VARCHAR(16) NOT NULL,
+                title VARCHAR(128) NOT NULL,
+                url VARCHAR(512) DEFAULT '',
+                file_id INTEGER
+            )
+        """)
+
+    ensure_schema_compatibility(engine)
+
+    inspector = inspect(engine)
+    assert "material_previews" in inspector.get_table_names()
+    columns = {col["name"] for col in inspector.get_columns("material_previews")}
+    assert {
+        "id",
+        "material_id",
+        "status",
+        "cover_file_id",
+        "summary",
+        "page_count",
+        "duration_seconds",
+        "resolution",
+        "error_message",
+        "created_at",
+        "updated_at",
+    }.issubset(columns)

@@ -4,8 +4,9 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Class, Course, CourseStage, StudentClassEnrollment
+from app.models.entities import Class, Course, CourseStage, Question, StudentClassEnrollment
 from app.schemas.common import AuthUser
+from app.services.material_service import format_material_preview
 from app.services.question_service import list_courses
 
 
@@ -25,7 +26,8 @@ def _format_course(db: Session, course: Course, current_user: AuthUser, class_co
         "is_public": bool(course.is_public),
         "is_owner": course.created_by == current_user.id,
         "material_count": len(course.materials),
-        "question_count": len(course.questions),
+        # 全站共享题库：题目数为全站题目总数
+        "question_count": db.query(Question).count(),
         "class_count": class_count,
     }
 
@@ -90,6 +92,7 @@ def _format_material(material):
         "source_material_id": material.source_material_id,
         "is_synced": bool(material.source_material_id),
         "stage_id": material.stage_id,
+        "preview": format_material_preview(material.preview),
     }
 
 

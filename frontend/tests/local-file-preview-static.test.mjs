@@ -17,17 +17,19 @@ const teacherReviews = read('src/views/teacher/TeacherReviews.vue')
 const fileUrl = read('src/utils/url.ts')
 
 assert.match(fileUrl, /url\.startsWith\('\/api\/files\/'\)/, '文件 URL 工具应继续识别统一文件入口。')
+assert.match(fileUrl, /url\.startsWith\('\/api\/materials\/'\)/, '资料专用文件入口也应追加 URL token。')
 assert.match(fileUrl, /token=/, '统一文件入口应为新窗口、iframe、video 等场景追加 URL token。')
 
 assert.doesNotMatch(pdfPreview, /<iframe\b/, '公共 PDF 预览组件不应再依赖 iframe 内嵌预览。')
 assert.match(pdfPreview, /openInNewWindow/, '公共 PDF 预览组件应保留新窗口查看入口。')
 assert.match(pdfPreview, /新窗口查看/, '公共 PDF 预览组件应使用清晰的新窗口查看文案。')
 
-assert.match(courseDetail, /target="_blank"/, '学生课程资料应通过新窗口打开文件。')
-assert.match(courseDetail, /item\.file_id\s*\?\s*`\/api\/files\/\$\{item\.file_id\}`\s*:\s*item\.url/, '学生课程资料应优先使用 file_id 统一入口。')
+assert.match(courseDetail, /MaterialPreviewDialog/, '学生课程资料应通过站内预览弹窗打开。')
 
-assert.match(teacherMaterials, /window\.open\(url,\s*'_blank'/, '教师资料管理应通过新窗口打开文件。')
-assert.match(teacherMaterials, /row\.file_id\s*\?\s*`\/api\/files\/\$\{row\.file_id\}`\s*:\s*row\.url/, '教师资料管理应优先使用 file_id 统一入口。')
+const previewDialog = read('src/components/common/MaterialPreviewDialog.vue')
+assert.match(previewDialog, /getMaterialFileUrl/, '预览弹窗应使用资料专用文件接口。')
+
+assert.match(teacherMaterials, /MaterialPreviewDialog/, '教师资料管理应通过站内预览弹窗打开。')
 
 assert.match(adminPublicCourses, /PdfPreviewDialog/, '管理员公共课程资料应复用公共预览入口。')
 assert.match(adminPublicCourses, /previewFileId\.value\s*=\s*row\.file_id/, '管理员公共课程资料应优先传入 file_id。')

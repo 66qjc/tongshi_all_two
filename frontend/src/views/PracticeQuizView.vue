@@ -260,6 +260,8 @@ watch(allDone, (done) => {
 /** 保存当前答题草稿到 localStorage */
 function persistDraft() {
   const qs = mockQuestions.value
+  const currentCourseId = courseId.value
+  if (!currentCourseId) return
   const answeredIds: number[] = []
   const answersMap: Record<number, string> = {}
   const resultsMap: Record<number, boolean> = {}
@@ -273,7 +275,7 @@ function persistDraft() {
     }
   })
   saveQuizDraft({
-    courseId: courseId.value,
+    courseId: currentCourseId,
     currentQuestionId: qs[currentIndex.value]?.id ?? null,
     answeredQuestionIds: answeredIds,
     answers: answersMap,

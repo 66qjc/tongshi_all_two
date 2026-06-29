@@ -2,10 +2,12 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { createMaterial, deleteMaterial, getAllMaterials, type Material } from '@/api/material'
+import { createMaterial, deleteMaterial, getAllMaterials, rebuildMaterialPreview, type Material } from '@/api/material'
 import { getCourses, type Course } from '@/api/course'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
 import { resolveFileUrl } from '@/utils/url'
+import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
+import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 
 const route = useRoute()
 const materials = ref<Material[]>([])
@@ -94,6 +96,24 @@ function openMaterial(row: Material) {
   window.open(url, '_blank', 'noopener')
 }
 
+const previewVisible = ref(false)
+const selectedMaterial = ref<Material | null>(null)
+
+function previewMaterial(row: Material) {
+  selectedMaterial.value = row
+  previewVisible.value = true
+}
+
+async function handleRebuildPreview(row: Material) {
+  try {
+    await rebuildMaterialPreview(row.id)
+    ElMessage.success('预览已重新生成')
+    await loadMaterials()
+  } catch {
+    ElMessage.error('预览重建失败，请稍后重试')
+  }
+}
+
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   form.file = input.files?.[0] || null
@@ -133,7 +153,7 @@ async function handleUpload() {
 
 async function handleDelete(row: Material) {
   try {
-    await ElMessageBox.confirm(`确定删除资料"${row.title}"？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除资料"${row.title}"？这只会删除你当前课程里的这份资料，不会影响公共课程源内容。`, '删除确认', { type: 'warning' })
     await deleteMaterial(row.id)
     materials.value = materials.value.filter(item => item.id !== row.id)
     ElMessage.success('已删除')
@@ -174,32 +194,17 @@ watch(filterCourse, () => {
       <span class="filter-count">共 {{ total }} 条资料</span>
     </div>
 
-    <el-table :data="materials" stripe style="width: 100%" v-loading="loading">
-      <el-table-column prop="title" label="资料名称" min-width="220">
-        <template #default="{ row }">
-          <span>{{ row.title }}</span>
-          <el-tag v-if="row.is_synced" class="synced-tag" size="small" type="info" effect="plain">
-            公共同步
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="course_name" label="所属课程" min-width="180" />
-      <el-table-column label="类型" width="100">
-        <template #default="{ row }">
-          <el-tag :type="row.type === 'video' ? '' : 'success'" size="small" effect="plain">
-            {{ row.type === 'video' ? '视频' : 'PDF' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="size" label="大小" width="110" />
-      <el-table-column prop="date" label="上传时间" width="130" />
-      <el-table-column label="操作" width="140" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" size="small" @click="openMaterial(row)">查看</el-button>
-          <el-button v-if="!row.is_synced" type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div v-loading="loading" class="materials-rich-list">
+      <MaterialRichCard
+        v-for="row in materials"
+        :key="row.id"
+        :material="row"
+        manage
+        @preview="previewMaterial"
+        @delete="handleDelete"
+        @rebuild="handleRebuildPreview"
+      />
+    </div>
 
     <div v-if="!loading && materials.length === 0" class="empty-state">
       暂无资料，点击"上传资料"添加视频课件或 PDF 讲义。
@@ -248,6 +253,8 @@ watch(filterCourse, () => {
         <el-button type="primary" :loading="uploading" @click="handleUpload">确认上传</el-button>
       </template>
     </el-dialog>
+
+    <MaterialPreviewDialog v-model:visible="previewVisible" :material="selectedMaterial" />
   </div>
 </template>
 
@@ -284,8 +291,15 @@ watch(filterCourse, () => {
   text-align: center;
 }
 
-.synced-tag {
+.scope-tag {
   margin-left: var(--space-sm);
+}
+
+.materials-rich-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: var(--space-md);
+  min-height: 240px;
 }
 
 .form-group {

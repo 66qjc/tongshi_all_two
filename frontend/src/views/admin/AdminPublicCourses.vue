@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Material } from '../../api/material'
 import type { Question } from '../../api/question'
@@ -18,6 +18,7 @@ import {
   getAdminPublicCourseStages,
   getAdminPublicCourses,
   getAdminPublicMaterials,
+  getAdminPublicQuestionContributions,
   getAdminPublicQuestions,
   importAdminPublicQuestions,
   updateAdminPublicCourse,
@@ -26,6 +27,7 @@ import {
   updateAdminPublicQuestion,
   type AdminCourseStage,
   type AdminPublicCourse,
+  type AdminQuestionContributionLog,
 } from '../../api/adminPublicCourse'
 
 function formatFileSize(bytes: number) {
@@ -42,7 +44,7 @@ function formatFileSize(bytes: number) {
 
 const courses = ref<AdminPublicCourse[]>([])
 const selectedCourse = ref<AdminPublicCourse | null>(null)
-const activeTab = ref<'stages' | 'materials' | 'questions'>('stages')
+const activeTab = ref<'stages' | 'materials' | 'questions' | 'contributions'>('stages')
 
 const courseLoading = ref(false)
 const contentLoading = ref(false)
@@ -58,6 +60,12 @@ const newStageName = ref('')
 const newStageOrder = ref(0)
 const savingStage = ref(false)
 const defaultStageId = ref<number | null>(null)
+
+const contributionLogs = ref<AdminQuestionContributionLog[]>([])
+const contributionLoading = ref(false)
+const contributionPage = ref(1)
+const contributionPageSize = ref(10)
+const contributionTotal = ref(0)
 
 const showCourseDialog = ref(false)
 const editingCourseId = ref<number | null>(null)
@@ -138,6 +146,8 @@ async function fetchContent() {
     materials.value = []
     questions.value = []
     stages.value = []
+    contributionLogs.value = []
+    contributionTotal.value = 0
     return
   }
   contentLoading.value = true
@@ -152,6 +162,9 @@ async function fetchContent() {
     materials.value = materialData || []
     questions.value = questionData || []
     stages.value = stageData || []
+    if (activeTab.value === 'contributions') {
+      await fetchContributionLogs()
+    }
   } catch (err: any) {
     ElMessage.error(err?.message || '加载课程内容失败')
   } finally {
@@ -160,8 +173,34 @@ async function fetchContent() {
   }
 }
 
+async function fetchContributionLogs() {
+  if (!selectedCourse.value) return
+  contributionLoading.value = true
+  try {
+    const result = await getAdminPublicQuestionContributions(
+      selectedCourse.value.id,
+      contributionPage.value,
+      contributionPageSize.value,
+    )
+    contributionLogs.value = result.items || []
+    contributionTotal.value = result.total || 0
+  } catch (err: any) {
+    ElMessage.error(err?.message || '加载题库贡献记录失败')
+  } finally {
+    contributionLoading.value = false
+  }
+}
+
+watch(activeTab, async (tab) => {
+  if (tab === 'contributions' && selectedCourse.value) {
+    contributionPage.value = 1
+    await fetchContributionLogs()
+  }
+})
+
 function selectCourse(course: AdminPublicCourse) {
   selectedCourse.value = course
+  activeTab.value = 'stages'
   fetchContent()
 }
 
@@ -494,6 +533,17 @@ async function handleDownloadTemplate() {
   }
 }
 
+async function handleContributionPageChange(page: number) {
+  contributionPage.value = page
+  await fetchContributionLogs()
+}
+
+async function handleContributionPageSizeChange(pageSize: number) {
+  contributionPageSize.value = pageSize
+  contributionPage.value = 1
+  await fetchContributionLogs()
+}
+
 function handleImportFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   importFile.value = input.files?.[0] || null
@@ -712,6 +762,44 @@ onMounted(() => fetchCourses())
               </el-table>
             </el-tab-pane>
 
+            <el-tab-pane label="题库贡献" name="contributions">
+              <div class="tab-toolbar">
+                <span class="toolbar-tip">记录教师和管理员在公共题库中的新增与导入批次</span>
+              </div>
+              <el-table :data="contributionLogs" v-loading="contributionLoading" border stripe style="width: 100%">
+                <el-table-column prop="created_at" label="时间" width="180">
+                  <template #default="{ row }">
+                    {{ row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="operator_name" label="操作人" width="120" />
+                <el-table-column prop="operator_role" label="角色" width="90" />
+                <el-table-column prop="action" label="操作" width="100">
+                  <template #default="{ row }">
+                    {{ row.action === 'create' ? '新增' : row.action === 'import' ? '导入' : row.action }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="question_count" label="题数" width="80" align="center" />
+                <el-table-column prop="public_course_name" label="公共课程快照" min-width="180" show-overflow-tooltip />
+                <el-table-column prop="operator_id" label="工号" width="120" />
+                <template #empty>
+                  <el-empty description="暂无题库贡献记录" />
+                </template>
+              </el-table>
+              <div v-if="contributionTotal > contributionPageSize" class="pagination-wrap">
+                <el-pagination
+                  v-model:current-page="contributionPage"
+                  v-model:page-size="contributionPageSize"
+                  :total="contributionTotal"
+                  layout="total, sizes, prev, pager, next"
+                  :page-sizes="[10, 20, 50]"
+                  background
+                  @current-change="handleContributionPageChange"
+                  @size-change="handleContributionPageSizeChange"
+                />
+              </div>
+            </el-tab-pane>
+
           </el-tabs>
         </template>
         <el-empty v-else description="请先新建或选择一个公共课程" />
@@ -927,6 +1015,18 @@ onMounted(() => fetchCourses())
   display: flex;
   justify-content: flex-end;
   margin: 4px 0 12px;
+}
+
+.toolbar-tip {
+  margin-right: auto;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .upload-zone {

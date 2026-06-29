@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Course, Material, Question, StudentClassEnrollment
 from app.services.public_course_sync_service import mirror_public_course_content
+from app.services.question_bank_service import (
+    count_all_questions,
+    find_duplicate_question,
+)
+from app.services.question_contribution_service import (
+    record_question_contribution,
+)
 
 
 def list_questions(
@@ -20,11 +27,9 @@ def list_questions(
     page: int | None = None,
     page_size: int | None = None,
 ):
+    # 全站共享题库：所有课程看到的是同一套题，不再按 course_id 过滤。
+    # course_id 入参保留兼容旧调用，但不参与过滤。
     query = db.query(Question).join(Course, Course.id == Question.course_id)
-    if teacher_id is not None:
-        query = query.filter(_course_access_filter(teacher_id))
-    if course_id is not None:
-        query = query.filter(Question.course_id == course_id)
     if type_ is not None:
         query = query.filter(Question.type == type_)
     if keyword:
@@ -78,11 +83,26 @@ def _course_access_filter(teacher_id: str):
 
 
 def create_question(db: Session, data: dict, teacher_id: str):
-    if not _get_owned_course(db, data["course_id"], teacher_id):
+    course = _get_owned_course(db, data["course_id"], teacher_id)
+    if not course:
         raise BusinessException(404, "课程不存在")
     data["tags"] = _normalize_tags(data.get("tags"))
+    # 全站共享题库：查重范围为全站所有题目
+    duplicate = find_duplicate_question(
+        db,
+        data["type"],
+        data["stem"],
+        data.get("options"),
+        data["answer"],
+    )
+    if duplicate:
+        raise BusinessException(400, "题库中已存在相同题目")
+    # 题目原地保存，course_id 保留为所选课程，靠全站读取实现共享
     q = Question(**data)
     db.add(q)
+    db.flush()
+    if course.is_public:
+        record_question_contribution(db, course, teacher_id, "teacher", "create", 1)
     db.commit()
     db.refresh(q)
     return q
@@ -92,11 +112,26 @@ def update_question(db: Session, question_id: int, data: dict, teacher_id: str):
     q = get_question(db, question_id, teacher_id)
     if not q:
         return None
-    if q.source_question_id is not None:
-        raise BusinessException(400, "公共课程同步内容不能修改")
     if "course_id" in data and data["course_id"] is not None:
         if not _get_owned_course(db, data["course_id"], teacher_id):
             raise BusinessException(404, "课程不存在")
+    # 全站共享题库：编辑后的内容在全站范围内查重，排除自身
+    merged_data = {
+        "type": data.get("type", q.type),
+        "stem": data.get("stem", q.stem),
+        "options": data.get("options", list(q.options or [])),
+        "answer": data.get("answer", q.answer),
+    }
+    duplicate = find_duplicate_question(
+        db,
+        merged_data["type"],
+        merged_data["stem"],
+        merged_data["options"],
+        merged_data["answer"],
+        exclude_question_id=q.id,
+    )
+    if duplicate:
+        raise BusinessException(400, "题库中已存在相同题目")
     for key, value in data.items():
         if value is not None and hasattr(q, key):
             setattr(q, key, _normalize_tags(value) if key == "tags" else value)
@@ -128,7 +163,11 @@ def delete_question(db: Session, question_id: int, teacher_id: str):
 
 
 def get_course_questions(db: Session, course_id: int):
-    return db.query(Question).filter(Question.course_id == course_id).order_by(Question.id).all()
+    # 全站共享题库：任意课程入口都返回全站同一套题（学生答题/作业按 ids 再过滤）
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        return []
+    return db.query(Question).order_by(Question.id).all()
 
 
 def can_view_course_questions(db: Session, course_id: int, user_id: str, role: str) -> bool:
@@ -217,18 +256,35 @@ def delete_course(db: Session, course_id: int, teacher_id: str):
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
-    blockers = []
-    if db.query(Material).filter(Material.course_id == course_id).count() > 0:
-        blockers.append("资料")
-    if db.query(Question).filter(Question.course_id == course_id).count() > 0:
-        blockers.append("题目")
-    if db.query(Class).filter(Class.course_id == course_id).count() > 0:
-        blockers.append("班级")
-    if blockers:
-        raise BusinessException(400, f"课程下仍有{'、'.join(blockers)}，不能直接删除")
+    from app.models.entities import Announcement, AnnouncementClass, AnnouncementRead, TaskCompletion
+    announcement_ids = [row.id for row in db.query(Announcement.id).filter(Announcement.course_id == course_id).all()]
+
+    if announcement_ids:
+        db.query(AnnouncementClass).filter(AnnouncementClass.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
+        db.query(AnnouncementRead).filter(AnnouncementRead.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
+        db.query(TaskCompletion).filter(TaskCompletion.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
+        db.query(Announcement).filter(Announcement.id.in_(announcement_ids)).delete(synchronize_session=False)
+    # 全站共享题库：课程名下的题目转挂到其他课程，避免随课程级联删除而误删全站共享题
+    _reattach_questions_to_other_course(db, course)
     db.delete(course)
     db.commit()
     return True
+
+
+def _reattach_questions_to_other_course(db: Session, course: Course) -> None:
+    """删除课程前，把其名下题目转挂到另一门课程，保住全站共享题。"""
+    questions = db.query(Question).filter(Question.course_id == course.id).all()
+    if not questions:
+        return
+    target = db.query(Course).filter(Course.id != course.id).order_by(
+        Course.is_public.desc(),
+        Course.id.asc(),
+    ).first()
+    if target is None:
+        return
+    for question in questions:
+        question.course_id = target.id
+    db.flush()
 
 
 def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None):
@@ -239,7 +295,8 @@ def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None
     if not course:
         return None
     material_count = db.query(Material).filter(Material.course_id == course_id).count()
-    question_count = db.query(Question).filter(Question.course_id == course_id).count()
+    # 全站共享题库：题目数为全站题目总数
+    question_count = count_all_questions(db)
     class_count = db.query(Class).filter(Class.course_id == course_id).count()
     return course, material_count, question_count, class_count
 
@@ -250,6 +307,7 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
     skip_count = 0
     errors = []
     skips = []
+    contribution_counts: dict[int, tuple[Course, int]] = {}
     for idx, row in enumerate(rows, start=2):
         try:
             course_name = str(_row_value(row, "课程名称", "课程", "course", "course_name")).strip()
@@ -272,21 +330,31 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
                 raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
             if q_type in {"choice", "multi_choice"} and not option_list:
                 raise BusinessException(400, "选择题必须填写选项")
-            # 检查同一课程下是否已存在相同题干的题目
-            exists = db.query(Question).filter(
-                Question.course_id == course.id,
-                Question.stem == stem
-            ).first()
-            if exists:
+            # 全站共享题库：查重范围为全站所有题目
+            duplicate = find_duplicate_question(
+                db,
+                q_type,
+                stem,
+                option_list,
+                answer,
+            )
+            if duplicate:
                 skip_count += 1
-                skips.append({"row": idx, "reason": f"已存在相同题目（题干: {stem[:50]}），已跳过"})
+                skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
                 continue
+            # 题目原地保存，course_id 保留为匹配到的课程
             q = Question(type=q_type, course_id=course.id, stem=stem,
                          options=option_list, answer=answer, explanation=explanation, tags=tags)
             db.add(q)
+            db.flush()
+            if course.is_public:
+                _, count = contribution_counts.get(course.id, (course, 0))
+                contribution_counts[course.id] = (course, count + 1)
             success_count += 1
         except Exception as exc:
             fail_count += 1
             errors.append({"row": idx, "reason": str(exc)})
+    for public_course, count in contribution_counts.values():
+        record_question_contribution(db, public_course, teacher_id, role, "import", count)
     db.commit()
     return {"success_count": success_count, "fail_count": fail_count, "skip_count": skip_count, "errors": errors, "skips": skips}

@@ -30,24 +30,6 @@ onMounted(async () => {
   }
 })
 
-const actionSteps = [
-  {
-    num: '01',
-    title: '理解真实问题',
-    desc: '从社区、学校和课程项目中选择一个具体问题，先明确对象、场景和限制条件。',
-  },
-  {
-    num: '02',
-    title: '设计 AI 方案',
-    desc: '把课堂学到的 AI 工具、调研方法和表达方式整理成可执行的小方案。',
-  },
-  {
-    num: '03',
-    title: '服务并复盘',
-    desc: '在公益课、读书会和项目实践中记录反馈，形成可复盘的学习材料。',
-  },
-]
-
 const outcomeCards = [
   {
     id: 'public-class',
@@ -94,8 +76,8 @@ function scrollToOutcome(id: string) {
   })
 }
 
-function startAction() {
-  document.getElementById('action-path')?.scrollIntoView({
+function scrollToOutcomes() {
+  document.getElementById('action-outcomes')?.scrollIntoView({
     behavior: 'smooth',
     block: 'start',
   })
@@ -121,7 +103,7 @@ function startAction() {
           <h1>悟 · 感悟价值</h1>
           <p>把课堂学习延伸到社区、学校和项目实践中，记录每一次行动带来的成长。</p>
           <div class="hero-actions">
-            <el-button type="success" size="large" round @click="startAction">
+            <el-button type="success" size="large" round @click="scrollToOutcomes">
               开始开展行动
             </el-button>
           </div>
@@ -129,27 +111,9 @@ function startAction() {
       </div>
     </section>
 
-    <section id="action-path" class="path-section">
+    <section id="action-outcomes" class="outcomes-nav-section">
       <div class="container">
         <div class="section-header">
-          <span class="section-kicker">行动路径</span>
-          <h2>一次行动如何发生</h2>
-          <p>先明确问题，再设计 AI 辅助方案，最后记录过程和反馈。</p>
-        </div>
-
-        <div class="steps-grid">
-          <div v-for="step in actionSteps" :key="step.num" class="step-card">
-            <span class="step-num">{{ step.num }}</span>
-            <h3>{{ step.title }}</h3>
-            <p>{{ step.desc }}</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="outcomes-nav-section">
-      <div class="container">
-        <div class="section-header compact">
           <span class="section-kicker">行动成果</span>
           <h2>三类成果在同一页查看</h2>
           <p>点击任意成果卡片，查看对应的介绍、数据和案例。</p>
@@ -356,25 +320,15 @@ function startAction() {
   margin-top: var(--space-xl);
 }
 
-.path-section,
 .outcomes-nav-section,
-.outcome-details-section,
 .portfolio-section {
   padding: var(--space-3xl) 0;
-}
-
-.outcomes-nav-section,
-.portfolio-section {
   background: var(--color-bg-alt);
 }
 
 .section-header {
   max-width: 640px;
   margin-bottom: var(--space-2xl);
-}
-
-.section-header.compact {
-  margin-bottom: var(--space-xl);
 }
 
 .section-kicker {
@@ -398,44 +352,6 @@ function startAction() {
 .section-header p {
   color: var(--color-text-secondary);
   font-size: 0.88rem;
-  line-height: 1.7;
-}
-
-.steps-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-lg);
-}
-
-.step-card {
-  padding: var(--space-xl);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.step-num {
-  display: inline-flex;
-  margin-bottom: var(--space-lg);
-  color: var(--color-act);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 900;
-  letter-spacing: 0.05em;
-}
-
-.step-card h3 {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin-bottom: var(--space-sm);
-  letter-spacing: 0.03em;
-}
-
-.step-card p {
-  color: var(--color-text-secondary);
-  font-size: 0.85rem;
   line-height: 1.7;
 }
 
@@ -692,7 +608,6 @@ function startAction() {
 }
 
 @media (max-width: 960px) {
-  .steps-grid,
   .outcome-card-grid,
   .detail-panel {
     grid-template-columns: 1fr;

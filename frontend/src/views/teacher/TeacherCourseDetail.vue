@@ -12,9 +12,11 @@ import {
   updateCourseStage,
 } from '@/api/course'
 import type { Material } from '@/api/material'
-import { createMaterial, deleteMaterial, updateMaterial } from '@/api/material'
+import { createMaterial, deleteMaterial, updateMaterial, rebuildMaterialPreview } from '@/api/material'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
 import { resolveFileUrl } from '@/utils/url'
+import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
+import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -191,6 +193,24 @@ function openMaterial(material: Material) {
   window.open(url, '_blank', 'noopener')
 }
 
+const previewVisible = ref(false)
+const selectedMaterial = ref<Material | null>(null)
+
+function previewMaterial(material: Material) {
+  selectedMaterial.value = material
+  previewVisible.value = true
+}
+
+async function handleRebuildPreview(material: Material) {
+  try {
+    await rebuildMaterialPreview(material.id)
+    ElMessage.success('预览已重新生成')
+    await loadCourse()
+  } catch {
+    ElMessage.error('预览重建失败，请稍后重试')
+  }
+}
+
 function resetMaterialForm() {
   materialForm.title = ''
   materialForm.type = 'video'
@@ -278,7 +298,7 @@ async function handleSaveMaterial() {
 
 async function handleDeleteMaterial(material: Material) {
   try {
-    await ElMessageBox.confirm(`确定删除资料「${material.title}」？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除资料「${material.title}」？这只会删除你课程里的这份资料，不会影响公共课程源内容。`, '删除确认', { type: 'warning' })
     await deleteMaterial(material.id)
     ElMessage.success('已删除')
     await loadCourse()
@@ -337,21 +357,19 @@ onMounted(loadCourse)
         <h2>阶段资料</h2>
         <el-button type="primary" @click="openUploadMaterial(null)">上传新资料</el-button>
       </div>
-      <div v-for="stage in sortedStages" :key="`m-${stage.id}`" class="stage-materials">
+        <div v-for="stage in sortedStages" :key="`m-${stage.id}`" class="stage-materials">
         <h3><span class="stage-tag">阶段</span>{{ stage.name }}</h3>
         <div v-if="stage.materials.length" class="material-grid">
-          <div v-for="material in stage.materials" :key="material.id" class="material-card">
-            <div class="card-head">
-              <el-tag size="small" effect="plain">{{ material.type === 'video' ? '视频' : 'PDF' }}</el-tag>
-            </div>
-            <h4>{{ material.title }}</h4>
-            <p class="material-meta">{{ material.size }} · {{ material.date || '未记录日期' }}</p>
-            <div class="card-actions">
-              <el-button type="primary" size="small" @click="openMaterial(material)">查看</el-button>
-              <el-button size="small" @click="openEditMaterial(material)">编辑</el-button>
-              <el-button type="danger" text size="small" @click="handleDeleteMaterial(material)">删除</el-button>
-            </div>
-          </div>
+          <MaterialRichCard
+            v-for="material in stage.materials"
+            :key="material.id"
+            :material="material"
+            manage
+            @preview="previewMaterial"
+            @edit="openEditMaterial"
+            @delete="handleDeleteMaterial"
+            @rebuild="handleRebuildPreview"
+          />
         </div>
         <el-empty v-else description="该阶段暂无资料" :image-size="80" />
       </div>
@@ -359,18 +377,16 @@ onMounted(loadCourse)
       <div v-if="course && course.uncategorized_materials.length" class="stage-materials">
         <h3><span class="stage-tag other">其他</span>未分类资料</h3>
         <div class="material-grid">
-          <div v-for="material in course.uncategorized_materials" :key="material.id" class="material-card">
-            <div class="card-head">
-              <el-tag size="small" effect="plain">{{ material.type === 'video' ? '视频' : 'PDF' }}</el-tag>
-            </div>
-            <h4>{{ material.title }}</h4>
-            <p class="material-meta">{{ material.size }} · {{ material.date || '未记录日期' }}</p>
-            <div class="card-actions">
-              <el-button type="primary" size="small" @click="openMaterial(material)">查看</el-button>
-              <el-button size="small" @click="openEditMaterial(material)">编辑</el-button>
-              <el-button type="danger" text size="small" @click="handleDeleteMaterial(material)">删除</el-button>
-            </div>
-          </div>
+          <MaterialRichCard
+            v-for="material in course.uncategorized_materials"
+            :key="material.id"
+            :material="material"
+            manage
+            @preview="previewMaterial"
+            @edit="openEditMaterial"
+            @delete="handleDeleteMaterial"
+            @rebuild="handleRebuildPreview"
+          />
         </div>
       </div>
 
@@ -427,6 +443,8 @@ onMounted(loadCourse)
         <el-button type="primary" :loading="uploading" @click="handleSaveMaterial">{{ isEditMaterial ? '保存' : '上传' }}</el-button>
       </template>
     </el-dialog>
+
+    <MaterialPreviewDialog v-model:visible="previewVisible" :material="selectedMaterial" />
   </div>
 </template>
 
@@ -450,6 +468,7 @@ onMounted(loadCourse)
 .stage-materials h3 { font-size: 1rem; font-weight: 700; color: var(--color-text); margin-bottom: var(--space-md); }
 .stage-tag { font-size: 0.65rem; padding: 0.15rem 0.5rem; background: var(--color-learn); color: #fff; border-radius: var(--radius-full); margin-right: var(--space-sm); }
 .stage-tag.other { background: var(--color-text-muted); }
+.scope-tag { margin-left: var(--space-sm); }
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-md); }
 .material-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); background: var(--color-bg-card); transition: all 0.2s; }
 .material-card:hover { box-shadow: var(--shadow-md); border-color: rgba(45, 106, 122, 0.2); }

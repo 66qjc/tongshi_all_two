@@ -18,6 +18,8 @@ export interface Question {
   tags: string[]
   source_question_id?: number | null
   is_synced?: boolean
+  /** 全站共享题库：当前教师是否是该题的归属人（题所在课程的 created_by 即创建者） */
+  is_owner?: boolean
 }
 
 export interface PaginatedResult<T> {

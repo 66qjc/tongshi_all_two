@@ -31,10 +31,10 @@ async function fetchUnreadCount() {
 }
 
 const navItems = [
-  { name: '学 · 积累知识', path: '/learn', icon: '&#9678;' },
-  { name: '思 · 深化理解', path: '/practice', icon: '&#9632;' },
-  { name: '践 · 动手创作', path: '/create', icon: '&#9733;' },
-  { name: '悟 · 感悟价值', path: '/act', icon: '&#9830;' },
+  { name: '深度学 · 积累知识', path: '/learn', icon: '&#9678;' },
+  { name: '深度思 · 深化理解', path: '/practice', icon: '&#9632;' },
+  { name: '深度践 · 动手创作', path: '/create', icon: '&#9733;' },
+  { name: '深度悟 · 感悟价值', path: '/act', icon: '&#9830;' },
 ]
 
 function handleScroll() {
@@ -78,33 +78,17 @@ watch(
       <!-- Logo -->
       <router-link to="/" class="logo" @click="mobileMenuOpen = false">
         <span class="logo-icon">
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <defs>
-              <radialGradient id="inkGrad" cx="40%" cy="38%" r="60%">
-                <stop offset="0%" stop-color="#3d2e1a"/>
-                <stop offset="60%" stop-color="#1a1208"/>
-                <stop offset="100%" stop-color="#0d0a05"/>
-              </radialGradient>
-            </defs>
-            <!-- 外环描边（金色） -->
-            <circle cx="18" cy="18" r="17" fill="url(#inkGrad)" stroke="#c9a84c" stroke-width="1.2" opacity="0.9"/>
-            <!-- 内圈装饰光晕 -->
-            <circle cx="18" cy="18" r="14.5" fill="none" stroke="rgba(201,168,76,0.18)" stroke-width="0.6"/>
-            <!-- 汉字 -->
-            <text
-              x="18" y="24"
-              text-anchor="middle"
-              font-size="16"
-              font-weight="600"
-              font-family="'STKaiti','KaiTi','FangSong','仿宋',serif"
-              fill="rgba(255,255,255,0.95)"
-              letter-spacing="0"
-            >学</text>
-          </svg>
+          <img
+            src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+            alt="中国计量大学 AI 通识课平台标识"
+            width="38"
+            height="38"
+            class="logo-emblem"
+          />
         </span>
         <span class="logo-text">
-          <span class="logo-main">学 · 思 · 践 · 悟</span>
-          <span class="logo-sub">AI 通识课平台</span>
+          <span class="logo-main">深度学思践行</span>
+          <span class="logo-sub">中国计量大学 · AI 通识课平台</span>
         </span>
       </router-link>
 
@@ -238,8 +222,11 @@ watch(
   transition: transform var(--duration-normal) var(--ease-spring);
 }
 
-.logo:hover .logo-icon {
-  transform: rotate(-8deg) scale(1.08);
+.logo-emblem {
+  display: block;
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
 }
 
 .logo-text {
@@ -257,10 +244,10 @@ watch(
 }
 
 .logo-sub {
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   color: var(--color-text-muted);
   font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
 }
 
 /* Desktop Nav */

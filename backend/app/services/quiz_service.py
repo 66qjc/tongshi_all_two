@@ -29,9 +29,9 @@ def submit_answer(
                 raise BusinessException(404, "题目任务不存在")
             validate_assignment_available(ann)
             question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
-            if question.course_id != ann.course_id or question.id not in question_ids:
+            if question.id not in question_ids:
                 raise BusinessException(404, "题目不存在")
-        elif not student_can_access_course(db, user_id, question.course_id):
+        elif not _student_has_any_course(db, user_id):
             raise BusinessException(404, "题目不存在")
 
     if question.type == "multi_choice":
@@ -80,6 +80,16 @@ def get_quiz_history(db: Session, user_id: str, limit: int = 10):
             "stem": q.stem if q else "",
         })
     return result
+
+
+def _student_has_any_course(db: Session, user_id: str) -> bool:
+    """判断学生是否至少加入了一个有关联课程的班级。"""
+    return db.query(StudentClassEnrollment).join(
+        Class, Class.id == StudentClassEnrollment.class_id,
+    ).filter(
+        StudentClassEnrollment.user_id == user_id,
+        Class.course_id.isnot(None),
+    ).first() is not None
 
 
 def get_quiz_stats(db: Session, user_id: str):
@@ -135,17 +145,19 @@ def get_course_quiz_stats(db: Session, user_id: str, course_id: int):
     if not student_can_access_course(db, user_id, course_id):
         raise BusinessException(404, "课程不存在或无权限访问")
 
-    course_question_ids = db.query(Question.id).filter(Question.course_id == course_id)
+    shared_question_ids = db.query(Question.id)
 
     questions_done = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
-        QuizAttempt.question_id.in_(course_question_ids),
+        QuizAttempt.announcement_id.is_(None),
+        QuizAttempt.question_id.in_(shared_question_ids),
     ).count()
 
     correct_count = db.query(QuizAttempt).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.is_correct == True,
-        QuizAttempt.question_id.in_(course_question_ids),
+        QuizAttempt.announcement_id.is_(None),
+        QuizAttempt.question_id.in_(shared_question_ids),
     ).count()
 
     accuracy = int(correct_count / questions_done * 100) if questions_done > 0 else 0

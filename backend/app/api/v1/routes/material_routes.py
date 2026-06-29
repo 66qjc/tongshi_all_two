@@ -1,7 +1,9 @@
 """Material routes"""
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -9,7 +11,12 @@ from app.core.security import get_current_user, require_role
 from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, MaterialCreate, MaterialUpdate
-from app.services.material_service import can_view_course_materials, list_materials, create_material, update_material, delete_material
+from app.services.material_service import (
+    can_view_course_materials, list_materials, create_material,
+    update_material, delete_material, resolve_material_file_for_user,
+    format_material_preview,
+)
+from app.services.material_preview_service import generate_material_preview
 
 router = APIRouter(tags=["materials"])
 
@@ -25,6 +32,7 @@ def _format_material(m):
         "source_material_id": m.source_material_id,
         "is_synced": bool(m.source_material_id),
         "stage_id": m.stage_id,
+        "preview": format_material_preview(m.preview),
     }
 
 
@@ -97,3 +105,47 @@ def remove_material(
     if not delete_material(db, material_id, current_user.id):
         raise BusinessException(404, "资料不存在")
     return success()
+
+
+@router.get("/materials/{material_id}/file", summary="预览资料文件", description="鉴权后通过 Nginx 内部跳转传输资料文件")
+def open_material_file(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    material, stored, accel_path = resolve_material_file_for_user(db, material_id, current_user.id, current_user.role)
+    if not material:
+        raise BusinessException(404, "资料不存在")
+
+    filename = stored.original_name or stored.stored_name or material.title or "material"
+    encoded = quote(filename, encoding="utf-8")
+    headers = {
+        "X-Accel-Redirect": accel_path,
+        "Content-Disposition": f"inline; filename*=UTF-8''{encoded}",
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, max-age=0",
+    }
+    if stored.size_bytes:
+        headers["Content-Length"] = str(stored.size_bytes)
+    return Response(content=b"", media_type=stored.content_type or "application/octet-stream", headers=headers)
+
+
+@router.post("/materials/{material_id}/preview/rebuild", summary="重新生成资料预览")
+def rebuild_material_preview(
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("teacher")),
+):
+    material, _, _ = resolve_material_file_for_user(db, material_id, current_user.id, current_user.role)
+    if not material:
+        raise BusinessException(404, "资料不存在")
+    preview = generate_material_preview(db, material_id)
+    return success({
+        "status": preview.status,
+        "cover_file_id": preview.cover_file_id,
+        "summary": preview.summary,
+        "page_count": preview.page_count,
+        "duration_seconds": preview.duration_seconds,
+        "resolution": preview.resolution,
+        "error_message": preview.error_message,
+    })

@@ -14,6 +14,23 @@ from app.models.entities import (
 from tests.conftest import auth_header
 
 
+def _create_other_course_question(db_session, stem="共享题库跨课程题"):
+    """创建一题归属其他教师课程的共享题，用来验证全站题库入口。"""
+    other_course = db_session.query(Course).filter(Course.created_by == "T002").first()
+    question = Question(
+        type="choice",
+        course_id=other_course.id,
+        stem=stem,
+        options=["A. 正确", "B. 错误"],
+        answer="A",
+        explanation="共享题库题目",
+    )
+    db_session.add(question)
+    db_session.commit()
+    db_session.refresh(question)
+    return question
+
+
 def _seed_assignment(client, db_session, teacher_token, title="任务练习", question_ids=None, **extra):
     course = db_session.query(Course).filter(Course.created_by == "T001").first()
     if question_ids is None:
@@ -44,6 +61,44 @@ def test_student_gets_only_accessible_active_assignment_questions(client, db_ses
     assert data["data"]["announcement"]["id"] == announcement_id
     assert data["data"]["announcement"]["course_id"] == course.id
     assert [item["id"] for item in data["data"]["questions"]] == [question.id]
+
+
+def test_teacher_can_publish_assignment_with_shared_bank_question(client, db_session, teacher_token, student_token):
+    """全站共享题库下，作业可以引用其他课程归属的题目。"""
+    course = db_session.query(Course).filter(Course.created_by == "T001").first()
+    shared_question = _create_other_course_question(db_session)
+
+    create_resp = client.post(
+        "/api/announcements",
+        json={
+            "course_id": course.id,
+            "class_ids": [1],
+            "title": "共享题库作业",
+            "question_ids": [shared_question.id],
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+
+    assert create_resp["code"] == 0
+    announcement_id = create_resp["data"]["id"]
+
+    questions_resp = client.get(
+        f"/api/announcements/{announcement_id}/questions",
+        headers=auth_header(student_token),
+    ).json()
+    submit_resp = client.post(
+        "/api/quiz/submit",
+        json={
+            "question_id": shared_question.id,
+            "user_answer": shared_question.answer,
+            "announcement_id": announcement_id,
+        },
+        headers=auth_header(student_token),
+    ).json()
+
+    assert questions_resp["code"] == 0
+    assert [item["id"] for item in questions_resp["data"]["questions"]] == [shared_question.id]
+    assert submit_resp["code"] == 0
 
 
 def test_other_student_cannot_get_assignment_questions(client, db_session, teacher_token):
@@ -223,3 +278,24 @@ def test_assignment_report_uses_latest_attempt_per_question_and_current_announce
     assert report["code"] == 0
     assert report["data"]["completed_students"]["items"][0]["score"] == 100
     assert report["data"]["completed_students"]["items"][0]["total_questions"] == 1
+
+
+def test_student_free_practice_can_submit_shared_bank_question_and_stats_count_it(client, db_session, student_token):
+    """学生在任一已加入课程入口自由练习时，可以作答全站共享题并纳入该入口统计。"""
+    course = db_session.query(Course).filter(Course.created_by == "T001").first()
+    shared_question = _create_other_course_question(db_session, "共享题库自由练习题")
+
+    submit_resp = client.post(
+        "/api/quiz/submit",
+        json={"question_id": shared_question.id, "user_answer": shared_question.answer},
+        headers=auth_header(student_token),
+    ).json()
+    stats_resp = client.get(
+        f"/api/quiz/stats/{course.id}",
+        headers=auth_header(student_token),
+    ).json()
+
+    assert submit_resp["code"] == 0
+    assert stats_resp["code"] == 0
+    assert stats_resp["data"]["questions_done"] == 1
+    assert stats_resp["data"]["accuracy"] == 100

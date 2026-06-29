@@ -36,6 +36,18 @@ export interface AdminQuestionPayload {
   tags: string[]
 }
 
+export interface AdminQuestionContributionLog {
+  id: number
+  public_course_id: number
+  public_course_name: string
+  operator_id: string
+  operator_name: string
+  operator_role: string
+  action: string
+  question_count: number
+  created_at: string
+}
+
 export function getAdminPublicCourses() {
   return http.get<any, AdminPublicCourse[]>('/admin/public-courses')
 }
@@ -100,6 +112,13 @@ export function deleteAdminPublicQuestion(courseId: number, questionId: number) 
   return http.delete<any, any>(`/admin/public-courses/${courseId}/questions/${questionId}`)
 }
 
+export function getAdminPublicQuestionContributions(courseId: number, page = 1, page_size = 20) {
+  return http.get<any, { items: AdminQuestionContributionLog[]; total: number; page: number; page_size: number }>(
+    `/admin/public-courses/${courseId}/question-contributions`,
+    { params: { page, page_size } },
+  )
+}
+
 export function importAdminPublicQuestions(courseId: number, file: File) {
   const formData = new FormData()
   formData.append('file', file)
@@ -120,4 +139,3 @@ export async function downloadAdminQuestionTemplate(type: 'all' | 'choice' | 'fi
   }
   return await response.blob()
 }
-

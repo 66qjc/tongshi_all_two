@@ -86,7 +86,6 @@ def get_assignment_questions(db: Session, user_id: str, announcement_id: int) ->
         raise BusinessException(400, "该任务暂无题目")
 
     questions = db.query(Question).filter(
-        Question.course_id == ann.course_id,
         Question.id.in_(question_ids),
     ).order_by(Question.id).all()
     question_by_id = {question.id: question for question in questions}

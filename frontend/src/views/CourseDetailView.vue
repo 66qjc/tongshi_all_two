@@ -3,7 +3,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getCourseDetail, type CourseDetail } from '@/api/course'
+import type { Material } from '@/api/material'
 import { resolveFileUrl } from '@/utils/url'
+import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
+import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,6 +14,14 @@ const courseId = computed(() => Number(route.params.courseId))
 const course = ref<CourseDetail | null>(null)
 const loading = ref(true)
 const activeStageId = ref<number | null>(null)
+
+const previewVisible = ref(false)
+const selectedMaterial = ref<Material | null>(null)
+
+function previewMaterial(material: Material) {
+  selectedMaterial.value = material
+  previewVisible.value = true
+}
 
 function materialUrl(fileId?: number | null, url?: string) {
   if (fileId) return resolveFileUrl(`/api/files/${fileId}`)
@@ -143,16 +154,12 @@ onUnmounted(() => observer.value?.disconnect())
             {{ stage.name }}
           </h2>
           <div v-if="stage.materials.length > 0" class="material-grid">
-            <div
+            <MaterialRichCard
               v-for="m in stage.materials"
               :key="m.id"
-              class="material-card"
-              @click="openMaterial(m.file_id, m.url)"
-            >
-              <span class="material-type">{{ m.type === 'video' ? '视频' : 'PDF' }}</span>
-              <h3>{{ m.title }}</h3>
-              <p>{{ m.size }} · {{ m.date || '未记录日期' }}</p>
-            </div>
+              :material="m"
+              @preview="previewMaterial"
+            />
           </div>
           <div v-else class="stage-empty">该阶段暂无资料</div>
         </div>
@@ -160,16 +167,12 @@ onUnmounted(() => observer.value?.disconnect())
         <div v-if="course?.uncategorized_materials.length" id="stage-uncategorized" class="stage-section">
           <h2><span class="stage-badge">其他</span>未分类资料</h2>
           <div class="material-grid">
-            <div
+            <MaterialRichCard
               v-for="m in course.uncategorized_materials"
               :key="m.id"
-              class="material-card"
-              @click="openMaterial(m.file_id, m.url)"
-            >
-              <span class="material-type">{{ m.type === 'video' ? '视频' : 'PDF' }}</span>
-              <h3>{{ m.title }}</h3>
-              <p>{{ m.size }} · {{ m.date || '未记录日期' }}</p>
-            </div>
+              :material="m"
+              @preview="previewMaterial"
+            />
           </div>
         </div>
 
@@ -178,6 +181,8 @@ onUnmounted(() => observer.value?.disconnect())
         </div>
       </main>
     </div>
+
+    <MaterialPreviewDialog v-model:visible="previewVisible" :material="selectedMaterial" />
   </div>
 </template>
 

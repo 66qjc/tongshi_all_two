@@ -8,6 +8,50 @@ def ensure_schema_compatibility(engine) -> None:
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
 
+        # question_contribution_logs 表
+        if "question_contribution_logs" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE question_contribution_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        public_course_id INTEGER NOT NULL,
+                        public_course_name VARCHAR(128) NOT NULL DEFAULT '',
+                        operator_id VARCHAR(32) NOT NULL,
+                        operator_name VARCHAR(64) NOT NULL DEFAULT '',
+                        operator_role VARCHAR(16) NOT NULL DEFAULT '',
+                        action VARCHAR(16) NOT NULL,
+                        question_count INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE question_contribution_logs (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        public_course_id INTEGER NOT NULL,
+                        public_course_name VARCHAR(128) NOT NULL DEFAULT '',
+                        operator_id VARCHAR(32) NOT NULL,
+                        operator_name VARCHAR(64) NOT NULL DEFAULT '',
+                        operator_role VARCHAR(16) NOT NULL DEFAULT '',
+                        action VARCHAR(16) NOT NULL,
+                        question_count INTEGER NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_question_contribution_logs_public_course_id ON question_contribution_logs (public_course_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_question_contribution_logs_operator_id ON question_contribution_logs (operator_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_question_contribution_logs_created_at ON question_contribution_logs (created_at)"
+            ))
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+
         if "projects" in table_names and "project_images" not in table_names:
             dialect_name = conn.dialect.name
             if dialect_name == "sqlite":
@@ -177,6 +221,8 @@ def ensure_schema_compatibility(engine) -> None:
             conn, inspector, "courses", "is_public", "BOOLEAN NOT NULL DEFAULT 0")
         _add_column_if_missing(
             conn, inspector, "courses", "source_course_id", "INTEGER")
+        _add_column_if_missing(
+            conn, inspector, "courses", "question_bank_root_course_id", "INTEGER")
         _ensure_course_name_owner_unique(conn, inspector)
         _add_column_if_missing(
             conn, inspector, "classes", "course_id", "INTEGER")
@@ -255,7 +301,50 @@ def ensure_schema_compatibility(engine) -> None:
                             WHERE courses.id = classes.course_id
                         )
                         WHERE created_by IS NULL OR created_by = ''
+                        """))
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "courses" in table_names:
+            course_columns = {c["name"] for c in inspector.get_columns("courses")}
+            if "question_bank_root_course_id" in course_columns:
+                if conn.dialect.name == "mysql":
+                    conn.execute(text("""
+                        UPDATE courses
+                        SET question_bank_root_course_id = NULL
+                        WHERE question_bank_root_course_id IS NULL
                     """))
+                    root_course = conn.execute(text("""
+                        SELECT id
+                        FROM courses
+                        ORDER BY is_public DESC, id ASC
+                        LIMIT 1
+                    """)).fetchone()
+                    if root_course is not None:
+                        root_id = root_course[0]
+                        conn.execute(text(f"""
+                            UPDATE courses
+                            SET question_bank_root_course_id = CASE
+                                WHEN id = {root_id} THEN NULL
+                                ELSE {root_id}
+                            END
+                        """))
+                else:
+                    root_course = conn.execute(text("""
+                        SELECT id
+                        FROM courses
+                        ORDER BY is_public DESC, id ASC
+                        LIMIT 1
+                    """)).fetchone()
+                    if root_course is not None:
+                        root_id = root_course[0]
+                        conn.execute(text("""
+                            UPDATE courses
+                            SET question_bank_root_course_id = CASE
+                                WHEN id = :root_id THEN NULL
+                                ELSE :root_id
+                            END
+                        """), {"root_id": root_id})
                     conn.execute(text(
                         "UPDATE classes SET created_by = 'T001' WHERE created_by IS NULL OR created_by = ''"))
 
@@ -440,6 +529,56 @@ def ensure_schema_compatibility(engine) -> None:
                         ADD CONSTRAINT fk_course_stages_source_stage_id
                             FOREIGN KEY (source_stage_id) REFERENCES course_stages(id) ON DELETE SET NULL
                     """))
+
+        # ── material_previews 表（依赖 materials 和 stored_files）──────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "materials" in table_names and "material_previews" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE material_previews (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        material_id INTEGER NOT NULL UNIQUE,
+                        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                        cover_file_id INTEGER,
+                        summary TEXT DEFAULT '',
+                        page_count INTEGER NOT NULL DEFAULT 0,
+                        duration_seconds INTEGER NOT NULL DEFAULT 0,
+                        resolution VARCHAR(32) DEFAULT '',
+                        error_message VARCHAR(256) DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(material_id) REFERENCES materials(id) ON DELETE CASCADE,
+                        FOREIGN KEY(cover_file_id) REFERENCES stored_files(id)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE material_previews (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        material_id INTEGER NOT NULL UNIQUE,
+                        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                        cover_file_id INTEGER NULL,
+                        summary TEXT,
+                        page_count INTEGER NOT NULL DEFAULT 0,
+                        duration_seconds INTEGER NOT NULL DEFAULT 0,
+                        resolution VARCHAR(32) DEFAULT '',
+                        error_message VARCHAR(256) DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_material_previews_material_id
+                            FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_material_previews_cover_file_id
+                            FOREIGN KEY (cover_file_id) REFERENCES stored_files(id)
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_material_previews_material_id ON material_previews (material_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_material_previews_cover_file_id ON material_previews (cover_file_id)"
+            ))
 
         # courses.description
         if "courses" in table_names:

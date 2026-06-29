@@ -48,9 +48,12 @@ async def get_current_user(
     # 回退：Authorization header 无 token 时，从 ?token= query 参数读取
     # 支持 <a> / <iframe> / <img> 等无法携带自定义请求头的场景
     if not token:
-        allow_query = (
-            settings.allow_query_token_for_files
-            and request.url.path.startswith("/api/files/")
+        allow_query = settings.allow_query_token_for_files and (
+            request.url.path.startswith("/api/files/")
+            or (
+                request.url.path.startswith("/api/materials/")
+                and request.url.path.endswith("/file")
+            )
         )
         if allow_query:
             token = request.query_params.get("token")

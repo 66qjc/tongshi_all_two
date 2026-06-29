@@ -167,7 +167,7 @@ async function handleDelete(course: Course) {
   }
   try {
     await ElMessageBox.confirm(
-      `确定删除课程「${course.name}」？存在资料、题目、学习记录或班级时系统会拒绝删除。`,
+      `确定删除课程「${course.name}」？这只会删除你自己的课程副本，不会影响公共课程源内容。`,
       '确认删除',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
     )
@@ -204,6 +204,13 @@ function formatDate(dateStr: string) {
     <el-table :data="pagedMyCourses" stripe style="width: 100%" v-loading="loading">
       <el-table-column type="index" label="序号" width="70" align="center" />
       <el-table-column prop="name" label="课程名称" min-width="200" />
+      <el-table-column label="来源" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.is_public ? 'info' : 'success'" size="small" effect="plain">
+            {{ row.is_public ? '公共' : '私有' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="资料数" width="100" align="center">
         <template #default="{ row }">
           <span class="count-badge">{{ row.material_count ?? 0 }}</span>

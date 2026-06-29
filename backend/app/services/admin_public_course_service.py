@@ -9,12 +9,19 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.models.entities import Course, CourseStage, Material, Question, QuizAttempt, StoredFile
+from app.services.question_contribution_service import (
+    list_question_contributions,
+    record_question_contribution,
+)
+from app.services.question_bank_service import (
+    count_all_questions,
+    find_duplicate_question,
+    get_shared_question_bank_root_course,
+)
 from app.services.public_course_sync_service import (
     delete_synced_materials,
-    delete_synced_questions,
     sync_course_name_to_copies,
     sync_material_to_course_copies,
-    sync_question_to_course_copies,
 )
 
 
@@ -64,9 +71,7 @@ def get_course_sync_status(db: Session, course: Course) -> dict:
     synced_material_count = db.query(Material).filter(
         Material.source_material_id.in_([m.id for m in course.materials])
     ).count() if course.materials else 0
-    synced_question_count = db.query(Question).filter(
-        Question.source_question_id.in_([q.id for q in course.questions])
-    ).count() if course.questions else 0
+    synced_question_count = 0
 
     total_items = len(course.materials) + len(course.questions)
     synced_items = synced_material_count + synced_question_count
@@ -92,6 +97,10 @@ def create_public_course(db: Session, name: str, admin_id: str, description: str
     db.add(course)
     db.commit()
     db.refresh(course)
+    if course.question_bank_root_course_id is None:
+        course.question_bank_root_course_id = course.id
+        db.commit()
+        db.refresh(course)
     return course
 
 
@@ -112,10 +121,18 @@ def delete_public_course(db: Session, course_id: int) -> bool:
     course = _get_public_course(db, course_id)
     if not course:
         return False
+    # 全站共享题库：被删课程若是其他课程的共享根，阻止删除，避免全站题库失效
+    is_referenced_root = db.query(Course).filter(
+        Course.question_bank_root_course_id == course.id,
+        Course.id != course.id,
+    ).first() is not None
+    if is_referenced_root:
+        raise BusinessException(400, "该课程是共享题库根课程，请先迁移题库根后再删除")
     copies = db.query(Course).filter(Course.source_course_id == course.id).all()
     source_material_ids = [material.id for material in course.materials]
-    source_question_ids = [question.id for question in course.questions]
     source_stage_ids = [stage.id for stage in course.stages]
+    # 全站共享题库：课程名下的题目需先转挂到共享根，避免随课程级联删除而误删全站共享题
+    _reattach_questions_to_shared_root(db, course)
     for copy in copies:
         copy.source_course_id = None
     if source_stage_ids:
@@ -126,18 +143,29 @@ def delete_public_course(db: Session, course_id: int) -> bool:
         db.query(Material).filter(
             Material.source_material_id.in_(source_material_ids),
         ).update({Material.source_material_id: None}, synchronize_session=False)
-    if source_question_ids:
-        # 先清理引用这些题目的 QuizAttempt，防止外键约束阻止题目删除
-        # （即使模型已声明 ondelete=CASCADE，旧数据库可能尚未执行迁移）
-        db.query(QuizAttempt).filter(
-            QuizAttempt.question_id.in_(source_question_ids),
-        ).delete(synchronize_session=False)
-        db.query(Question).filter(
-            Question.source_question_id.in_(source_question_ids),
-        ).update({Question.source_question_id: None}, synchronize_session=False)
     db.delete(course)
     db.commit()
     return True
+
+
+def _reattach_questions_to_shared_root(db: Session, course: Course) -> None:
+    """删除公共课程前，把其名下题目转挂到另一门课程，避免级联删除全站共享题。
+
+    优先转挂到共享根课程；若被删课程恰好是当前选出的根，则退而选择其他任意课程承接。
+    """
+    questions = db.query(Question).filter(Question.course_id == course.id).all()
+    if not questions:
+        return
+    target = db.query(Course).filter(Course.id != course.id).order_by(
+        Course.is_public.desc(),
+        Course.id.asc(),
+    ).first()
+    if target is None:
+        # 全站只剩这一门课，无处转挂，题目随课程一并删除
+        return
+    for question in questions:
+        question.course_id = target.id
+    db.flush()
 
 
 def get_public_material(db: Session, material_id: int) -> Material | None:
@@ -224,18 +252,37 @@ def list_public_questions(db: Session, course_id: int) -> list[Question]:
     course = _get_public_course(db, course_id)
     if not course:
         raise BusinessException(404, "公共课程不存在")
-    return db.query(Question).filter(Question.course_id == course_id).order_by(Question.id).all()
+    # 全站共享题库：任意公共课程题库页都返回全站同一套题
+    return db.query(Question).order_by(Question.id).all()
 
 
-def create_public_question(db: Session, course_id: int, data: dict) -> Question:
+def create_public_question(
+    db: Session,
+    course_id: int,
+    data: dict,
+    operator_id: str | None = None,
+    operator_role: str = "admin",
+) -> Question:
     course = _get_public_course(db, course_id)
     if not course:
         raise BusinessException(404, "公共课程不存在")
     data["tags"] = _normalize_tags(data.get("tags"))
+    # 全站共享题库：查重范围为全站所有题目
+    duplicate = find_duplicate_question(
+        db,
+        data["type"],
+        data["stem"],
+        data.get("options"),
+        data["answer"],
+    )
+    if duplicate:
+        raise BusinessException(400, "题库中已存在相同题目")
+    # 题目原地保存，course_id 写所选公共课程
     question = Question(course_id=course.id, **data)
     db.add(question)
     db.flush()
-    sync_question_to_course_copies(db, question)
+    if operator_id:
+        record_question_contribution(db, course, operator_id, operator_role, "create", 1)
     db.commit()
     db.refresh(question)
     return question
@@ -254,7 +301,7 @@ def update_public_question(db: Session, question_id: int, data: dict) -> Questio
             continue
         if value is not None and hasattr(question, key):
             setattr(question, key, _normalize_tags(value) if key == "tags" else value)
-    sync_question_to_course_copies(db, question)
+    # 全站共享题库：题目不再复制到教师副本，无需同步
     db.commit()
     db.refresh(question)
     return question
@@ -267,7 +314,10 @@ def delete_public_question(db: Session, question_id: int) -> bool:
     ).first()
     if not question:
         return False
-    delete_synced_questions(db, question.id)
+    # 全站共享题库：直接删题，先清理引用该题的答题记录
+    db.query(QuizAttempt).filter(
+        QuizAttempt.question_id == question_id,
+    ).delete(synchronize_session=False)
     db.delete(question)
     db.commit()
     return True
@@ -303,7 +353,13 @@ def _normalize_tags(value) -> list[str]:
     return tags
 
 
-def import_questions_to_public_course(db: Session, course_id: int, rows: list[dict]) -> dict:
+def import_questions_to_public_course(
+    db: Session,
+    course_id: int,
+    rows: list[dict],
+    operator_id: str | None = None,
+    operator_role: str = "admin",
+) -> dict:
     """批量导入题目到公共课程，并同步到教师副本。"""
     course = _get_public_course(db, course_id)
     if not course:
@@ -327,17 +383,29 @@ def import_questions_to_public_course(db: Session, course_id: int, rows: list[di
                 raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
             if q_type in {"choice", "multi_choice"} and not option_list:
                 raise BusinessException(400, "选择题必须填写选项")
+            # 全站共享题库：查重范围为全站所有题目
+            duplicate = find_duplicate_question(
+                db,
+                q_type,
+                stem,
+                option_list,
+                answer,
+            )
+            if duplicate:
+                errors.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
+                continue
             question = Question(
                 type=q_type, course_id=course.id, stem=stem,
                 options=option_list, answer=answer, explanation=explanation, tags=tags,
             )
             db.add(question)
             db.flush()
-            sync_question_to_course_copies(db, question)
             savepoint.commit()
             success_count += 1
         except Exception as exc:
             fail_count += 1
             errors.append({"row": idx, "reason": str(exc)})
+    if operator_id and success_count > 0:
+        record_question_contribution(db, course, operator_id, operator_role, "import", success_count)
     db.commit()
     return {"success_count": success_count, "fail_count": fail_count, "errors": errors}

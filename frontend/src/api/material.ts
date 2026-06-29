@@ -1,6 +1,16 @@
 ﻿import http from './http'
 import type { PaginatedResult } from './question'
 
+export interface MaterialPreview {
+  status: 'pending' | 'processing' | 'ready' | 'failed'
+  cover_file_id?: number | null
+  summary: string
+  page_count: number
+  duration_seconds: number
+  resolution: string
+  error_message: string
+}
+
 export interface Material {
   id: number
   course_id: number
@@ -16,6 +26,7 @@ export interface Material {
   source_material_id?: number | null
   is_synced?: boolean
   stage_id?: number | null
+  preview?: MaterialPreview | null
 }
 
 export interface MaterialCreatePayload {
@@ -53,4 +64,12 @@ export function updateMaterial(id: number, data: { title?: string; stage_id?: nu
 
 export function deleteMaterial(id: number) {
   return http.delete<any, any>(`/materials/${id}`)
+}
+
+export function getMaterialFileUrl(materialId: number) {
+  return `/api/materials/${materialId}/file`
+}
+
+export function rebuildMaterialPreview(materialId: number) {
+  return http.post<any, MaterialPreview>(`/materials/${materialId}/preview/rebuild`)
 }

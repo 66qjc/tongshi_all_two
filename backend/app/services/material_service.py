@@ -5,7 +5,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Class, Course, CourseStage, Material, StudentClassEnrollment
+from app.models.entities import Class, Course, CourseStage, Material, StoredFile, StudentClassEnrollment
+from app.services.file_service import build_x_accel_redirect_path
 
 
 def list_materials(
@@ -88,6 +89,9 @@ def create_material(
         stage_id=stage_id,
     )
     db.add(material)
+    db.flush()
+    from app.services.material_preview_service import ensure_material_preview
+    ensure_material_preview(db, material.id)
     db.commit()
     db.refresh(material)
     return material
@@ -134,8 +138,43 @@ def delete_material(db: Session, material_id: int, teacher_id: str | None = None
     m = query.first()
     if not m:
         return False
-    if m.source_material_id is not None:
-        raise BusinessException(400, "公共课程同步内容不能删除")
     db.delete(m)
     db.commit()
     return True
+
+
+def format_material_preview(preview) -> dict | None:
+    """格式化资料预览元数据为字典。"""
+    if not preview:
+        return None
+    return {
+        "status": preview.status,
+        "cover_file_id": preview.cover_file_id,
+        "summary": preview.summary or "",
+        "page_count": preview.page_count or 0,
+        "duration_seconds": preview.duration_seconds or 0,
+        "resolution": preview.resolution or "",
+        "error_message": preview.error_message or "",
+    }
+
+
+def resolve_material_file_for_user(db: Session, material_id: int, user_id: str, role: str):
+    """校验资料访问权限并返回资料、文件记录和 Nginx 内部路径。"""
+    material = db.query(Material).join(Course, Course.id == Material.course_id).filter(Material.id == material_id).first()
+    if not material:
+        return None, None, ""
+    if not can_view_course_materials(db, material.course_id, user_id, role):
+        return None, None, ""
+    if not material.file_id:
+        raise BusinessException(404, "资料文件不存在")
+
+    stored = db.query(StoredFile).filter(StoredFile.id == material.file_id).first()
+    if not stored:
+        raise BusinessException(404, "资料文件不存在")
+    if stored.storage_provider != "local":
+        raise BusinessException(400, "当前试点仅支持本地文件预览")
+    try:
+        accel_path = build_x_accel_redirect_path(stored.object_key)
+    except ValueError:
+        raise BusinessException(400, "资料文件路径不合法")
+    return material, stored, accel_path

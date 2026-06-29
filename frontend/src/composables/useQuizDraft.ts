@@ -1,6 +1,6 @@
 /** 答题进度草稿本地保存与恢复。 */
 export interface QuizDraft {
-  courseId: number
+  courseId: number | null
   currentQuestionId: number | null
   answeredQuestionIds: number[]
   answers: Record<number, string>
@@ -10,7 +10,8 @@ export interface QuizDraft {
 
 const key = (courseId: number) => `quiz-draft:${courseId}`
 
-export function loadQuizDraft(courseId: number): QuizDraft | null {
+export function loadQuizDraft(courseId: number | null): QuizDraft | null {
+  if (!courseId) return null
   const raw = localStorage.getItem(key(courseId))
   if (!raw) return null
   try {
@@ -22,9 +23,11 @@ export function loadQuizDraft(courseId: number): QuizDraft | null {
 }
 
 export function saveQuizDraft(draft: QuizDraft) {
+  if (!draft.courseId) return
   localStorage.setItem(key(draft.courseId), JSON.stringify({ ...draft, updatedAt: Date.now() }))
 }
 
-export function clearQuizDraft(courseId: number) {
+export function clearQuizDraft(courseId: number | null) {
+  if (!courseId) return
   localStorage.removeItem(key(courseId))
 }

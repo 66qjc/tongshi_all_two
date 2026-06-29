@@ -12,3 +12,4 @@ alembic
 boto3
 moto
 python-magic
+PyMuPDF

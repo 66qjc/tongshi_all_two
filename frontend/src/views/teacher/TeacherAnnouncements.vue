@@ -459,11 +459,13 @@ onMounted(async () => {
           <div v-else class="selected-question-list">
             <div v-for="item in selectedQuestions" :key="item.id" class="selected-question-item">
               <div class="selected-question-main">
-                <el-tag :type="item.type === 'choice' ? '' : item.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
-                  {{ getQuestionTypeLabel(item.type) }}
-                </el-tag>
-                <el-tag v-for="tag in item.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
-                <span>{{ getQuestionPreview(item.stem, 34) }}</span>
+                <div class="selected-question-tags">
+                  <el-tag :type="item.type === 'choice' ? '' : item.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
+                    {{ getQuestionTypeLabel(item.type) }}
+                  </el-tag>
+                  <el-tag v-for="tag in item.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+                </div>
+                <span class="selected-question-stem" :title="item.stem">{{ getQuestionPreview(item.stem, 34) }}</span>
               </div>
               <el-button type="danger" text size="small" @click="removeDraftQuestion(item.id)">移除</el-button>
             </div>
@@ -528,7 +530,7 @@ onMounted(async () => {
 
 .question-picker {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: var(--space-lg);
   align-items: stretch;
 }
@@ -586,6 +588,7 @@ onMounted(async () => {
   padding: var(--space-md);
   min-height: 520px;
   background: var(--color-bg-alt);
+  min-width: 0;
 }
 
 .selected-question-header {
@@ -621,6 +624,9 @@ onMounted(async () => {
 }
 
 .selected-question-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   align-items: flex-start;
   min-width: 0;
   color: var(--color-text);
@@ -628,9 +634,21 @@ onMounted(async () => {
   line-height: 1.5;
 }
 
-.selected-question-main span:last-child {
+.selected-question-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
-  word-break: break-word;
+}
+
+.selected-question-stem {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 
 @media (max-width: 900px) {
@@ -640,6 +658,14 @@ onMounted(async () => {
 
   .selected-question-panel {
     min-height: auto;
+  }
+
+  .selected-question-item {
+    flex-direction: column;
+  }
+
+  .selected-question-item .el-button {
+    align-self: flex-end;
   }
 
   .question-filter-bar,

@@ -18,7 +18,7 @@ from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS
 from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate, CourseCreateRequest, CourseUpdateRequest
 from app.services.access_control_service import student_can_access_course
 from app.services.question_service import (
-    list_questions, get_question, create_question, update_question, delete_question,
+    list_questions, create_question, update_question,
     get_course_questions, create_course, add_public_course, update_course, delete_course,
     get_course_detail, import_questions_from_excel, can_view_course_questions,
 )
@@ -27,12 +27,13 @@ from app.services.course_response_service import build_course_detail, build_cour
 router = APIRouter(prefix="/questions", tags=["questions"])
 
 
-def _format_question(q):
+def _format_question(q, current_user_id: str | None = None):
+    course = q.course
     return {
         "id": q.id,
         "type": q.type,
         "course_id": q.course_id,
-        "course_name": q.course.name if q.course else "",
+        "course_name": course.name if course else "",
         "stem": q.stem,
         "options": q.options or [],
         "answer": q.answer,
@@ -40,6 +41,8 @@ def _format_question(q):
         "tags": q.tags or [],
         "source_question_id": q.source_question_id,
         "is_synced": bool(q.source_question_id),
+        # 全站共享题库：标识当前教师是否是该题的归属人（题所在课程的 created_by 即创建者）
+        "is_owner": bool(course and current_user_id and course.created_by == current_user_id),
     }
 
 
@@ -54,7 +57,7 @@ def get_questions(
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
     questions, total = list_questions(db, course_id, type, current_user.id, keyword, page, page_size)
-    return paginated_success([_format_question(q) for q in questions], total, page, page_size)
+    return paginated_success([_format_question(q, current_user.id) for q in questions], total, page, page_size)
 
 
 @router.get("/course/{course_id}", summary="课程题目", description="获取指定课程的题目（用于测验），可选 ?ids=1,2,3 过滤指定题目")
@@ -90,9 +93,7 @@ def edit_question(question_id: int, data: QuestionUpdate, db: Session = Depends(
 
 @router.delete("/{question_id}", summary="删除题目", description="教师端：删除指定题目")
 def remove_question(question_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    if not delete_question(db, question_id, current_user.id):
-        raise BusinessException(404, "题目不存在")
-    return success()
+    raise BusinessException(403, "教师不能删除题目，请联系管理员处理")
 
 
 @router.post("/batch-delete", summary="批量删除题目", description="教师端：批量删除题目及其关联数据")
@@ -101,48 +102,7 @@ def batch_delete_questions(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    if not question_ids:
-        raise BusinessException(400, "请选择要删除的题目")
-
-    from app.models.entities import QuizAttempt, Announcement
-    from sqlalchemy import func as sa_func
-
-    deleted_count = 0
-    failed_ids: list[int] = []
-
-    for qid in question_ids:
-        q = get_question(db, qid, current_user.id)
-        if not q:
-            failed_ids.append(qid)
-            continue
-        if q.source_question_id is not None:
-            failed_ids.append(qid)
-            continue
-        try:
-            # 删除关联答题记录
-            db.query(QuizAttempt).filter(QuizAttempt.question_id == qid).delete()
-            # 清理公告中的题目引用
-            anns = db.query(Announcement).filter(
-                sa_func.json_contains(Announcement.question_ids, str(qid))
-            ).all()
-            for ann in anns:
-                if ann.question_ids:
-                    ann.question_ids = [i for i in ann.question_ids if i != qid]
-            db.delete(q)
-            deleted_count += 1
-        except Exception:
-            failed_ids.append(qid)
-
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise BusinessException(500, "批量删除失败")
-
-    return success({
-        "deleted_count": deleted_count,
-        "failed_ids": failed_ids,
-    })
+    raise BusinessException(403, "教师不能删除题目，请联系管理员处理")
 
 
 @router.get("/courses", summary="课程列表", description="获取所有课程，支持关键词搜索")

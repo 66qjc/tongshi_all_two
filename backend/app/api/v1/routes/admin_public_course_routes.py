@@ -9,7 +9,7 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.core.response import success
+from app.core.response import paginated_success, success
 from app.core.security import require_role
 from app.core.upload_validation import ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE, validate_upload
 from app.db.session import get_db
@@ -27,11 +27,12 @@ from app.schemas.common import (
 from app.services import admin_public_course_service as service
 from app.services.course_stage_service import create_stage, delete_stage, format_stage_out, list_stages_for_course, update_stage
 from app.services.public_course_sync_service import sync_stages_to_course_copies
+from app.services.question_bank_service import count_all_questions
 
 router = APIRouter(prefix="/public-courses", tags=["admin-public-courses"])
 
 
-def _format_course(course, sync_info: dict | None = None) -> dict:
+def _format_course(course, sync_info: dict | None = None, total_question_count: int | None = None) -> dict:
     data = {
         "id": course.id,
         "name": course.name,
@@ -40,7 +41,8 @@ def _format_course(course, sync_info: dict | None = None) -> dict:
         "created_by": course.created_by,
         "is_public": bool(course.is_public),
         "material_count": len(course.materials),
-        "question_count": len(course.questions),
+        # 全站共享题库：题目数为全站题目总数
+        "question_count": total_question_count if total_question_count is not None else len(course.questions),
     }
     if sync_info:
         data.update(sync_info)
@@ -82,6 +84,20 @@ def _format_question(question) -> dict:
     }
 
 
+def _format_contribution(log) -> dict:
+    return {
+        "id": log.id,
+        "public_course_id": log.public_course_id,
+        "public_course_name": log.public_course_name,
+        "operator_id": log.operator_id,
+        "operator_name": log.operator_name,
+        "operator_role": log.operator_role,
+        "action": log.action,
+        "question_count": log.question_count,
+        "created_at": log.created_at.isoformat() if log.created_at else "",
+    }
+
+
 @router.get("", summary="公共课程列表", description="管理员：获取所有公共课程，含同步状态摘要")
 def get_public_courses(
     db: Session = Depends(get_db),
@@ -89,9 +105,10 @@ def get_public_courses(
 ):
     courses = service.list_public_courses(db)
     result = []
+    total_question_count = count_all_questions(db)
     for course in courses:
         sync_info = service.get_course_sync_status(db, course)
-        result.append(_format_course(course, sync_info))
+        result.append(_format_course(course, sync_info, total_question_count))
     return success(result)
 
 
@@ -102,7 +119,7 @@ def add_public_course(
     current_user: AuthUser = Depends(require_role("admin")),
 ):
     course = service.create_public_course(db, data.name.strip(), current_user.id, data.description or "")
-    return success(_format_course(course))
+    return success(_format_course(course, total_question_count=count_all_questions(db)))
 
 
 @router.put("/{course_id}", summary="编辑公共课程", description="管理员：修改公共课程名称并同步教师副本")
@@ -115,7 +132,7 @@ def edit_public_course(
     course = service.update_public_course(db, course_id, data.name.strip(), data.description)
     if not course:
         raise BusinessException(404, "公共课程不存在")
-    return success(_format_course(course))
+    return success(_format_course(course, total_question_count=count_all_questions(db)))
 
 
 @router.delete("/{course_id}", summary="删除公共课程", description="管理员：删除公共课程")
@@ -270,6 +287,21 @@ def get_public_questions(
     return success([_format_question(question) for question in service.list_public_questions(db, course_id)])
 
 
+@router.get("/{course_id}/question-contributions", summary="公共课程题库贡献记录", description="管理员：分页查看单门公共课程的题库贡献历史")
+def get_public_question_contributions(
+    course_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
+    items, total = service.list_question_contributions(db, course_id, page, page_size)
+    return paginated_success([_format_contribution(item) for item in items], total, page, page_size)
+
+
 def _build_admin_question_template(question_type: str) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -314,9 +346,15 @@ def add_public_question(
     course_id: int,
     data: AdminQuestionCreate,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
-    question = service.create_public_question(db, course_id, data.model_dump())
+    question = service.create_public_question(
+        db,
+        course_id,
+        data.model_dump(),
+        operator_id=current_user.id,
+        operator_role=current_user.role,
+    )
     return success(_format_question(question))
 
 
@@ -325,7 +363,7 @@ def import_public_questions(
     course_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
@@ -360,7 +398,13 @@ def import_public_questions(
         rows.append(item)
     if not rows:
         raise BusinessException(400, "Excel 中没有可导入的题目数据，请填写题目内容后再上传")
-    return success(service.import_questions_to_public_course(db, course_id, rows))
+    return success(service.import_questions_to_public_course(
+        db,
+        course_id,
+        rows,
+        operator_id=current_user.id,
+        operator_role=current_user.role,
+    ))
 
 
 @router.put("/{course_id}/questions/{question_id}", summary="编辑公共课程题目", description="管理员：修改题目并同步教师副本")
