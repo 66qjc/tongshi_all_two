@@ -1,7 +1,7 @@
-﻿"""Database models"""
+"""Database models"""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -80,6 +80,9 @@ class Course(Base):
         "Material", back_populates="course", cascade="all, delete-orphan")
     questions = relationship(
         "Question", back_populates="course", cascade="all, delete-orphan")
+    lessons = relationship(
+        "Lesson", back_populates="course", cascade="all, delete-orphan",
+        order_by="Lesson.sort_order")
 
 
 class CourseStage(Base):
@@ -95,6 +98,51 @@ class CourseStage(Base):
 
     course = relationship("Course", back_populates="stages")
     materials = relationship("Material", back_populates="stage")
+
+
+class Lesson(Base):
+    """课程课时（学习页面图文一体）"""
+    __tablename__ = "lessons"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False, index=True)
+    content = Column(Text, nullable=False, default="")
+    status = Column(Enum("draft", "published"), nullable=False, default="published")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    course = relationship("Course", back_populates="lessons")
+
+
+class CourseProgress(Base):
+    """课程学习进度"""
+    __tablename__ = "course_progress"
+    __table_args__ = (UniqueConstraint(
+        "user_id", "course_id", name="uq_course_progress_user_course"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(32), ForeignKey(
+        "users.id", ondelete="CASCADE"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    last_lesson_id = Column(Integer, ForeignKey(
+        "lessons.id", ondelete="SET NULL"), nullable=True)
+    updated_at = Column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    user = relationship("User")
+    course = relationship("Course")
+    last_lesson = relationship("Lesson")
 
 
 class Material(Base):
@@ -355,12 +403,6 @@ class TaskCompletion(Base):
     user = relationship("User")
 
 
-class ActivityEvent(Base):
-    __tablename__ = "activity_events"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(String(32), nullable=False)
-    title = Column(String(128), nullable=False)
-    description = Column(String(256), default="")
 
 
 class StoredFile(Base):

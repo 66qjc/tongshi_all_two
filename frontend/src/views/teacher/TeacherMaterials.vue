@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { createMaterial, deleteMaterial, getAllMaterials, rebuildMaterialPreview, type Material } from '@/api/material'
 import { getCourses, type Course } from '@/api/course'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
+import { useDebounce } from '@/composables/useDebounce'
 import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
@@ -15,6 +16,11 @@ const courses = ref<Course[]>([])
 const loading = ref(true)
 const filterCourse = ref<number | ''>('')
 const filterKeyword = ref('')
+const debouncedKeyword = useDebounce(filterKeyword, 300)
+watch(debouncedKeyword, () => {
+  page.value = 1
+  loadMaterials()
+})
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -56,7 +62,7 @@ async function loadMaterials() {
   try {
     const result = await getAllMaterials({
       course_id: filterCourse.value || undefined,
-      keyword: filterKeyword.value || undefined,
+      keyword: debouncedKeyword.value || undefined,
       page: page.value,
       page_size: pageSize.value,
     })

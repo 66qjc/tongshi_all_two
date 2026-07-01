@@ -1,4 +1,4 @@
-﻿"""管理员端公共课程资料上传校验回归测试。"""
+"""管理员端公共课程资料上传校验回归测试。"""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -106,7 +106,7 @@ class TestAdminPublicMaterialUploadValidation:
     ):
         """类型与文件一致时创建成功并同步到教师副本。"""
         client.post(
-            f"/api/questions/courses/{public_course_id}/add",
+            f"/api/courses/{public_course_id}/add",
             headers=auth_header(teacher_token),
         )
         file_id = build_stored_file(db_session, "note.pdf", "application/pdf", ".pdf")

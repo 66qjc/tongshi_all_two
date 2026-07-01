@@ -1,7 +1,7 @@
-﻿"""Pydantic request / response schemas"""
+"""Pydantic request / response schemas"""
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MATERIAL_TYPES = {"video", "pdf", "link"}
@@ -592,3 +592,51 @@ class ShowcaseItemOut(BaseModel):
     sort_order: int = 0
     is_active: bool = True
     created_at: datetime
+
+
+# ===== Lesson（课程课时）=====
+
+class LessonCreate(BaseModel):
+    """创建课时请求"""
+    title: str = Field(min_length=1, max_length=200)
+    content: str = ""
+    status: Literal["draft", "published"] = "published"
+    sort_order: int = 0
+
+
+class LessonUpdate(BaseModel):
+    """更新课时请求"""
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    content: Optional[str] = None
+    status: Optional[Literal["draft", "published"]] = None
+    sort_order: Optional[int] = None
+
+
+class LessonOut(BaseModel):
+    """课时输出"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    course_id: int
+    title: str
+    content: str
+    status: str
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class LessonReorderItem(BaseModel):
+    """课时排序项"""
+    id: int
+    sort_order: int
+
+
+class CourseProgressIn(BaseModel):
+    """保存学习进度请求"""
+    lesson_id: int
+
+
+class CourseProgressOut(BaseModel):
+    """学习进度输出"""
+    last_lesson_id: int | None = None

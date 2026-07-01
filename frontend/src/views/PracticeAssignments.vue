@@ -103,7 +103,15 @@ function formatDate(dateStr: string | null) {
     <section class="page-hero">
       <div class="container">
         <div class="hero-inner">
-          <div class="hero-icon">思</div>
+          <div class="hero-icon">
+            <img
+              src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+              alt="AI 通识课平台标识"
+              width="40"
+              height="40"
+              class="hero-icon-image"
+            />
+          </div>
           <h1>选择作业</h1>
           <p>选择题库作业，即时作答查看解析。</p>
         </div>
@@ -177,10 +185,15 @@ function formatDate(dateStr: string | null) {
 .hero-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 56px; height: 56px;
-  background: var(--color-practice); border-radius: var(--radius-md);
-  color: white; font-family: var(--font-serif); font-size: 1.3rem; font-weight: 900;
+  border-radius: var(--radius-md);
   margin-bottom: var(--space-lg);
   box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+}
+.hero-icon-image {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 .hero-inner h1 {
   font-family: var(--font-serif); font-size: 1.8rem; font-weight: 900;

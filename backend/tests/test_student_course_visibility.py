@@ -71,9 +71,5 @@ def test_wrong_questions_include_course_name_and_type(client, db_session, studen
 def test_student_cannot_access_other_course_detail(client, db_session, student_token):
     other_course = db_session.query(Course).filter(Course.created_by == "T002").first()
 
-    for path in (
-        f"/api/courses/{other_course.id}",
-        f"/api/questions/courses/{other_course.id}",
-    ):
-        resp = client.get(path, headers=auth_header(student_token)).json()
-        assert resp["code"] == 404
+    resp = client.get(f"/api/courses/{other_course.id}", headers=auth_header(student_token)).json()
+    assert resp["code"] == 404

@@ -41,6 +41,11 @@ async function fetchPendingReviews() {
   } catch {}
 }
 
+function handleLogout() {
+  authStore.logout()
+  router.push('/login')
+}
+
 onMounted(() => {
   fetchPendingReviews()
   reviewTimer = window.setInterval(fetchPendingReviews, 15000)
@@ -62,25 +67,20 @@ watch(
   <div class="teacher-layout">
     <header class="teacher-header">
       <div class="header-left">
-        <router-link to="/" class="logo-link">
-          <svg viewBox="0 0 32 32" width="24" height="24">
-            <defs>
-              <linearGradient id="tLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style="stop-color: var(--color-primary)" />
-                <stop offset="100%" style="stop-color: var(--color-learn)" />
-              </linearGradient>
-            </defs>
-            <circle cx="16" cy="16" r="14" fill="url(#tLogoGrad)" />
-            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700" fill="white" font-family="sans-serif">师</text>
-          </svg>
+        <router-link to="/teacher" class="logo-link">
+          <img
+            src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+            alt="AI 通识课平台标识"
+            width="24"
+            height="24"
+            class="site-logo-icon"
+          />
           <span class="logo-text">教师工作台</span>
         </router-link>
       </div>
       <div class="header-right">
         <span class="teacher-name">{{ authStore.user?.name || '教师' }}</span>
-        <button class="btn-student-view" @click="router.push('/')">
-          返回学生端
-        </button>
+        <button class="btn-logout" @click="handleLogout">退出登录</button>
       </div>
     </header>
 
@@ -149,6 +149,13 @@ watch(
   gap: var(--space-sm);
 }
 
+.site-logo-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
 .logo-text {
   font-size: 1rem;
   font-weight: 700;
@@ -168,19 +175,24 @@ watch(
   color: var(--color-text);
 }
 
-.btn-student-view {
-  padding: 0.4rem 1rem;
+.btn-logout {
+  padding: 0.4rem 0.9rem;
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: transparent;
   transition: all var(--duration-fast);
+  white-space: nowrap;
 }
 
-.btn-student-view:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+.btn-logout {
+  color: var(--color-text-secondary);
+}
+
+.btn-logout:hover {
+  border-color: #c0392b;
+  color: #c0392b;
 }
 
 .teacher-body {
@@ -305,6 +317,11 @@ watch(
 
   .teacher-name {
     display: none;
+  }
+
+  .btn-logout {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.76rem;
   }
 }
 </style>

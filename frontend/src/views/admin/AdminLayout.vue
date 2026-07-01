@@ -28,17 +28,13 @@ const handleLogout = () => {
     <header class="admin-header">
       <div class="header-left">
         <div class="logo-wrap">
-          <svg viewBox="0 0 32 32" width="24" height="24">
-            <defs>
-              <linearGradient id="aLogoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style="stop-color: var(--color-primary)" />
-                <stop offset="100%" style="stop-color: var(--color-act)" />
-              </linearGradient>
-            </defs>
-            <circle cx="16" cy="16" r="14" fill="url(#aLogoGrad)" />
-            <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700"
-                  fill="white" font-family="sans-serif">管</text>
-          </svg>
+          <img
+            src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+            alt="AI 通识课平台标识"
+            width="24"
+            height="24"
+            class="site-logo-icon"
+          />
           <span class="logo-text">AI通识课管理后台</span>
         </div>
       </div>
@@ -105,6 +101,13 @@ const handleLogout = () => {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+}
+
+.site-logo-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 
 .logo-text {

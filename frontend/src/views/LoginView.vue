@@ -212,17 +212,13 @@ async function handleFirstLoginChange() {
       <div class="brand-side">
         <div class="brand-content">
           <div class="brand-logo">
-            <svg viewBox="0 0 32 32" width="48" height="48">
-              <defs>
-                <linearGradient id="loginGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" style="stop-color: var(--color-primary)" />
-                  <stop offset="100%" style="stop-color: var(--color-learn)" />
-                </linearGradient>
-              </defs>
-              <circle cx="16" cy="16" r="14" fill="url(#loginGrad)" />
-              <text x="16" y="21" text-anchor="middle" font-size="13" font-weight="700"
-                    fill="white" font-family="sans-serif">探</text>
-            </svg>
+            <img
+              src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+              alt="AI 通识课平台标识"
+              width="48"
+              height="48"
+              class="brand-logo-image"
+            />
           </div>
           <h1>学 · 思 · 践 · 悟</h1>
           <p>AI 通识课教学平台</p>
@@ -395,7 +391,16 @@ async function handleFirstLoginChange() {
 }
 
 .brand-logo {
+  display: flex;
+  justify-content: center;
   margin-bottom: var(--space-xl);
+}
+
+.brand-logo-image {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
 }
 
 .brand-content h1 {

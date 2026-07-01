@@ -13,6 +13,19 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+const studentBusinessPathPrefixes = [
+  '/learn',
+  '/practice',
+  '/create',
+  '/act',
+  '/portfolio',
+  '/inbox',
+]
+
+function isStudentBusinessPath(path: string): boolean {
+  return studentBusinessPathPrefixes.some(prefix => path === prefix || path.startsWith(`${prefix}/`))
+}
+
 const AdminLayout = () => import('../views/admin/AdminLayout.vue')
 const AdminTeachers = () => import('../views/admin/AdminTeachers.vue')
 const ChangePasswordView = () => import('../views/ChangePasswordView.vue')
@@ -267,9 +280,9 @@ router.beforeEach((to) => {
   const authStore = useAuthStore()
 
   if (to.meta.public) return true
-  if (to.path === '/') return true
 
   if (!authStore.isLoggedIn) {
+    if (to.path === '/') return true
     return '/login'
   }
 
@@ -291,6 +304,19 @@ router.beforeEach((to) => {
   // 管理员访问首页时自动跳转到后台
   if (to.path === '/' && authStore.isLoggedIn && authStore.user?.role === 'admin') {
     return '/admin'
+  }
+
+  // 教师端只进入教师工作台，不展示学生端业务页面。
+  if (to.path === '/' && authStore.isLoggedIn && authStore.user?.role === 'teacher') {
+    return '/teacher'
+  }
+
+  if (
+    authStore.isLoggedIn &&
+    authStore.user?.role === 'teacher' &&
+    isStudentBusinessPath(to.path)
+  ) {
+    return '/teacher'
   }
 
   if (to.meta.role === 'teacher' && authStore.user?.role !== 'teacher') {

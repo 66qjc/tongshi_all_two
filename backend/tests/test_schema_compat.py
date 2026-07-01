@@ -101,6 +101,65 @@ def test_ensure_schema_compatibility_adds_course_description_without_mysql_text_
     assert description_sql == ["ALTER TABLE courses ADD COLUMN description TEXT NULL"]
 
 
+def test_ensure_schema_compatibility_uses_valid_mysql_course_progress_unique_key(monkeypatch):
+    """MySQL 创建 course_progress 表时应使用合法的 UNIQUE KEY 语法。"""
+    from app.db import schema_compat
+
+    statements: list[str] = []
+
+    class FakeDialect:
+        name = "mysql"
+
+    class FakeConn:
+        dialect = FakeDialect()
+
+        def execute(self, statement):
+            statements.append(str(statement))
+
+    class FakeBegin:
+        def __enter__(self):
+            return FakeConn()
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeEngine:
+        def begin(self):
+            return FakeBegin()
+
+    class FakeInspector:
+        def get_table_names(self):
+            return ["courses", "users", "lessons"]
+
+        def get_columns(self, table):
+            if table == "courses":
+                return [{"name": "id"}, {"name": "name"}, {"name": "description"}]
+            if table == "users":
+                return [{"name": "id"}, {"name": "needs_password_change"}]
+            if table == "lessons":
+                return [{"name": "id"}]
+            return []
+
+        def get_indexes(self, table):
+            return []
+
+        def get_foreign_keys(self, table):
+            return []
+
+    monkeypatch.setattr(schema_compat, "inspect", lambda conn: FakeInspector())
+
+    schema_compat.ensure_schema_compatibility(FakeEngine())
+
+    progress_sql = [
+        statement
+        for statement in statements
+        if "CREATE TABLE course_progress" in statement
+    ]
+    assert len(progress_sql) == 1
+    assert "UNIQUE KEY uq_course_progress_user_course (user_id, course_id)" in progress_sql[0]
+    assert "CONSTRAINT uq_course_progress_user_course\n                            UNIQUE KEY" not in progress_sql[0]
+
+
 def test_ensure_schema_compatibility_creates_project_images_table():
     engine = create_engine("sqlite:///:memory:")
     with engine.begin() as conn:

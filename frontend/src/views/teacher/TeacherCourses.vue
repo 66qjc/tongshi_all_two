@@ -6,7 +6,6 @@ import {
   addPublicCourse,
   createCourse,
   deleteCourse,
-  getCourses,
   getCoursesPage,
   updateCourse,
   type Course,
@@ -16,18 +15,15 @@ const courses = ref<Course[]>([])
 const pagedMyCourses = ref<Course[]>([])
 const loading = ref(true)
 const router = useRouter()
+const mySearchKeyword = ref('')
 const publicSearchKeyword = ref('')
 const myPage = ref(1)
 const myPageSize = ref(10)
 const myTotal = ref(0)
-
-const myCourses = computed(() => courses.value.filter(course => course.is_owner))
-const publicCourses = computed(() => courses.value.filter(course => course.is_public && !course.is_owner))
-const filteredPublicCourses = computed(() => {
-  const keyword = publicSearchKeyword.value.trim().toLowerCase()
-  if (!keyword) return publicCourses.value
-  return publicCourses.value.filter(course => course.name.toLowerCase().includes(keyword))
-})
+const publicCourses = ref<Course[]>([])
+const publicPage = ref(1)
+const publicPageSize = ref(10)
+const publicTotal = ref(0)
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -41,19 +37,18 @@ const saving = ref(false)
 // 添加公共课程
 const addDialogVisible = ref(false)
 const addSearchKeyword = ref('')
+const addDialogCourses = ref<Course[]>([])
+const addDialogLoading = ref(false)
 const addedCourseIds = ref<Set<number>>(new Set())
 const addingCourseIds = ref<Set<number>>(new Set())
 
-// 已添加到自己的课程名称集合（跨对话）
-const ownedCourseNames = computed(() => new Set(myCourses.value.map(c => c.name)))
-
 function isAlreadyOwned(course: Course) {
-  return addedCourseIds.value.has(course.id) || ownedCourseNames.value.has(course.name)
+  return addedCourseIds.value.has(course.id)
 }
 
 const searchablePublicCourses = computed(() => {
   const keyword = addSearchKeyword.value.trim().toLowerCase()
-  let list = publicCourses.value
+  let list = addDialogCourses.value
   if (keyword) list = list.filter(c => c.name.toLowerCase().includes(keyword))
   return [...list].sort((a, b) => {
     const aAdded = isAlreadyOwned(a) ? 0 : 1
@@ -83,18 +78,51 @@ function openAddDialog() {
   addSearchKeyword.value = ''
   addedCourseIds.value = new Set()
   addDialogVisible.value = true
+  loadAddDialogCourses()
+}
+
+async function loadAddDialogCourses() {
+  addDialogLoading.value = true
+  try {
+    const result = await getCoursesPage({
+      scope: 'public',
+      page: 1,
+      page_size: 200,
+    })
+    addDialogCourses.value = result.items
+  } catch {
+    // silent fallback — allow local filter over existing data
+  } finally {
+    addDialogLoading.value = false
+  }
+}
+
+async function loadMyCourses() {
+  const result = await getCoursesPage({
+    keyword: mySearchKeyword.value || undefined,
+    scope: 'owned',
+    page: myPage.value,
+    page_size: myPageSize.value,
+  })
+  pagedMyCourses.value = result.items
+  myTotal.value = result.total
+}
+
+async function loadPublicCourses() {
+  const result = await getCoursesPage({
+    keyword: publicSearchKeyword.value || undefined,
+    scope: 'public',
+    page: publicPage.value,
+    page_size: publicPageSize.value,
+  })
+  publicCourses.value = result.items
+  publicTotal.value = result.total
 }
 
 async function loadCourses() {
   loading.value = true
   try {
-    const [allCourses, ownedPage] = await Promise.all([
-      getCourses(),
-      getCoursesPage({ scope: 'owned', page: myPage.value, page_size: myPageSize.value }),
-    ])
-    courses.value = allCourses
-    pagedMyCourses.value = ownedPage.items
-    myTotal.value = ownedPage.total
+    await Promise.all([loadMyCourses(), loadPublicCourses()])
   } catch {
     ElMessage.error('课程列表加载失败，请稍后重试')
   } finally {
@@ -104,7 +132,28 @@ async function loadCourses() {
 
 function handleMyPageChange(page: number) {
   myPage.value = page
-  loadCourses()
+  loadMyCourses()
+}
+
+function handleMySearch() {
+  myPage.value = 1
+  loadMyCourses()
+}
+
+function handlePublicPageChange(page: number) {
+  publicPage.value = page
+  loadPublicCourses()
+}
+
+function handlePublicPageSizeChange(size: number) {
+  publicPage.value = 1
+  publicPageSize.value = size
+  loadPublicCourses()
+}
+
+function handlePublicSearch() {
+  publicPage.value = 1
+  loadPublicCourses()
 }
 
 onMounted(async () => {
@@ -201,6 +250,17 @@ function formatDate(dateStr: string) {
       </div>
     </div>
 
+    <div class="course-search-row">
+      <el-input
+        v-model="mySearchKeyword"
+        placeholder="搜索已添加课程"
+        clearable
+        size="default"
+        @keyup.enter="handleMySearch"
+        @clear="handleMySearch"
+      />
+    </div>
+
     <el-table :data="pagedMyCourses" stripe style="width: 100%" v-loading="loading">
       <el-table-column type="index" label="序号" width="70" align="center" />
       <el-table-column prop="name" label="课程名称" min-width="200" />
@@ -236,7 +296,7 @@ function formatDate(dateStr: string) {
       </el-table-column>
     </el-table>
 
-    <div v-if="!loading && myCourses.length === 0" class="empty-state">
+    <div v-if="!loading && pagedMyCourses.length === 0" class="empty-state">
       <p>暂无课程，请点击「新建课程」添加</p>
     </div>
 
@@ -252,10 +312,20 @@ function formatDate(dateStr: string) {
     </div>
 
     <div class="section-header public-section-header">
-      <h2>公共课程 <span class="public-count">共 {{ publicCourses.length }} 门</span></h2>
+      <h2>公共课程 <span class="public-count">共 {{ publicTotal }} 门</span></h2>
+      <div class="public-course-search">
+        <el-input
+          v-model="publicSearchKeyword"
+          placeholder="搜索公共课程"
+          clearable
+          size="default"
+          @keyup.enter="handlePublicSearch"
+          @clear="handlePublicSearch"
+        />
+      </div>
     </div>
 
-    <el-table :data="filteredPublicCourses" stripe style="width: 100%" max-height="240" v-loading="loading">
+    <el-table :data="publicCourses" stripe style="width: 100%" max-height="240" v-loading="loading">
       <el-table-column type="index" label="序号" width="70" align="center" />
       <el-table-column prop="name" label="课程名称" min-width="200">
         <template #default="{ row }">
@@ -285,20 +355,21 @@ function formatDate(dateStr: string) {
       </el-table-column>
     </el-table>
 
-    <div class="public-course-search">
-      <el-input
-        v-model="publicSearchKeyword"
-        placeholder="搜索公共课程"
-        clearable
-        size="large"
+    <div v-if="publicTotal > publicPageSize" class="pagination-wrap">
+      <el-pagination
+        background
+        layout="total, sizes, prev, pager, next"
+        :total="publicTotal"
+        :page-size="publicPageSize"
+        :current-page="publicPage"
+        :page-sizes="[10, 20, 50]"
+        @current-change="handlePublicPageChange"
+        @size-change="handlePublicPageSizeChange"
       />
     </div>
 
-    <div v-if="!loading && publicCourses.length === 0" class="empty-state public-empty">
+    <div v-if="!loading && publicTotal === 0" class="empty-state public-empty">
       <p>暂无公共课程</p>
-    </div>
-    <div v-else-if="!loading && filteredPublicCourses.length === 0" class="empty-state public-empty">
-      <p>没有匹配的公共课程</p>
     </div>
 
     <el-dialog
@@ -406,6 +477,11 @@ function formatDate(dateStr: string) {
 .header-actions {
   display: flex;
   gap: var(--space-sm);
+}
+
+.course-search-row {
+  max-width: 360px;
+  margin-bottom: var(--space-md);
 }
 
 .page-header h1 {

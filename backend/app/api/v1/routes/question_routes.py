@@ -15,14 +15,11 @@ from app.core.security import get_current_user, require_role, require_roles
 from app.core.response import success, paginated_success
 from app.core.exceptions import BusinessException
 from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
-from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate, CourseCreateRequest, CourseUpdateRequest
-from app.services.access_control_service import student_can_access_course
+from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate
 from app.services.question_service import (
     list_questions, create_question, update_question,
-    get_course_questions, create_course, add_public_course, update_course, delete_course,
-    get_course_detail, import_questions_from_excel, can_view_course_questions,
+    get_course_questions, import_questions_from_excel, can_view_course_questions,
 )
-from app.services.course_response_service import build_course_detail, build_course_list
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -97,66 +94,14 @@ def remove_question(question_id: int, db: Session = Depends(get_db), current_use
 
 
 @router.post("/batch-delete", summary="批量删除题目", description="教师端：批量删除题目及其关联数据")
+
+
 def batch_delete_questions(
     question_ids: list[int],
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
     raise BusinessException(403, "教师不能删除题目，请联系管理员处理")
-
-
-@router.get("/courses", summary="课程列表", description="获取所有课程，支持关键词搜索")
-def get_courses(
-    keyword: Optional[str] = None,
-    db: Session = Depends(get_db),
-    current_user: AuthUser = Depends(get_current_user),
-):
-    data = build_course_list(db, current_user, keyword)
-    if current_user.role == "student" and isinstance(data, dict):
-        return success(data["courses"])
-    return success(data)
-
-
-@router.post("/courses", summary="创建课程", description="教师端：创建新课程")
-def add_course(data: CourseCreateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = create_course(db, data.name.strip(), current_user.id, False)
-    return success({"id": course.id})
-
-
-@router.post("/courses/{course_id}/add", summary="添加公共课程", description="教师端：将公共课程添加为自己的课程")
-def add_public_course_to_teacher(course_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = add_public_course(db, course_id, current_user.id)
-    return success({"id": course.id})
-
-
-@router.get("/courses/{course_id}", summary="课程详情", description="返回课程信息和资料、题目、班级统计")
-def get_course(
-    course_id: int,
-    db: Session = Depends(get_db),
-    current_user: AuthUser = Depends(get_current_user),
-):
-    if current_user.role == "student" and not student_can_access_course(db, current_user.id, course_id):
-        raise BusinessException(404, "课程不存在")
-    teacher_id = current_user.id if current_user.role == "teacher" else None
-    detail = get_course_detail(db, course_id, teacher_id)
-    if not detail:
-        raise BusinessException(404, "课程不存在")
-    return success(build_course_detail(db, detail, current_user))
-
-
-@router.put("/courses/{course_id}", summary="修改课程名称", description="教师端：修改指定课程的名称")
-def edit_course(course_id: int, data: CourseUpdateRequest, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    course = update_course(db, course_id, data.name.strip(), current_user.id)
-    if not course:
-        raise BusinessException(404, "课程不存在")
-    return success()
-
-
-@router.delete("/courses/{course_id}", summary="删除课程", description="教师端：删除指定课程")
-def remove_course(course_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
-    if not delete_course(db, course_id, current_user.id):
-        raise BusinessException(404, "课程不存在")
-    return success()
 
 
 def _build_question_template(question_type: str) -> bytes:

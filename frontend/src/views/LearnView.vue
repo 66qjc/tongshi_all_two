@@ -2,22 +2,76 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCourseList, type Course } from '@/api/course'
+import { getLessons } from '@/api/lesson'
+import { getCourseProgress } from '@/api/progress'
+
+interface CourseProgressView {
+  lastLessonId: number | null
+  percent: number
+  lessonCount: number
+}
 
 const router = useRouter()
 const courses = ref<Course[]>([])
 const loading = ref(true)
 const keyword = ref('')
 const courseHint = ref<string | null>(null)
+const progressMap = ref<Record<number, CourseProgressView>>({})
+
+async function loadProgressForCourses(courseList: Course[]) {
+  await Promise.all(
+    courseList.map(async (course) => {
+      try {
+        const [progress, lessons] = await Promise.all([
+          getCourseProgress(course.id),
+          getLessons(course.id),
+        ])
+        const lastLessonId = progress.last_lesson_id
+        let percent = 0
+        if (lastLessonId && lessons.length > 0) {
+          const index = lessons.findIndex((l) => l.id === lastLessonId)
+          percent = Math.round(((index >= 0 ? index + 1 : 1) / lessons.length) * 100)
+        }
+        progressMap.value[course.id] = { lastLessonId, percent, lessonCount: lessons.length }
+      } catch {
+        progressMap.value[course.id] = { lastLessonId: null, percent: 0, lessonCount: 0 }
+      }
+    }),
+  )
+}
 
 async function loadCourses() {
   loading.value = true
   try {
-    const result = await getCourseList()
+    const result = await getCourseList(keyword.value.trim() || undefined)
     courses.value = result.courses
     courseHint.value = result.hint
+    progressMap.value = {}
+    if (result.courses.length > 0) {
+      await loadProgressForCourses(result.courses)
+    }
   } finally {
     loading.value = false
   }
+}
+
+function getProgress(courseId: number): CourseProgressView {
+  return progressMap.value[courseId] ?? { lastLessonId: null, percent: 0, lessonCount: 0 }
+}
+
+function openCourse(course: Course) {
+  const progress = getProgress(course.id)
+  if (progress.lastLessonId) {
+    router.push(`/learn/course/${course.id}?lesson_id=${progress.lastLessonId}`)
+    return
+  }
+  router.push(progress.lessonCount > 0 ? `/learn/course/${course.id}` : `/learn/course/${course.id}?tab=materials`)
+}
+
+function courseActionText(courseId: number) {
+  const progress = getProgress(courseId)
+  if (progress.lastLessonId) return '继续学习'
+  return progress.lessonCount > 0 ? '开始学习' : '查看资料'
 }
 
 onMounted(loadCourses)
@@ -39,7 +93,15 @@ const emptyText = computed(() => {
     <section class="page-hero">
       <div class="container">
         <div class="hero-inner">
-          <div class="hero-icon">学</div>
+          <div class="hero-icon">
+            <img
+              src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+              alt="AI 通识课平台标识"
+              width="40"
+              height="40"
+              class="hero-icon-image"
+            />
+          </div>
           <h1>学 · 积累知识</h1>
           <p>浏览老师为你选择的课程资料，按自己的节奏学习。</p>
         </div>
@@ -66,9 +128,18 @@ const emptyText = computed(() => {
           >
             <h3>{{ course.name }}</h3>
             <p>{{ course.material_count }} 份学习资料 · {{ course.question_count }} 道练习题</p>
+            <div v-if="getProgress(course.id).percent" class="course-progress">
+              <div class="progress-track">
+                <div
+                  class="progress-fill"
+                  :style="{ width: `${getProgress(course.id).percent}%` }"
+                ></div>
+              </div>
+              <span class="progress-text">已学 {{ getProgress(course.id).percent }}%</span>
+            </div>
             <div class="card-links">
-              <button class="card-link materials" @click="router.push(`/learn/course/${course.id}`)">
-                资料
+              <button class="card-link primary" @click="openCourse(course)">
+                {{ courseActionText(course.id) }}
               </button>
             </div>
           </div>
@@ -100,14 +171,16 @@ const emptyText = computed(() => {
   justify-content: center;
   width: 56px;
   height: 56px;
-  background: var(--color-learn);
   border-radius: var(--radius-md);
-  color: white;
-  font-family: var(--font-serif);
-  font-size: 1.3rem;
-  font-weight: 900;
   margin-bottom: var(--space-lg);
   box-shadow: 0 4px 14px rgba(45, 106, 122, 0.2);
+}
+
+.hero-icon-image {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .hero-inner h1 {
@@ -194,6 +267,7 @@ const emptyText = computed(() => {
 .card-links {
   display: flex;
   gap: var(--space-sm);
+  margin-top: auto;
 }
 
 .card-link {
@@ -204,13 +278,41 @@ const emptyText = computed(() => {
   transition: all var(--duration-fast);
 }
 
-.card-link.materials {
+.card-link.primary {
   color: white;
   background: var(--color-learn);
 }
 
-.card-link.materials:hover {
+.card-link.primary:hover {
   opacity: 0.9;
+}
+
+.course-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--color-border-light);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--color-learn);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .empty-state {

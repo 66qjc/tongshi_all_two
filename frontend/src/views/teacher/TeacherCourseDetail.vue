@@ -12,11 +12,22 @@ import {
   updateCourseStage,
 } from '@/api/course'
 import type { Material } from '@/api/material'
-import { createMaterial, deleteMaterial, updateMaterial, rebuildMaterialPreview } from '@/api/material'
+import { createMaterial, deleteMaterial, getCourseContents, updateMaterial, rebuildMaterialPreview } from '@/api/material'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
 import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
+import LessonEditor from '@/components/lesson/LessonEditor.vue'
+import {
+  createLesson,
+  deleteLesson,
+  getLessons,
+  reorderLessons,
+  updateLesson,
+  type Lesson,
+  type LessonCreatePayload,
+  type LessonUpdatePayload,
+} from '@/api/lesson'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,6 +65,34 @@ const materialForm = reactive<{
   file: null,
 })
 
+// 标签页
+const activeTab = ref<'materials' | 'lessons'>('materials')
+
+// 课时管理
+const lessons = ref<Lesson[]>([])
+const lessonLoading = ref(false)
+const lessonDialogVisible = ref(false)
+const isEditLesson = ref(false)
+const editingLessonId = ref<number | null>(null)
+const lessonForm = reactive<{
+  title: string
+  content: string
+  status: 'draft' | 'published'
+  sort_order: number | undefined
+}>({
+  title: '',
+  content: '',
+  status: 'draft',
+  sort_order: undefined,
+})
+const savingLesson = ref(false)
+const lessonEditorRef = ref<InstanceType<typeof LessonEditor> | null>(null)
+
+// 资料选择器
+const materialSelectorVisible = ref(false)
+const courseMaterials = ref<Material[]>([])
+const materialSelectorLoading = ref(false)
+
 const totalMaterials = computed(() => {
   if (!course.value) return 0
   return (
@@ -65,6 +104,10 @@ const totalMaterials = computed(() => {
 const sortedStages = computed(() => {
   if (!course.value) return []
   return [...course.value.stages].sort((a, b) => a.sort_order - b.sort_order)
+})
+
+const sortedLessons = computed(() => {
+  return [...lessons.value].sort((a, b) => a.sort_order - b.sort_order)
 })
 
 function formatFileSize(bytes: number) {
@@ -88,6 +131,17 @@ async function loadCourse() {
     ElMessage.error('课程详情加载失败，请稍后重试')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadLessons() {
+  lessonLoading.value = true
+  try {
+    lessons.value = await getLessons(courseId.value)
+  } catch {
+    ElMessage.error('课时列表加载失败，请稍后重试')
+  } finally {
+    lessonLoading.value = false
   }
 }
 
@@ -309,7 +363,117 @@ async function handleDeleteMaterial(material: Material) {
   }
 }
 
-onMounted(loadCourse)
+// ── 课时管理 ──
+
+function resetLessonForm() {
+  lessonForm.title = ''
+  lessonForm.content = ''
+  lessonForm.status = 'draft'
+  lessonForm.sort_order = undefined
+}
+
+function openCreateLesson() {
+  isEditLesson.value = false
+  editingLessonId.value = null
+  resetLessonForm()
+  lessonDialogVisible.value = true
+}
+
+function openEditLesson(lesson: Lesson) {
+  isEditLesson.value = true
+  editingLessonId.value = lesson.id
+  lessonForm.title = lesson.title
+  lessonForm.content = lesson.content || ''
+  lessonForm.status = lesson.status
+  lessonForm.sort_order = lesson.sort_order
+  lessonDialogVisible.value = true
+}
+
+async function handleSaveLesson() {
+  const title = lessonForm.title.trim()
+  if (!title) {
+    ElMessage.warning('请输入课时标题')
+    return
+  }
+
+  const basePayload = {
+    title,
+    content: lessonForm.content,
+    status: lessonForm.status,
+    sort_order: lessonForm.sort_order,
+  }
+
+  savingLesson.value = true
+  try {
+    if (isEditLesson.value && editingLessonId.value) {
+      const updatePayload: LessonUpdatePayload = basePayload
+      await updateLesson(editingLessonId.value, updatePayload)
+      ElMessage.success('课时更新成功')
+    } else {
+      const createPayload: LessonCreatePayload = basePayload
+      await createLesson(courseId.value, createPayload)
+      ElMessage.success('课时创建成功')
+    }
+    lessonDialogVisible.value = false
+    resetLessonForm()
+    await loadLessons()
+  } catch {
+    ElMessage.error(isEditLesson.value ? '更新失败，请稍后重试' : '创建失败，请稍后重试')
+  } finally {
+    savingLesson.value = false
+  }
+}
+
+async function handleDeleteLesson(lesson: Lesson) {
+  try {
+    await ElMessageBox.confirm(`确定删除课时「${lesson.title}」？删除后不可恢复。`, '删除确认', { type: 'warning' })
+    await deleteLesson(lesson.id)
+    ElMessage.success('已删除')
+    await loadLessons()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error('删除失败，请稍后重试')
+    }
+  }
+}
+
+async function handleReorderLessons() {
+  const items = sortedLessons.value.map((lesson, index) => ({
+    id: lesson.id,
+    sort_order: index,
+  }))
+  try {
+    await reorderLessons(courseId.value, items)
+    ElMessage.success('排序已保存')
+    await loadLessons()
+  } catch {
+    ElMessage.error('排序保存失败，请稍后重试')
+  }
+}
+
+// ── 资料选择器 ──
+
+async function openMaterialSelector() {
+  materialSelectorVisible.value = true
+  materialSelectorLoading.value = true
+  try {
+    courseMaterials.value = await getCourseContents(courseId.value)
+  } catch {
+    ElMessage.error('资料列表加载失败，请稍后重试')
+  } finally {
+    materialSelectorLoading.value = false
+  }
+}
+
+function handleInsertMaterial(material: Material) {
+  lessonEditorRef.value?.insertMaterialPlaceholder(material.id, material.type)
+  materialSelectorVisible.value = false
+}
+
+onMounted(() => {
+  loadCourse()
+  loadLessons()
+})
 </script>
 
 <template>
@@ -331,67 +495,108 @@ onMounted(loadCourse)
       </div>
     </div>
 
-    <div class="section-card">
-      <div class="section-header">
-        <h2>课程阶段 / 目录</h2>
-        <div class="stage-add">
-          <el-input v-model="newStageName" placeholder="新阶段名称" style="width: 200px" />
-          <el-input-number v-model="newStageOrder" :min="0" :step="1" step-strictly controls-position="right" style="width: 100px" />
-          <el-button type="primary" :loading="savingStage" @click="handleAddStage">添加阶段</el-button>
+    <el-tabs v-model="activeTab" class="detail-tabs">
+      <el-tab-pane label="资料" name="materials">
+        <div class="section-card">
+          <div class="section-header">
+            <h2>课程阶段 / 目录</h2>
+            <div class="stage-add">
+              <el-input v-model="newStageName" placeholder="新阶段名称" style="width: 200px" />
+              <el-input-number v-model="newStageOrder" :min="0" :step="1" step-strictly controls-position="right" style="width: 100px" />
+              <el-button type="primary" :loading="savingStage" @click="handleAddStage">添加阶段</el-button>
+            </div>
+          </div>
+          <el-empty v-if="sortedStages.length === 0" description="暂无阶段，可在上方添加" />
+          <div v-else class="stage-list">
+            <div v-for="stage in sortedStages" :key="stage.id" class="stage-row">
+              <el-input v-model="stage.name" style="width: 240px" @change="handleStageNameChange(stage)" />
+              <el-input-number v-model="stage.sort_order" :min="0" :step="1" step-strictly controls-position="right" style="width: 100px" @change="handleStageOrderChange(stage)" />
+              <span class="stage-meta">{{ stage.materials.length }} 份资料</span>
+              <el-button type="primary" size="small" @click="openUploadMaterial(stage.id)">上传资料</el-button>
+              <el-button type="danger" text size="small" @click="handleDeleteStage(stage)">删除</el-button>
+            </div>
+          </div>
         </div>
-      </div>
-      <el-empty v-if="sortedStages.length === 0" description="暂无阶段，可在上方添加" />
-      <div v-else class="stage-list">
-        <div v-for="stage in sortedStages" :key="stage.id" class="stage-row">
-          <el-input v-model="stage.name" style="width: 240px" @change="handleStageNameChange(stage)" />
-          <el-input-number v-model="stage.sort_order" :min="0" :step="1" step-strictly controls-position="right" style="width: 100px" @change="handleStageOrderChange(stage)" />
-          <span class="stage-meta">{{ stage.materials.length }} 份资料</span>
-          <el-button type="primary" size="small" @click="openUploadMaterial(stage.id)">上传资料</el-button>
-          <el-button type="danger" text size="small" @click="handleDeleteStage(stage)">删除</el-button>
-        </div>
-      </div>
-    </div>
 
-    <div class="section-card materials-section">
-      <div class="section-header">
-        <h2>阶段资料</h2>
-        <el-button type="primary" @click="openUploadMaterial(null)">上传新资料</el-button>
-      </div>
-        <div v-for="stage in sortedStages" :key="`m-${stage.id}`" class="stage-materials">
-        <h3><span class="stage-tag">阶段</span>{{ stage.name }}</h3>
-        <div v-if="stage.materials.length" class="material-grid">
-          <MaterialRichCard
-            v-for="material in stage.materials"
-            :key="material.id"
-            :material="material"
-            manage
-            @preview="previewMaterial"
-            @edit="openEditMaterial"
-            @delete="handleDeleteMaterial"
-            @rebuild="handleRebuildPreview"
-          />
-        </div>
-        <el-empty v-else description="该阶段暂无资料" :image-size="80" />
-      </div>
+        <div class="section-card materials-section">
+          <div class="section-header">
+            <h2>阶段资料</h2>
+            <el-button type="primary" @click="openUploadMaterial(null)">上传新资料</el-button>
+          </div>
+            <div v-for="stage in sortedStages" :key="`m-${stage.id}`" class="stage-materials">
+            <h3><span class="stage-tag">阶段</span>{{ stage.name }}</h3>
+            <div v-if="stage.materials.length" class="material-grid">
+              <MaterialRichCard
+                v-for="material in stage.materials"
+                :key="material.id"
+                :material="material"
+                manage
+                @preview="previewMaterial"
+                @edit="openEditMaterial"
+                @delete="handleDeleteMaterial"
+                @rebuild="handleRebuildPreview"
+              />
+            </div>
+            <el-empty v-else description="该阶段暂无资料" :image-size="80" />
+          </div>
 
-      <div v-if="course && course.uncategorized_materials.length" class="stage-materials">
-        <h3><span class="stage-tag other">其他</span>未分类资料</h3>
-        <div class="material-grid">
-          <MaterialRichCard
-            v-for="material in course.uncategorized_materials"
-            :key="material.id"
-            :material="material"
-            manage
-            @preview="previewMaterial"
-            @edit="openEditMaterial"
-            @delete="handleDeleteMaterial"
-            @rebuild="handleRebuildPreview"
-          />
-        </div>
-      </div>
+          <div v-if="course && course.uncategorized_materials.length" class="stage-materials">
+            <h3><span class="stage-tag other">其他</span>未分类资料</h3>
+            <div class="material-grid">
+              <MaterialRichCard
+                v-for="material in course.uncategorized_materials"
+                :key="material.id"
+                :material="material"
+                manage
+                @preview="previewMaterial"
+                @edit="openEditMaterial"
+                @delete="handleDeleteMaterial"
+                @rebuild="handleRebuildPreview"
+              />
+            </div>
+          </div>
 
-      <el-empty v-if="!sortedStages.length && !course?.uncategorized_materials.length" description="暂无资料" />
-    </div>
+          <el-empty v-if="!sortedStages.length && !course?.uncategorized_materials.length" description="暂无资料" />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="课时" name="lessons">
+        <div class="section-card lessons-section">
+          <div class="section-header">
+            <h2>课时管理</h2>
+            <el-button type="primary" @click="openCreateLesson">新增课时</el-button>
+          </div>
+
+          <el-table :data="sortedLessons" v-loading="lessonLoading" stripe size="small" style="width: 100%">
+            <el-table-column label="排序号" width="120" align="center">
+              <template #default="{ row }">
+                <el-input-number v-model="row.sort_order" :min="0" :step="1" step-strictly controls-position="right" style="width: 90px" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="title" label="课时标题" min-width="200" />
+            <el-table-column label="状态" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.status === 'published' ? 'success' : 'info'" size="small">
+                  {{ row.status === 'published' ? '已发布' : '草稿' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180" align="center">
+              <template #default="{ row }">
+                <el-button type="primary" text size="small" @click="openEditLesson(row)">编辑</el-button>
+                <el-button type="danger" text size="small" @click="handleDeleteLesson(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div v-if="sortedLessons.length" class="lesson-actions">
+            <el-button type="primary" size="small" @click="handleReorderLessons">保存排序</el-button>
+          </div>
+
+          <el-empty v-if="!sortedLessons.length && !lessonLoading" description="暂无课时，可点击右上角新增" />
+        </div>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 编辑课程信息 -->
     <el-dialog v-model="courseDialogVisible" title="编辑课程信息" width="520px">
@@ -444,6 +649,56 @@ onMounted(loadCourse)
       </template>
     </el-dialog>
 
+    <!-- 新增/编辑课时 -->
+    <el-dialog v-model="lessonDialogVisible" :title="isEditLesson ? '编辑课时' : '新增课时'" width="760px" top="5vh">
+      <div class="form-group">
+        <label>课时标题</label>
+        <el-input v-model="lessonForm.title" placeholder="请输入课时标题" maxlength="200" show-word-limit />
+      </div>
+      <div class="form-group">
+        <label>状态</label>
+        <el-select v-model="lessonForm.status" placeholder="请选择状态" style="width: 200px">
+          <el-option label="草稿" value="draft" />
+          <el-option label="已发布" value="published" />
+        </el-select>
+      </div>
+      <div class="form-group">
+        <label>排序号（留空则自动放到末尾）</label>
+        <el-input-number v-model="lessonForm.sort_order" :min="0" :step="1" step-strictly controls-position="right" placeholder="自动" style="width: 160px" />
+      </div>
+      <div class="form-group">
+        <div class="editor-label-row">
+          <label>课时内容</label>
+          <el-button type="primary" size="small" @click="openMaterialSelector">插入资料</el-button>
+        </div>
+        <LessonEditor ref="lessonEditorRef" v-model="lessonForm.content" @insert-material="openMaterialSelector" />
+      </div>
+      <template #footer>
+        <el-button @click="lessonDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingLesson" @click="handleSaveLesson">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 资料选择器 -->
+    <el-dialog v-model="materialSelectorVisible" title="选择要插入的资料" width="620px">
+      <div v-loading="materialSelectorLoading" class="material-selector-list">
+        <el-empty v-if="!courseMaterials.length && !materialSelectorLoading" description="暂无可插入的资料" />
+        <div
+          v-for="material in courseMaterials"
+          :key="material.id"
+          class="material-selector-item"
+          @click="handleInsertMaterial(material)"
+        >
+          <div class="material-info">
+            <span class="material-title">{{ material.title }}</span>
+            <el-tag size="small" :type="material.type === 'video' ? 'primary' : 'warning'">
+              {{ material.type === 'video' ? '视频' : 'PDF' }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <MaterialPreviewDialog v-model:visible="previewVisible" :material="selectedMaterial" />
   </div>
 </template>
@@ -481,4 +736,14 @@ onMounted(loadCourse)
 .upload-zone { padding: var(--space-xl); border: 2px dashed var(--color-border); border-radius: var(--radius-md); text-align: center; color: var(--color-text-muted); cursor: pointer; }
 .upload-zone:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .file-name { color: var(--color-text); }
+.detail-tabs { margin-bottom: var(--space-lg); }
+.lessons-section { min-height: 200px; }
+.lesson-actions { display: flex; justify-content: flex-end; margin-top: var(--space-md); }
+.editor-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm); }
+.editor-label-row label { margin-bottom: 0; }
+.material-selector-list { display: flex; flex-direction: column; gap: var(--space-sm); max-height: 420px; overflow-y: auto; }
+.material-selector-item { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s; }
+.material-selector-item:hover { border-color: var(--color-primary); background: var(--color-bg-alt); }
+.material-info { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.material-title { font-weight: 500; color: var(--color-text); }
 </style>

@@ -27,22 +27,30 @@ const modules = [
           <p>本平台致力于为中国计量大学理工科大一学生提供系统的人工智能通识教育。我们相信 AI 教育不应止于知识传授，更应在实践中培养学生的综合能力。</p>
           <div class="philosophy-grid">
             <div class="phil-card">
-              <div class="phil-icon" style="color: var(--color-learn)">探</div>
+              <div class="phil-icon">
+                <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
+              </div>
               <h3>学</h3>
               <p>六大核心模块，从 AI 概述到伦理思辨，系统构建知识体系</p>
             </div>
             <div class="phil-card">
-              <div class="phil-icon" style="color: var(--color-practice)">练</div>
+              <div class="phil-icon">
+                <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
+              </div>
               <h3>练</h3>
               <p>在线练习即练即批，选择题与填空题巩固核心知识点</p>
             </div>
             <div class="phil-card">
-              <div class="phil-icon" style="color: var(--color-create)">造</div>
+              <div class="phil-icon">
+                <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
+              </div>
               <h3>创</h3>
               <p>AI + 硬件创意实践，打破"AI 只是聊天框"的思维局限</p>
             </div>
             <div class="phil-card">
-              <div class="phil-icon" style="color: var(--color-act)">行</div>
+              <div class="phil-icon">
+                <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
+              </div>
               <h3>行</h3>
               <p>走进社区和中小学，用 AI 温暖社会，锻炼综合软实力</p>
             </div>
@@ -149,9 +157,16 @@ const modules = [
 }
 
 .phil-icon {
-  font-size: 2rem;
-  font-weight: 900;
+  display: flex;
+  justify-content: center;
   margin-bottom: var(--space-sm);
+}
+
+.phil-icon img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .phil-card h3 {

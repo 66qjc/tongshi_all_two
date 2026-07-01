@@ -37,7 +37,7 @@ def _create_public_course(client, admin_token: str, name: str) -> int:
 
 def _create_teacher_course(client, teacher_token: str, name: str) -> int:
     resp = client.post(
-        "/api/questions/courses",
+        "/api/courses",
         json={"name": name},
         headers=auth_header(teacher_token),
     )
@@ -124,7 +124,7 @@ def test_admin_creating_public_question_writes_log_and_shares_globally(
     admin_token = _admin_token(client)
     public_course_id = _create_public_course(client, admin_token, "共享题库公共课")
     teacher_copy_id = client.post(
-        f"/api/questions/courses/{public_course_id}/add",
+        f"/api/courses/{public_course_id}/add",
         headers=auth_header(teacher_token),
     ).json()["data"]["id"]
 
@@ -245,7 +245,7 @@ def test_private_course_create_and_import_do_not_write_contribution_logs(
 ):
     """私有课程题目新增和导入保持原行为，不写贡献记录。"""
     create_course_resp = client.post(
-        "/api/questions/courses",
+        "/api/courses",
         json={"name": "私有题库课程"},
         headers=auth_header(teacher_token),
     )

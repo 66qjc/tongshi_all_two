@@ -61,8 +61,8 @@ class TestTeacherRefactor:
     """覆盖课程锚定、教师隔离、班级和发布题目核心行为。"""
 
     def test_teacher_only_sees_own_courses(self, client, teacher_token, other_teacher_token):
-        t1 = client.get("/api/questions/courses", headers=auth_header(teacher_token)).json()
-        t2 = client.get("/api/questions/courses", headers=auth_header(other_teacher_token)).json()
+        t1 = client.get("/api/courses", headers=auth_header(teacher_token)).json()
+        t2 = client.get("/api/courses", headers=auth_header(other_teacher_token)).json()
 
         assert t1["code"] == 0
         assert [item["name"] for item in t1["data"]] == ["测试课程"]
@@ -70,7 +70,7 @@ class TestTeacherRefactor:
         assert [item["name"] for item in t2["data"]] == ["其它课程"]
 
     def test_course_detail_returns_course_counts_without_old_section_count(self, client, teacher_token):
-        resp = client.get("/api/questions/courses/1", headers=auth_header(teacher_token))
+        resp = client.get("/api/courses/1", headers=auth_header(teacher_token))
         data = resp.json()
 
         assert data["code"] == 0
@@ -115,7 +115,7 @@ class TestTeacherRefactor:
         assert "课程不存在" in data["message"]
 
     def test_delete_course_with_child_data_cleans_up_related_data(self, client, db_session, teacher_token):
-        resp = client.delete("/api/questions/courses/1", headers=auth_header(teacher_token))
+        resp = client.delete("/api/courses/1", headers=auth_header(teacher_token))
         data = resp.json()
 
         assert data["code"] == 0
@@ -125,24 +125,24 @@ class TestTeacherRefactor:
 
     def test_delete_empty_course_succeeds(self, client, teacher_token):
         create_data = client.post(
-            "/api/questions/courses",
+            "/api/courses",
             json={"name": "可删除空课程"},
             headers=auth_header(teacher_token),
         ).json()
         course_id = create_data["data"]["id"]
 
-        resp = client.delete(f"/api/questions/courses/{course_id}", headers=auth_header(teacher_token))
+        resp = client.delete(f"/api/courses/{course_id}", headers=auth_header(teacher_token))
         assert resp.json()["code"] == 0
 
     def test_teacher_created_course_is_always_private(self, client, teacher_token):
         create_data = client.post(
-            "/api/questions/courses",
+            "/api/courses",
             json={"name": "教师私有课程测试", "is_public": True},
             headers=auth_header(teacher_token),
         ).json()
         assert create_data["code"] == 0
 
-        courses = client.get("/api/questions/courses", headers=auth_header(teacher_token)).json()["data"]
+        courses = client.get("/api/courses", headers=auth_header(teacher_token)).json()["data"]
         created = next(item for item in courses if item["id"] == create_data["data"]["id"])
         assert created["is_public"] is False
         assert created["is_owner"] is True
@@ -153,7 +153,7 @@ class TestTeacherRefactor:
         db_session.commit()
 
         resp = client.put(
-            f"/api/questions/courses/{course.id}",
+            f"/api/courses/{course.id}",
             json={"name": "已有公共课程改名", "is_public": False},
             headers=auth_header(teacher_token),
         )
@@ -171,7 +171,7 @@ class TestTeacherRefactor:
         db_session.add(Question(type="choice", course_id=public_course.id, stem="共享题目", options=["A", "B"], answer="A"))
         db_session.commit()
 
-        resp = client.post(f"/api/questions/courses/{public_course.id}/add", headers=auth_header(other_teacher_token))
+        resp = client.post(f"/api/courses/{public_course.id}/add", headers=auth_header(other_teacher_token))
         data = resp.json()
 
         assert data["code"] == 0
@@ -186,7 +186,7 @@ class TestTeacherRefactor:
         # 全站共享题库：题目不再复制副本，副本课程名下没有题目
         assert db_session.query(Question).filter(Question.course_id == added_id).count() == 0
 
-        courses = client.get("/api/questions/courses", headers=auth_header(other_teacher_token)).json()["data"]
+        courses = client.get("/api/courses", headers=auth_header(other_teacher_token)).json()["data"]
         copied = next(item for item in courses if item["id"] == added_id)
         assert copied["is_owner"] is True
         assert copied["is_public"] is False
@@ -216,7 +216,7 @@ class TestTeacherRefactor:
         db_session.commit()
 
         resp = client.post(
-            f"/api/questions/courses/{public_course.id}/add",
+            f"/api/courses/{public_course.id}/add",
             headers=auth_header(other_teacher_token),
         )
         assert resp.json()["code"] == 0
@@ -249,8 +249,8 @@ class TestTeacherRefactor:
         assert create_resp.json()["code"] == 0
         public_course_id = create_resp.json()["data"]["id"]
 
-        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
-        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(other_teacher_token))
+        client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(other_teacher_token))
         pdf_file_id = make_stored_file(db_session)
 
         material_resp = client.post(
@@ -285,7 +285,7 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
-        add_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        add_resp = client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = add_resp.json()["data"]["id"]
 
         question_resp = client.post(
@@ -354,7 +354,7 @@ class TestTeacherRefactor:
         )
         public_course_id = course_resp.json()["data"]["id"]
         # 教师添加该公共课，资料和阶段会复制副本；题目仍走全站共享
-        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
 
         create_resp = client.post(
             f"/api/admin/public-courses/{public_course_id}/questions",
@@ -410,7 +410,7 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
-        client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         excel = _build_question_import_file(
             ["题型", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"],
             [["choice", "人工智能,基础|多选", "公共导入标签题", "A. 对|B. 错", "A", "解析"]],
@@ -459,7 +459,7 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         public_course_id = course_resp.json()["data"]["id"]
-        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        copy_resp = client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = copy_resp.json()["data"]["id"]
         pdf_file_id = make_stored_file(db_session)
         material_resp = client.post(
@@ -499,7 +499,7 @@ class TestTeacherRefactor:
         db_session.commit()
 
         add_resp = client.post(
-            f"/api/questions/courses/{public_course.id}/add",
+            f"/api/courses/{public_course.id}/add",
             headers=auth_header(teacher_token),
         )
         assert add_resp.json()["code"] == 0
@@ -536,7 +536,7 @@ class TestTeacherRefactor:
             headers=auth_header(admin_token),
         )
         question_id = question_resp.json()["data"]["id"]
-        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        copy_resp = client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = copy_resp.json()["data"]["id"]
 
         delete_resp = client.delete(
@@ -578,10 +578,10 @@ class TestTeacherRefactor:
             json={"type": "choice", "stem": "副本题目", "options": ["A", "B"], "answer": "A", "explanation": ""},
             headers=auth_header(admin_token),
         )
-        copy_resp = client.post(f"/api/questions/courses/{public_course_id}/add", headers=auth_header(teacher_token))
+        copy_resp = client.post(f"/api/courses/{public_course_id}/add", headers=auth_header(teacher_token))
         copy_id = copy_resp.json()["data"]["id"]
 
-        delete_resp = client.delete(f"/api/questions/courses/{copy_id}", headers=auth_header(teacher_token))
+        delete_resp = client.delete(f"/api/courses/{copy_id}", headers=auth_header(teacher_token))
         assert delete_resp.json()["code"] == 0
         assert db_session.query(Course).filter(Course.id == copy_id).first() is None
         assert db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).first() is not None
@@ -600,11 +600,11 @@ class TestTeacherRefactor:
         db_session.commit()
         token = client.post("/api/token", json={"id": "2025888", "password": "abc123"}).json()["data"]["access_token"]
 
-        resp = client.get("/api/questions/courses", headers=auth_header(token))
+        resp = client.get("/api/courses", headers=auth_header(token))
         data = resp.json()
 
         assert data["code"] == 0
-        assert data["data"] == []
+        assert data["data"]["courses"] == []
 
     def test_download_multi_choice_question_template(self, client, teacher_token):
         resp = client.get("/api/questions/import/template/multi_choice", headers=auth_header(teacher_token))

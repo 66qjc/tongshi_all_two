@@ -106,49 +106,74 @@ def list_students(
         class_ids = [class_id]
     if not class_ids:
         return [], 0
-    query = (
-        db.query(User, StudentClassEnrollment, Class)
-        .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
+
+    # 数据库层去重排序：每个学生取所在最小班级 ID 和最早导入顺序作为排序基
+    sort_sub = (
+        db.query(
+            StudentClassEnrollment.user_id.label("user_id"),
+            func.min(Class.id).label("sort_class_id"),
+            func.min(func.coalesce(StudentClassEnrollment.import_order, 0)).label("sort_import_order"),
+        )
         .join(Class, Class.id == StudentClassEnrollment.class_id)
-        .filter(User.role == "student", StudentClassEnrollment.class_id.in_(class_ids))
+        .filter(StudentClassEnrollment.class_id.in_(class_ids))
+        .group_by(StudentClassEnrollment.user_id)
+        .subquery()
+    )
+
+    student_query = (
+        db.query(User, sort_sub.c.sort_class_id, sort_sub.c.sort_import_order)
+        .join(sort_sub, sort_sub.c.user_id == User.id)
+        .filter(User.role == "student")
     )
     if keyword:
-        query = query.filter(
-            (User.id.like(f"%{keyword}%")) | (User.name.like(f"%{keyword}%"))
+        keyword_like = f"%{keyword.strip()}%"
+        student_query = student_query.filter(
+            (User.id.ilike(keyword_like)) | (User.name.ilike(keyword_like))
         )
-    query = query.order_by(Class.id.asc(), StudentClassEnrollment.import_order.asc(), User.id.asc())
-    rows = query.all()
 
-    # 按学生 ID 去重：同一学生在多个班级时合并班级信息
-    student_class_ids: dict[str, set[int]] = {}
-    student_class_names: dict[str, list[str]] = {}
-    student_first_enrollment: dict[str, StudentClassEnrollment] = {}
-    student_user: dict[str, User] = {}
-    for s, enrollment, class_ in rows:
-        student_class_ids.setdefault(s.id, set()).add(class_.id)
-        student_class_names.setdefault(s.id, []).append(class_.name)
-        if s.id not in student_first_enrollment:
-            student_first_enrollment[s.id] = enrollment
-        student_user[s.id] = s
+    total = student_query.count()
+    student_query = student_query.order_by(
+        sort_sub.c.sort_class_id.asc(),
+        sort_sub.c.sort_import_order.asc(),
+        User.id.asc(),
+    )
 
-    unique_student_ids = list(student_user.keys())
-    total = len(unique_student_ids)
-
-    # 按当前排序规则排序：class_id asc, import_order asc
-    unique_student_ids.sort(key=lambda sid: (
-        min(student_class_ids[sid]) if student_class_ids[sid] else 0,
-        student_first_enrollment[sid].import_order or 0,
-        sid,
-    ))
-
-    # 分页
     if page and page_size:
-        paged_ids = unique_student_ids[(page - 1) * page_size: page * page_size]
+        safe_page = max(page, 1)
+        safe_page_size = max(min(page_size, 100), 1)
+        rows = student_query.offset((safe_page - 1) * safe_page_size).limit(safe_page_size).all()
     else:
-        paged_ids = unique_student_ids
+        rows = student_query.all()
+
+    paged_ids = [student.id for student, _, _ in rows]
+    student_user = {student.id: student for student, _, _ in rows}
+
+    # 当前页学生的班级聚合信息
+    student_class_ids: dict[str, set[int]] = {sid: set() for sid in paged_ids}
+    student_class_names: dict[str, list[str]] = {sid: [] for sid in paged_ids}
+    student_first_enrollment: dict[str, StudentClassEnrollment] = {}
+
+    if paged_ids:
+        rows_for_aggregation = (
+            db.query(User, StudentClassEnrollment, Class)
+            .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
+            .join(Class, Class.id == StudentClassEnrollment.class_id)
+            .filter(
+                User.role == "student",
+                User.id.in_(paged_ids),
+                StudentClassEnrollment.class_id.in_(class_ids),
+            )
+            .order_by(Class.id.asc(), StudentClassEnrollment.import_order.asc(), User.id.asc())
+            .all()
+        )
+        for student, enrollment, class_ in rows_for_aggregation:
+            student_class_ids.setdefault(student.id, set()).add(class_.id)
+            student_class_names.setdefault(student.id, []).append(class_.name)
+            student_user[student.id] = student
+            if student.id not in student_first_enrollment:
+                student_first_enrollment[student.id] = enrollment
 
     # 任务与完成数据
-    # 获取教师相关课程 ID（与导出逻辑保持一致，按课程维度查任务）
     course_id_query = db.query(Class.course_id).filter(Class.created_by == teacher_id).distinct()
     if course_id:
         course_id_query = course_id_query.filter(Class.course_id == course_id)
@@ -162,7 +187,6 @@ def list_students(
     ordered_tasks: list[Announcement] = []
 
     if paged_ids and course_ids:
-        # 按课程维度查任务（与导出逻辑一致，不再限制 AnnouncementClass 关联）
         task_rows = (
             db.query(Announcement)
             .filter(
@@ -178,7 +202,6 @@ def list_students(
             task_by_id[task.id] = task
             all_task_ids.add(task.id)
 
-        # 建立班级→任务映射：已关联到班级的任务按班级分组
         task_class_rows = (
             db.query(AnnouncementClass.announcement_id, AnnouncementClass.class_id)
             .filter(
@@ -213,9 +236,9 @@ def list_students(
     result = []
     for sid in paged_ids:
         s = student_user[sid]
-        enrollment = student_first_enrollment[sid]
-        class_id_list = list(student_class_ids[sid])
-        class_name_str = "、".join(student_class_names[sid])
+        enrollment = student_first_enrollment.get(sid)
+        class_id_list = list(student_class_ids.get(sid, set()))
+        class_name_str = "、".join(student_class_names.get(sid, []))
 
         assigned_task_ids: set[int] = set()
         for cid in class_id_list:
@@ -236,7 +259,7 @@ def list_students(
             })
 
         result.append({
-            "serial_no": enrollment.import_order or 0,
+            "serial_no": enrollment.import_order if enrollment else 0,
             "id": sid,
             "name": s.name,
             "major": s.major or "",

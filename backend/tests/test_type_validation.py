@@ -1,4 +1,4 @@
-﻿"""资料和题目类型校验测试。"""
+"""资料和题目类型校验测试。"""
 
 import pytest
 from pydantic import ValidationError

@@ -28,7 +28,7 @@ def list_materials(
     if course_id is not None:
         query = query.filter(Material.course_id == course_id)
     if keyword:
-        query = query.filter(Material.title.contains(keyword))
+        query = query.filter(Material.title.ilike(f"%{keyword.strip()}%"))
     total = query.count()
     if page and page_size:
         materials = query.order_by(Material.course_id, Material.id).offset((page - 1) * page_size).limit(page_size).all()

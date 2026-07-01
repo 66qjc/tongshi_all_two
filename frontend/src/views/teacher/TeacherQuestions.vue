@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createQuestion, downloadQuestionTemplate, getQuestions, importQuestions, updateQuestion, type Question } from '@/api/question'
 import { getCourses, type Course } from '@/api/course'
+import { useDebounce } from '@/composables/useDebounce'
 
 const courses = ref<Course[]>([])
 const writableCourses = ref<Course[]>([])
@@ -11,6 +12,11 @@ const loading = ref(true)
 // 全站共享题库：不再按课程筛选题目（后端忽略 course_id 过滤）
 const filterType = ref<'' | 'choice' | 'fill' | 'multi_choice'>('')
 const filterKeyword = ref('')
+const debouncedKeyword = useDebounce(filterKeyword, 300)
+watch(debouncedKeyword, () => {
+  page.value = 1
+  loadQuestions()
+})
 const filterTag = ref('')
 const page = ref(1)
 const pageSize = ref(20)
@@ -53,7 +59,7 @@ async function loadQuestions() {
   try {
     const result = await getQuestions({
       type: filterType.value || undefined,
-      keyword: filterKeyword.value || undefined,
+      keyword: debouncedKeyword.value || undefined,
       page: page.value,
       page_size: pageSize.value,
     })

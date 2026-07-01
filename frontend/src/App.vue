@@ -7,10 +7,11 @@ import BackToTop from './components/BackToTop.vue'
 
 const route = useRoute()
 const useTransition = computed(() => !route.path.startsWith('/admin') && !route.path.startsWith('/teacher'))
+const isWorkbenchRoute = computed(() => route.path.startsWith('/admin') || route.path.startsWith('/teacher'))
 </script>
 
 <template>
-  <AppHeader />
+  <AppHeader v-if="!isWorkbenchRoute" />
   <main>
     <RouterView v-slot="{ Component, route: viewRoute }">
       <template v-if="Component">
@@ -21,7 +22,7 @@ const useTransition = computed(() => !route.path.startsWith('/admin') && !route.
       </template>
     </RouterView>
   </main>
-  <AppFooter />
+  <AppFooter v-if="!isWorkbenchRoute" />
   <BackToTop />
 </template>
 

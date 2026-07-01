@@ -33,7 +33,7 @@ def list_questions(
     if type_ is not None:
         query = query.filter(Question.type == type_)
     if keyword:
-        query = query.filter(Question.stem.contains(keyword))
+        query = query.filter(Question.stem.ilike(f"%{keyword.strip()}%"))
     total = query.count()
     if page and page_size:
         questions = query.order_by(Question.id).offset((page - 1) * page_size).limit(page_size).all()
@@ -192,7 +192,7 @@ def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None
     if teacher_id is not None:
         query = query.filter(_course_access_filter(teacher_id))
     if keyword:
-        query = query.filter(Course.name.contains(keyword))
+        query = query.filter(Course.name.ilike(f"%{keyword.strip()}%"))
     return query.order_by(Course.is_public.asc(), Course.id.desc()).all()
 
 

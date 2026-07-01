@@ -580,6 +580,82 @@ def ensure_schema_compatibility(engine) -> None:
                 "CREATE INDEX ix_material_previews_cover_file_id ON material_previews (cover_file_id)"
             ))
 
+        # ── lessons 表（学习页面图文一体）──────────────────────────────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "lessons" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE lessons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        course_id INTEGER NOT NULL,
+                        title VARCHAR(200) NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        content TEXT NOT NULL DEFAULT '',
+                        status VARCHAR(16) NOT NULL DEFAULT 'published',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE lessons (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        course_id INTEGER NOT NULL,
+                        title VARCHAR(200) NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        content TEXT NOT NULL,
+                        status ENUM('draft', 'published') NOT NULL DEFAULT 'published',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_lessons_course_id
+                            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+                    )
+                """))
+            conn.execute(text("CREATE INDEX ix_lessons_course_id ON lessons (course_id)"))
+            conn.execute(text("CREATE INDEX ix_lessons_sort_order ON lessons (sort_order)"))
+
+        # ── course_progress 表（学习进度）────────────────────────────────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "course_progress" not in table_names:
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE course_progress (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id VARCHAR(32) NOT NULL,
+                        course_id INTEGER NOT NULL,
+                        last_lesson_id INTEGER,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                        FOREIGN KEY(last_lesson_id) REFERENCES lessons(id) ON DELETE SET NULL,
+                        UNIQUE(user_id, course_id)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE course_progress (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        user_id VARCHAR(32) NOT NULL,
+                        course_id INTEGER NOT NULL,
+                        last_lesson_id INTEGER NULL,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_course_progress_user_id
+                            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_course_progress_course_id
+                            FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_course_progress_last_lesson_id
+                            FOREIGN KEY (last_lesson_id) REFERENCES lessons(id) ON DELETE SET NULL,
+                        UNIQUE KEY uq_course_progress_user_course (user_id, course_id)
+                    )
+                """))
+            conn.execute(text("CREATE INDEX ix_course_progress_user_id ON course_progress (user_id)"))
+            conn.execute(text("CREATE INDEX ix_course_progress_course_id ON course_progress (course_id)"))
+
         # courses.description
         if "courses" in table_names:
             _add_column_if_missing(conn, inspector, "courses", "description", "TEXT NULL")

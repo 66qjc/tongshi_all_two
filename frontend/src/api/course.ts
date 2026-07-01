@@ -81,7 +81,7 @@ export function deleteCourseStage(stageId: number) {
 }
 
 export function addPublicCourse(id: number) {
-  return http.post<any, { id: number }>(`/questions/courses/${id}/add`)
+  return http.post<any, { id: number }>(`/courses/${id}/add`)
 }
 
 export function updateCourse(id: number, data: { name?: string; description?: string }) {

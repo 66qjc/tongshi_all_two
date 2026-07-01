@@ -1,10 +1,8 @@
 """Course routes — independent /courses endpoints.
 
-Design doc 01 requires courses to have their own top-level route
-instead of being nested under /questions/courses.
-
-The old /questions/courses endpoints are kept in question_routes.py
-for backward compatibility; both call the same service functions.
+Courses use the top-level /courses route. The historical
+/questions/courses compatibility endpoints were removed after callers and
+tests migrated to this module.
 """
 from __future__ import annotations
 
@@ -26,7 +24,7 @@ from app.services.question_service import (
     get_course_detail,
     add_public_course,
 )
-from app.services.course_response_service import build_course_detail, build_course_list
+from app.services.course_response_service import build_course_detail, build_course_list, build_course_page
 from app.services.course_stage_service import list_stages_for_course, create_stage, format_stage_out
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -41,17 +39,17 @@ def get_courses(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
+    if page is not None:
+        items, total, safe_page, safe_page_size = build_course_page(
+            db,
+            current_user,
+            keyword=keyword,
+            scope=scope,
+            page=page,
+            page_size=page_size,
+        )
+        return paginated_success(items, total, safe_page, safe_page_size)
     data = build_course_list(db, current_user, keyword)
-    if page is not None and isinstance(data, list):
-        items = data
-        if scope == "owned":
-            items = [item for item in items if item.get("is_owner")]
-        elif scope == "public":
-            items = [item for item in items if item.get("is_public") and not item.get("is_owner")]
-        safe_page = max(page, 1)
-        safe_page_size = max(min(page_size, 100), 1)
-        start = (safe_page - 1) * safe_page_size
-        return paginated_success(items[start:start + safe_page_size], len(items), safe_page, safe_page_size)
     return success(data)
 
 

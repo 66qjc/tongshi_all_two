@@ -135,24 +135,24 @@ class TestCourseContent:
     """课程内容接口测试"""
 
     def test_list_courses(self, client, student_token):
-        resp = client.get("/api/questions/courses", headers=auth_header(student_token))
+        resp = client.get("/api/courses", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 0
-        assert len(data["data"]) >= 1
-        course = data["data"][0]
+        assert len(data["data"]["courses"]) >= 1
+        course = data["data"]["courses"][0]
         assert course["name"] == "测试课程"
         assert "material_count" in course
         assert "question_count" in course
 
     def test_course_detail(self, client, student_token):
-        resp = client.get("/api/questions/courses/1", headers=auth_header(student_token))
+        resp = client.get("/api/courses/1", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 0
         assert data["data"]["name"] == "测试课程"
         assert "class_count" in data["data"]
 
     def test_course_detail_not_found(self, client, student_token):
-        resp = client.get("/api/questions/courses/99", headers=auth_header(student_token))
+        resp = client.get("/api/courses/99", headers=auth_header(student_token))
         data = resp.json()
         assert data["code"] == 404
 

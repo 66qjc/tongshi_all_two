@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { approveProject, deleteProject, downloadProjectReportsZip, getAllProjects, rejectProject } from '@/api/teacher'
 import type { Project } from '@/api/project'
 import { resolveFileUrl } from '@/utils/url'
+import { useDebounce } from '@/composables/useDebounce'
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
@@ -20,6 +21,11 @@ const pageSize = ref(20)
 const total = ref(0)
 const statusFilter = ref<string | null>(null)
 const searchKeyword = ref('')
+const debouncedSearchKeyword = useDebounce(searchKeyword, 300)
+watch(debouncedSearchKeyword, () => {
+  currentPage.value = 1
+  loadProjects()
+})
 
 const statusMap: Record<string, { label: string; type: 'warning' | 'success' | 'danger' }> = {
   pending: { label: '待审', type: 'warning' },
@@ -57,7 +63,7 @@ async function loadProjects() {
   try {
     const res = await getAllProjects(
       statusFilter.value || undefined,
-      searchKeyword.value || undefined,
+      debouncedSearchKeyword.value || undefined,
       currentPage.value,
       pageSize.value,
     )

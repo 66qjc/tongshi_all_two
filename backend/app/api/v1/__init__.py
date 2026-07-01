@@ -18,6 +18,8 @@ from app.api.v1.routes.admin_public_course_routes import router as admin_public_
 from app.api.v1.routes.profile_routes import router as profile_router
 from app.api.v1.routes.showcase_routes import router as showcase_router
 from app.api.v1.routes.stage_routes import router as stage_router
+from app.api.v1.routes.lessons import router as lessons_router
+from app.api.v1.routes.progress import router as progress_router
 from app.api.v1.routes.notification_routes import router as notification_router
 
 api_router = APIRouter()
@@ -37,5 +39,7 @@ api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
 api_router.include_router(admin_public_course_router, prefix="/admin", tags=["admin-public-courses"])
 api_router.include_router(profile_router)
 api_router.include_router(showcase_router)
-api_router.include_router(notification_router)
 api_router.include_router(stage_router)
+api_router.include_router(lessons_router)
+api_router.include_router(progress_router)
+api_router.include_router(notification_router)

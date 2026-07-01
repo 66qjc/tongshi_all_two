@@ -1,4 +1,4 @@
-﻿"""课程阶段/目录服务。"""
+"""课程阶段/目录服务。"""
 from __future__ import annotations
 
 from sqlalchemy.orm import Session

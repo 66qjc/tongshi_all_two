@@ -103,6 +103,19 @@ def count_all_questions(db: Session) -> int:
     return db.query(Question).count()
 
 
+def _candidate_stem_fragment(stem: str) -> str:
+    """从题干抽取用于 ilike 过滤的候选片段。
+
+    使用题干归约后的第一个词（如果首词足够长）或前 30 个字符，
+    缩小查重时的数据库扫描范围。
+    """
+    normalized = normalize_question_stem(stem)
+    first_token = re.split(r"\s+", normalized, maxsplit=1)[0]
+    if len(first_token) >= 4:
+        return first_token[:30]
+    return normalized[:30]
+
+
 def find_duplicate_question(
     db: Session,
     question_type: str,
@@ -111,11 +124,19 @@ def find_duplicate_question(
     answer: str,
     exclude_question_id: int | None = None,
 ) -> Question | None:
-    """在全站共享题库中查找重复题目（不区分课程，全站一套题）。"""
+    """在全站共享题库中查找重复题目（不区分课程，全站一套题）。
+
+    先用题型和题干候选片段缩小候选集，再对候选集做完整指纹比对，
+    减少进入 Python 层全量比对的风险。
+    """
     fingerprint = build_question_fingerprint(question_type, stem, options, answer)
-    for question in db.query(Question).all():
-        if exclude_question_id is not None and question.id == exclude_question_id:
-            continue
+    fragment = _candidate_stem_fragment(stem)
+    query = db.query(Question).filter(Question.type == question_type)
+    if fragment:
+        query = query.filter(Question.stem.ilike(f"%{fragment}%"))
+    if exclude_question_id is not None:
+        query = query.filter(Question.id != exclude_question_id)
+    for question in query.all():
         if build_question_fingerprint_from_question(question) == fingerprint:
             return question
     return None
