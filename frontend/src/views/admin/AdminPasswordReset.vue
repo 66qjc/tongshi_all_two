@@ -43,14 +43,16 @@ async function handleApprove(requestId: number) {
 }
 
 async function handleReject(requestId: number) {
+  let reason = ''
   try {
-    await ElMessageBox.prompt('请输入驳回原因（可选）', '驳回申请', {
+    const result = await ElMessageBox.prompt('请输入驳回原因（可选）', '驳回申请', {
       inputType: 'textarea',
       confirmButtonText: '确认驳回',
     })
+    reason = String(result.value || '').trim()
   } catch { return }
   try {
-    await adminRejectPasswordResetRequest(requestId)
+    await adminRejectPasswordResetRequest(requestId, reason)
     ElMessage.success('已驳回')
     await loadRequests()
   } catch {}

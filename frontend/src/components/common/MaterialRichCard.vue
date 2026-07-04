@@ -20,8 +20,14 @@ const coverUrl = computed(() => {
   return fileId ? resolveFileUrl(`/api/files/${fileId}`) : ''
 })
 
+const typeLabel = computed(() => {
+  if (props.material.type === 'video') return '视频'
+  if (props.material.type === 'pdf') return 'PDF'
+  return '链接'
+})
+
 const summaryText = computed(() => {
-  return props.material.preview?.summary || '该资料暂未生成摘要，可直接打开原文件查看。'
+  return props.material.preview?.summary || '暂无资料摘要，可在新窗口打开文件查看。'
 })
 
 const metaText = computed(() => {
@@ -43,7 +49,7 @@ const statusText = computed(() => {
   if (status === 'ready') return '预览就绪'
   if (status === 'processing') return '预览生成中'
   if (status === 'failed') return '预览生成失败'
-  return '预览生成中'
+  return '可打开原文件'
 })
 </script>
 
@@ -51,12 +57,14 @@ const statusText = computed(() => {
   <article class="material-rich-card">
     <div class="cover">
       <img v-if="coverUrl" :src="coverUrl" :alt="material.title" />
-      <span v-else>{{ material.type === 'video' ? '视频' : 'PDF' }}</span>
+      <span v-else>{{ typeLabel }}</span>
     </div>
     <div class="body">
       <div class="title-row">
-        <el-tag size="small" effect="plain">{{ material.type === 'video' ? '视频' : 'PDF' }}</el-tag>
-        <el-tag size="small" :type="material.preview?.status === 'failed' ? 'danger' : 'info'" effect="plain">{{ statusText }}</el-tag>
+        <el-tag size="small" effect="plain">{{ typeLabel }}</el-tag>
+        <el-tag size="small" :type="material.preview?.status === 'failed' ? 'danger' : 'info'" effect="plain">
+          {{ statusText }}
+        </el-tag>
       </div>
       <h3>{{ material.title }}</h3>
       <p class="summary">{{ summaryText }}</p>

@@ -14,22 +14,26 @@ const emit = defineEmits<{
 
 <template>
   <nav class="prev-next-nav">
-    <div
+    <button
+      type="button"
       class="nav-card prev"
       :class="{ disabled: !prevLesson }"
-      @click="prevLesson && emit('prev')"
+      :disabled="!prevLesson"
+      @click="emit('prev')"
     >
       <div class="nav-label">← 上一课</div>
       <div class="nav-title">{{ prevLesson?.title || '没有上一课' }}</div>
-    </div>
-    <div
+    </button>
+    <button
+      type="button"
       class="nav-card next"
       :class="{ disabled: !nextLesson }"
-      @click="nextLesson && emit('next')"
+      :disabled="!nextLesson"
+      @click="emit('next')"
     >
       <div class="nav-label">下一课 →</div>
       <div class="nav-title">{{ nextLesson?.title || '没有下一课' }}</div>
-    </div>
+    </button>
   </nav>
 </template>
 
@@ -49,7 +53,8 @@ const emit = defineEmits<{
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s ease;
+  text-align: left;
+  transition: border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
 }
 
 .nav-card:hover:not(.disabled) {
@@ -71,8 +76,6 @@ const emit = defineEmits<{
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin-bottom: 6px;
 }
 

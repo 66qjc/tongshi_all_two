@@ -15,7 +15,6 @@ const filesUsingSiteIcon = [
   'src/views/admin/AdminLayout.vue',
   'src/views/LoginView.vue',
   'src/views/RegisterView.vue',
-  'src/views/LearnView.vue',
   'src/views/PracticeView.vue',
   'src/views/PracticeAssignments.vue',
   'src/views/AboutView.vue',
@@ -45,6 +44,26 @@ const legacyPageIcons = [
 
 for (const [file, pattern] of legacyPageIcons) {
   assert.doesNotMatch(read(file), pattern, `${file} 不应继续使用普通页面单字图标。`)
+}
+
+const highContrastIconFrames = [
+  ['src/components/AppFooter.vue', /class="footer-logo-mark"[\s\S]*?<img[\s\S]*?class="footer-logo-icon"/],
+  ['src/views/LoginView.vue', /class="brand-logo brand-logo-mark"[\s\S]*?<img[\s\S]*?class="brand-logo-image"/],
+  ['src/views/RegisterView.vue', /class="brand-logo brand-logo-mark"[\s\S]*?<img[\s\S]*?class="brand-logo-image"/],
+]
+
+for (const [file, pattern] of highContrastIconFrames) {
+  assert.match(read(file), pattern, `${file} 深色背景中的网站图标应有高对比底托。`)
+}
+
+const highContrastFrameStyles = [
+  ['src/components/AppFooter.vue', /\.footer-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.9/],
+  ['src/views/LoginView.vue', /\.brand-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.92/],
+  ['src/views/RegisterView.vue', /\.brand-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.92/],
+]
+
+for (const [file, pattern] of highContrastFrameStyles) {
+  assert.match(read(file), pattern, `${file} 高对比底托应使用浅色承托背景。`)
 }
 
 const legacyFaviconFiles = ['public/favicon.svg', 'public/favicon.ico']

@@ -159,7 +159,7 @@ async function handleUpload() {
 
 async function handleDelete(row: Material) {
   try {
-    await ElMessageBox.confirm(`确定删除资料"${row.title}"？这只会删除你当前课程里的这份资料，不会影响公共课程源内容。`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除资料「${row.title}」？这只会删除本课程副本中的资料，不影响公共课程源内容。`, '删除确认', { type: 'warning' })
     await deleteMaterial(row.id)
     materials.value = materials.value.filter(item => item.id !== row.id)
     ElMessage.success('已删除')
@@ -213,7 +213,7 @@ watch(filterCourse, () => {
     </div>
 
     <div v-if="!loading && materials.length === 0" class="empty-state">
-      暂无资料，点击"上传资料"添加视频课件或 PDF 讲义。
+      暂无资料。点击「上传资料」添加到所选课程。
     </div>
 
     <div v-if="total > pageSize" class="pagination-wrap">

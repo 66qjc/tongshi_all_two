@@ -6,7 +6,19 @@ from typing import BinaryIO
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.entities import StoredFile
+from app.core.exceptions import BusinessException
+from app.models.entities import (
+    Class,
+    Course,
+    Material,
+    MaterialPreview,
+    Project,
+    ProjectImage,
+    ShowcaseItem,
+    ShowcaseItemImage,
+    StoredFile,
+    StudentClassEnrollment,
+)
 from app.services.storage_local import LocalStorageAdapter
 from app.services.storage_service import StoredObject
 
@@ -75,18 +87,146 @@ def build_file_url(file_id: int) -> str:
     return f"/api/files/{file_id}"
 
 
-def resolve_file_stream(db: Session, file_id: int) -> tuple[StoredFile, BinaryIO]:
+def _teacher_can_review_project(db: Session, teacher_id: str, project: Project) -> bool:
+    """判断教师是否拥有该作品的审核范围。"""
+    if project.course_id is not None:
+        return db.query(Course.id).filter(
+            Course.id == project.course_id,
+            Course.created_by == teacher_id,
+        ).first() is not None
+
+    return db.query(StudentClassEnrollment.id).join(
+        Class,
+        Class.id == StudentClassEnrollment.class_id,
+    ).filter(
+        StudentClassEnrollment.user_id == project.author_id,
+        Class.created_by == teacher_id,
+    ).first() is not None
+
+
+def _can_read_project_file(db: Session, file_id: int, user_id: str, role: str) -> bool:
+    projects = db.query(Project).filter(
+        (Project.report_file_id == file_id) | (Project.cover_file_id == file_id)
+    ).all()
+    image_project_ids = [
+        row[0]
+        for row in db.query(ProjectImage.project_id).filter(ProjectImage.file_id == file_id).all()
+    ]
+    if image_project_ids:
+        projects.extend(db.query(Project).filter(Project.id.in_(image_project_ids)).all())
+
+    for project in projects:
+        if project.author_id == user_id:
+            return True
+        if project.status == "approved":
+            return True
+        if role == "teacher" and _teacher_can_review_project(db, user_id, project):
+            return True
+    return False
+
+
+def _can_read_showcase_file(db: Session, file_id: int, user_id: str | None = None, role: str = "") -> bool:
+    cover_exists = db.query(ShowcaseItem.id).filter(
+        ShowcaseItem.cover_file_id == file_id,
+        ShowcaseItem.is_active.is_(True),
+    ).first() is not None
+    if cover_exists:
+        return True
+
+    image_exists = db.query(ShowcaseItemImage.id).join(
+        ShowcaseItem,
+        ShowcaseItem.id == ShowcaseItemImage.showcase_item_id,
+    ).filter(
+        ShowcaseItemImage.file_id == file_id,
+        ShowcaseItem.is_active.is_(True),
+    ).first() is not None
+    if image_exists:
+        return True
+
+    if user_id and role in {"admin", "teacher"}:
+        return db.query(ShowcaseItem.id).filter(
+            ShowcaseItem.cover_file_id == file_id,
+            ShowcaseItem.created_by == user_id,
+        ).first() is not None
+    return False
+
+
+def _can_read_material_preview_file(db: Session, file_id: int, user_id: str, role: str) -> bool:
+    from app.services.material_service import can_view_course_materials
+
+    preview = db.query(MaterialPreview).filter(MaterialPreview.cover_file_id == file_id).first()
+    if not preview:
+        return False
+    material = db.query(Material).filter(Material.id == preview.material_id).first()
+    if not material:
+        return False
+    return can_view_course_materials(db, material.course_id, user_id, role)
+
+
+def can_anonymous_read_file(db: Session, record: StoredFile) -> bool:
+    """匿名用户仅可读取明确公开的衍生展示图片。"""
+    if _can_read_showcase_file(db, record.id):
+        return True
+    return db.query(MaterialPreview.id).join(
+        Material,
+        Material.id == MaterialPreview.material_id,
+    ).join(
+        Course,
+        Course.id == Material.course_id,
+    ).filter(
+        MaterialPreview.cover_file_id == record.id,
+        Course.is_public.is_(True),
+    ).first() is not None
+
+
+def can_current_user_read_file(db: Session, record: StoredFile, current_user) -> bool:
+    """按现有业务关系判断当前用户是否可读取 StoredFile。"""
+    if current_user.role == "admin":
+        return True
+    if record.created_by == current_user.id:
+        return True
+
+    from app.services.material_service import can_view_course_materials
+
+    material = db.query(Material).filter(Material.file_id == record.id).first()
+    if material and can_view_course_materials(db, material.course_id, current_user.id, current_user.role):
+        return True
+
+    if _can_read_material_preview_file(db, record.id, current_user.id, current_user.role):
+        return True
+
+    if _can_read_project_file(db, record.id, current_user.id, current_user.role):
+        return True
+
+    if _can_read_showcase_file(db, record.id, current_user.id, current_user.role):
+        return True
+
+    return False
+
+
+def resolve_file_stream(
+    db: Session,
+    file_id: int,
+    current_user=None,
+    enforce_auth: bool = False,
+) -> tuple[StoredFile, BinaryIO]:
     """根据 file_id 获取文件记录和文件流。找不到返回 (None, None)"""
     record = db.query(StoredFile).filter(StoredFile.id == file_id).first()
     if record is None:
         return None, None
 
+    if enforce_auth:
+        if current_user is None:
+            if not can_anonymous_read_file(db, record):
+                raise BusinessException(401, "无效的认证凭据")
+        elif not can_current_user_read_file(db, record, current_user):
+            raise BusinessException(404, "文件不存在")
+
     if record.storage_provider == "local":
-        # 本地文件：object_key 可能是完整路径或相对路径
-        object_key = record.object_key
-        # 兼容历史：如果 object_key 以 /uploads/ 开头，去掉前缀
-        if object_key.startswith("/uploads/"):
-            object_key = object_key[len("/uploads/"):]
+        try:
+            object_key = normalize_local_object_key(record.object_key)
+        except ValueError:
+            raise BusinessException(400, "文件路径不合法")
         adapter = _local_adapter
     else:
         adapter = _get_adapter(record.storage_provider)

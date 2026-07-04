@@ -9,7 +9,7 @@ from app.core.exceptions import BusinessException
 from app.schemas.common import AuthUser, ProjectCreate, ProjectUpdate
 from app.services.project_service import (
     list_approved_projects, get_project, get_accessible_project, get_user_projects,
-    create_project, toggle_like, update_project, format_project,
+    create_project, toggle_like, update_project, format_project, batch_load_liked_set,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -23,7 +23,8 @@ def get_projects(
     current_user: AuthUser = Depends(get_current_user),
 ):
     projects, total = list_approved_projects(db, page, page_size)
-    return paginated_success([format_project(db, p, current_user.id) for p in projects], total, page, page_size)
+    liked = batch_load_liked_set(db, [p.id for p in projects], current_user.id)
+    return paginated_success([format_project(db, p, current_user.id, liked_set=liked) for p in projects], total, page, page_size)
 
 
 @router.get("/mine", summary="我的作品", description="学生端：查看自己提交的所有作品")
@@ -34,7 +35,8 @@ def get_my_projects(
     current_user: AuthUser = Depends(get_current_user),
 ):
     projects, total = get_user_projects(db, current_user.id, page, page_size)
-    return paginated_success([format_project(db, p, current_user.id) for p in projects], total, page, page_size)
+    liked = batch_load_liked_set(db, [p.id for p in projects], current_user.id)
+    return paginated_success([format_project(db, p, current_user.id, liked_set=liked) for p in projects], total, page, page_size)
 
 
 @router.get("/{project_id}", summary="作品详情", description="查看指定作品的完整信息")

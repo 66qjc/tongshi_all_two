@@ -168,12 +168,21 @@ async function submitAnswer() {
   const result = await apiSubmitAnswer(q.id, userAnswer, announcementId.value)
   answers.value[currentIndex.value] = userAnswer
   results.value[currentIndex.value] = result.is_correct
-  submitted.value = true
   persistDraft()
-  // 全部完成时清理草稿；作业完成状态由最终按钮显式提交。
-  if (results.value.every(r => r !== null)) {
+  if (result.is_correct) {
+    if (currentIndex.value < totalQuestions.value - 1) {
+      nextQuestion()
+      return
+    }
+    if (isAssignmentMode.value) {
+      await finishPractice()
+      return
+    }
+    practiceFinished.value = true
     clearQuizDraft(courseId.value)
+    return
   }
+  submitted.value = true
 }
 
 function nextQuestion() {
@@ -242,7 +251,7 @@ async function finishPractice() {
     try {
       await recordCompletion(announcementId.value)
     } catch (error) {
-      ElMessage.error(error instanceof Error ? error.message : '任务完成失败')
+      ElMessage.error(error instanceof Error ? error.message : '作业完成状态提交失败')
       return
     }
   }
@@ -252,7 +261,7 @@ async function finishPractice() {
 
 // 自由练习没有作业上下文，全部答完后直接展示总结。
 watch(allDone, (done) => {
-  if (done && !isAssignmentMode.value) {
+  if (done && !isAssignmentMode.value && submitted.value === false) {
     practiceFinished.value = true
   }
 })
@@ -315,7 +324,7 @@ async function backToPrevious() {
             {{ isAssignmentMode ? assignmentBackText : '退出练习' }}
           </button>
           <div class="quiz-info">
-            <h2>{{ isAssignmentMode ? assignmentTitle || '任务练习' : '课程练习' }}</h2>
+            <h2>{{ isAssignmentMode ? assignmentTitle || '作业练习' : '课程练习' }}</h2>
             <span class="quiz-progress-text">{{ currentIndex + 1 }} / {{ totalQuestions }} 题</span>
           </div>
         </div>
@@ -350,7 +359,7 @@ async function backToPrevious() {
       <div class="container">
         <div class="summary-card">
           <h2>暂无可练习题目</h2>
-          <p class="summary-text">{{ isAssignmentMode ? '该任务暂未配置题目，请联系老师。' : '该课程暂未配置题目，请稍后再试。' }}</p>
+          <p class="summary-text">{{ isAssignmentMode ? '作业暂未配置题目，请联系老师。' : '该课程暂未配置题目，请稍后再试。' }}</p>
           <div class="summary-actions">
             <button class="btn-retry" @click="backToPrevious">
               {{ isAssignmentMode ? assignmentBackText : '返回练习列表' }}
@@ -451,7 +460,7 @@ async function backToPrevious() {
           </div>
 
           <!-- Result feedback -->
-          <div v-if="submitted" class="result-box" :class="results[currentIndex] ? 'correct' : 'wrong'">
+          <div v-if="submitted && results[currentIndex] === false" class="result-box" :class="results[currentIndex] ? 'correct' : 'wrong'">
             <div class="result-header">
               <svg v-if="results[currentIndex]" width="20" height="20" viewBox="0 0 24 24" fill="none">
                 <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>

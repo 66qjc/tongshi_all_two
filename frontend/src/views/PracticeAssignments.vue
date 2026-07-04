@@ -174,12 +174,29 @@ function formatDate(dateStr: string | null) {
 </template>
 
 <style scoped>
-.assignments-page { padding-top: 60px; }
+.assignments-page {
+  --assignment-paper: oklch(0.975 0.018 96);
+  --assignment-panel: oklch(0.992 0.01 102);
+  --assignment-ink: oklch(0.28 0.04 178);
+  --assignment-muted: oklch(0.49 0.035 184);
+  --assignment-line: oklch(0.88 0.034 96);
+  --assignment-lake: oklch(0.43 0.09 188);
+  --assignment-lake-hover: oklch(0.37 0.09 188);
+  --assignment-lake-soft: oklch(0.92 0.045 188);
+  --assignment-pending: oklch(0.58 0.12 76);
+  --assignment-pending-bg: oklch(0.95 0.07 86);
+  --assignment-done: oklch(0.42 0.095 155);
+  --assignment-done-bg: oklch(0.94 0.055 155);
+  --assignment-expired: oklch(0.50 0.12 28);
+  --assignment-expired-bg: oklch(0.94 0.055 32);
+  padding-top: 60px;
+  background: var(--assignment-paper);
+}
 
 .page-hero {
   padding: var(--space-3xl) 0 var(--space-2xl);
-  background: var(--color-practice-bg);
-  border-bottom: 1px solid var(--color-border-light);
+  background: var(--assignment-paper);
+  border-bottom: 1px solid var(--assignment-line);
 }
 .hero-inner { text-align: center; }
 .hero-icon {
@@ -187,7 +204,9 @@ function formatDate(dateStr: string | null) {
   width: 56px; height: 56px;
   border-radius: var(--radius-md);
   margin-bottom: var(--space-lg);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+  background: var(--assignment-panel);
+  border: 1px solid color-mix(in oklch, var(--assignment-lake), white 72%);
+  box-shadow: 0 14px 30px color-mix(in oklch, var(--assignment-lake), transparent 84%);
 }
 .hero-icon-image {
   display: block;
@@ -197,35 +216,126 @@ function formatDate(dateStr: string | null) {
 }
 .hero-inner h1 {
   font-family: var(--font-serif); font-size: 1.8rem; font-weight: 900;
-  color: var(--color-text); margin-bottom: var(--space-sm); letter-spacing: 0.05em;
+  color: var(--assignment-ink); margin-bottom: var(--space-sm); letter-spacing: 0;
 }
-.hero-inner p { font-size: 0.92rem; color: var(--color-text-secondary); }
+.hero-inner p { font-size: 0.92rem; color: var(--assignment-muted); }
 
 .content-section { padding: var(--space-2xl) 0 var(--space-3xl); max-width: 1000px; margin: 0 auto; }
 
 .back-btn {
   display: inline-block; font-size: 0.85rem;
-  color: var(--color-practice); font-weight: 600; margin-bottom: var(--space-lg);
+  color: var(--assignment-lake); font-weight: 700; margin-bottom: var(--space-lg);
 }
 
-.filter-bar { display: flex; gap: var(--space-md); margin-bottom: var(--space-lg); }
+.filter-bar {
+  display: flex;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  border: 1px solid var(--assignment-line);
+  border-radius: 8px;
+  background: var(--assignment-panel);
+  box-shadow: 0 12px 32px color-mix(in oklch, var(--assignment-lake), transparent 90%);
+}
+
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--assignment-line) inset;
+  background: color-mix(in oklch, var(--assignment-panel), var(--assignment-paper) 32%);
+}
+
+:deep(.el-input__wrapper.is-focus),
+:deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--assignment-lake) inset;
+}
+
+:deep(.el-table) {
+  overflow: hidden;
+  border: 1px solid var(--assignment-line);
+  border-radius: 8px;
+  background: var(--assignment-panel);
+  color: var(--assignment-ink);
+}
+
+:deep(.el-table th.el-table__cell) {
+  background: color-mix(in oklch, var(--assignment-lake-soft), var(--assignment-panel) 52%);
+  color: var(--assignment-ink);
+  font-weight: 700;
+}
+
+:deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: color-mix(in oklch, var(--assignment-paper), var(--assignment-panel) 48%);
+}
+
+:deep(.el-table__body tr:hover > td.el-table__cell) {
+  background: var(--assignment-lake-soft);
+}
 
 .status-tag {
-  font-size: 0.75rem; font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  font-size: 0.75rem; font-weight: 700;
   padding: 2px 10px; border-radius: var(--radius-full);
+  border: 1px solid transparent;
 }
-.status-tag.done { color: #10b981; background: rgba(16,185,129,0.1); }
-.status-tag.pending { color: #f59e0b; background: rgba(245,158,11,0.1); }
-.status-tag.expired { color: #ef4444; background: rgba(239,68,68,0.1); }
+.status-tag.done {
+  color: var(--assignment-done);
+  background: var(--assignment-done-bg);
+  border-color: color-mix(in oklch, var(--assignment-done), white 70%);
+}
+.status-tag.pending {
+  color: var(--assignment-pending);
+  background: var(--assignment-pending-bg);
+  border-color: color-mix(in oklch, var(--assignment-pending), white 68%);
+}
+.status-tag.expired {
+  color: var(--assignment-expired);
+  background: var(--assignment-expired-bg);
+  border-color: color-mix(in oklch, var(--assignment-expired), white 70%);
+}
 
 .go-btn {
-  padding: 4px 16px; font-size: 0.8rem; font-weight: 600; color: white;
-  background: var(--color-practice); border-radius: var(--radius-full);
-  transition: all var(--duration-fast);
+  min-height: 30px;
+  padding: 4px 16px; font-size: 0.8rem; font-weight: 700;
+  color: var(--assignment-panel);
+  background: var(--assignment-lake);
+  border-radius: var(--radius-full);
+  box-shadow: 0 10px 20px color-mix(in oklch, var(--assignment-lake), transparent 82%);
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background var(--duration-fast),
+    box-shadow var(--duration-fast);
 }
-.go-btn:hover { opacity: 0.9; }
+.go-btn:hover {
+  transform: translateY(-1px);
+  background: var(--assignment-lake-hover);
+  box-shadow: 0 12px 24px color-mix(in oklch, var(--assignment-lake), transparent 76%);
+}
 
-.disabled-text { color: var(--color-text-muted); font-size: 0.8rem; }
+.disabled-text { color: var(--assignment-muted); font-size: 0.8rem; }
 
-.empty-state { text-align: center; padding: var(--space-4xl) 0; color: var(--color-text-muted); font-size: 0.9rem; }
+.empty-state { text-align: center; padding: var(--space-4xl) 0; color: var(--assignment-muted); font-size: 0.9rem; }
+
+@media (max-width: 760px) {
+  .filter-bar {
+    flex-direction: column;
+  }
+
+  .filter-bar :deep(.el-select),
+  .filter-bar :deep(.el-input) {
+    width: 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .go-btn {
+    transition: none;
+  }
+
+  .go-btn:hover {
+    transform: none;
+  }
+}
 </style>

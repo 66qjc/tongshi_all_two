@@ -43,49 +43,49 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('../views/LoginView.vue'),
-      meta: { title: '登录 — AI 通识课平台', public: true },
+      meta: { title: '登录 · AI 通识课程平台', public: true },
     },
     {
       path: '/register',
       name: 'register',
       component: () => import('../views/RegisterView.vue'),
-      meta: { title: '注册 — AI 通识课平台', public: true },
+      meta: { title: '注册 · AI 通识课程平台', public: true },
     },
     {
       path: '/learn',
       name: 'learn',
       component: () => import('../views/LearnView.vue'),
-      meta: { title: '探 · 学无止境' },
+      meta: { title: '学 · AI 通识公开学习馆', public: true },
     },
     {
       path: '/learn/course/:courseId',
       name: 'course-detail',
       component: () => import('../views/CourseDetailView.vue'),
-      meta: { title: '课程详情' },
+      meta: { title: '课程阅读', public: true },
     },
     {
       path: '/practice',
       name: 'practice',
       component: () => import('../views/PracticeView.vue'),
-      meta: { title: '练 · 学以致用' },
+      meta: { title: '思 · 学以致用' },
     },
     {
       path: '/create',
       name: 'create',
       component: () => import('../views/CreateView.vue'),
-      meta: { title: '造 · 智创未来' },
+      meta: { title: '践 · 智创未来' },
     },
     {
       path: '/act',
       name: 'act',
       component: () => import('../views/ActView.vue'),
-      meta: { title: '行 · 知行合一' },
+      meta: { title: '悟 · 知行合一', public: true },
     },
     {
       path: '/act/showcase/:id',
       name: 'act-showcase-detail',
       component: () => import('../views/ActDetailView.vue'),
-      meta: { title: '行动详情' },
+      meta: { title: '行动详情', public: true },
     },
     {
       path: '/practice/assignments',
@@ -97,13 +97,13 @@ const router = createRouter({
       path: '/practice/quiz/:courseId',
       name: 'practice-quiz',
       component: () => import('../views/PracticeQuizView.vue'),
-      meta: { title: '练 · 在线练习' },
+      meta: { title: '思 · 在线练习' },
     },
     {
       path: '/practice/announcement/:announcementId',
       name: 'practice-announcement',
       component: () => import('../views/PracticeQuizView.vue'),
-      meta: { title: '任务练习' },
+      meta: { title: '作业练习' },
     },
     {
       path: '/create/project/:id',
@@ -180,7 +180,7 @@ const router = createRouter({
           path: 'publish',
           name: 'teacher-publish',
           component: () => import('../views/teacher/TeacherAnnouncements.vue'),
-          meta: { title: '发布题目' },
+          meta: { title: '发布作业' },
         },
         {
           path: 'grades',
@@ -275,10 +275,32 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  document.title = (to.meta.title as string) || '学 · 思 · 践 · 悟 — AI 通识课平台'
+  document.title = (to.meta.title as string) || '学 · 思 · 践 · 行 · AI 通识课程平台'
 
   const authStore = useAuthStore()
 
+  // Token 过期后清除登录态；公开页面按游客身份继续访问。
+  if (authStore.isLoggedIn && authStore.token && isTokenExpired(authStore.token)) {
+    authStore.logout()
+    if (to.meta.public || to.path === '/') return true
+    return '/login'
+  }
+
+  // 教师访问首页时自动进入教师工作台。
+  if (authStore.isLoggedIn && authStore.user?.role === 'teacher' && to.path === '/') {
+    return '/teacher'
+  }
+
+  // 教师端只进入教师工作台，不展示学生端业务页面。
+  if (
+    authStore.isLoggedIn &&
+    authStore.user?.role === 'teacher' &&
+    isStudentBusinessPath(to.path)
+  ) {
+    return '/teacher'
+  }
+
+  // 公开路由允许游客与已登录用户访问。
   if (to.meta.public) return true
 
   if (!authStore.isLoggedIn) {
@@ -286,13 +308,7 @@ router.beforeEach((to) => {
     return '/login'
   }
 
-  // Token 过期检查：过期则清除状态并跳转登录
-  if (authStore.token && isTokenExpired(authStore.token)) {
-    authStore.logout()
-    return '/login'
-  }
-
-  // 已登录且需要修改密码：强制跳转到改密页（改密页本身除外）
+  // 首次登录或重置密码后，先完成密码修改。
   if (
     authStore.isLoggedIn &&
     authStore.user?.needs_password_change &&
@@ -301,22 +317,9 @@ router.beforeEach((to) => {
     return '/change-password'
   }
 
-  // 管理员访问首页时自动跳转到后台
+  // 管理员访问首页时自动进入管理后台。
   if (to.path === '/' && authStore.isLoggedIn && authStore.user?.role === 'admin') {
     return '/admin'
-  }
-
-  // 教师端只进入教师工作台，不展示学生端业务页面。
-  if (to.path === '/' && authStore.isLoggedIn && authStore.user?.role === 'teacher') {
-    return '/teacher'
-  }
-
-  if (
-    authStore.isLoggedIn &&
-    authStore.user?.role === 'teacher' &&
-    isStudentBusinessPath(to.path)
-  ) {
-    return '/teacher'
   }
 
   if (to.meta.role === 'teacher' && authStore.user?.role !== 'teacher') {

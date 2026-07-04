@@ -9,14 +9,16 @@ const currentYear = new Date().getFullYear()
         <!-- Brand -->
         <div class="footer-brand">
           <div class="footer-logo">
-            <img
-              src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
-              alt="中国计量大学 AI 通识课平台标识"
-              width="36"
-              height="36"
-              class="footer-logo-icon"
-            />
-            <span>深度学思践行</span>
+            <span class="footer-logo-mark">
+              <img
+                src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
+                alt="中国计量大学 AI 通识课平台标识"
+                width="36"
+                height="36"
+                class="footer-logo-icon"
+              />
+            </span>
+            <span class="footer-logo-text">深度学思践行</span>
           </div>
           <p class="footer-desc">AI 通识课教学平台，助力每一位理工科新生探索人工智能的无限可能。</p>
         </div>
@@ -32,7 +34,7 @@ const currentYear = new Date().getFullYear()
 
         <div class="footer-links">
           <h4>平台资源</h4>
-          <router-link to="/learn">课程大纲</router-link>
+          <router-link to="/learn">公开学习馆</router-link>
           <router-link to="/create">项目展示</router-link>
           <router-link to="/act">社区行动</router-link>
         </div>
@@ -75,14 +77,27 @@ const currentYear = new Date().getFullYear()
   margin-bottom: var(--space-md);
 }
 
+.footer-logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 253, 248, 0.9);
+  border: 1px solid rgba(255, 253, 248, 0.28);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
 .footer-logo-icon {
   display: block;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   object-fit: contain;
 }
 
-.footer-logo span {
+.footer-logo-text {
   font-family: var(--font-serif);
   font-size: 1.05rem;
   font-weight: 900;

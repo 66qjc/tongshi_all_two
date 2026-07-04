@@ -250,13 +250,13 @@ async function handleCreate() {
     dialogVisible.value = false
     announcements.value = await getAnnouncements()
   } catch {
-    ElMessage.error('发布失败，请确认班级和题目属于同一课程')
+    ElMessage.error('发布失败，请确认班级属于所选课程，且题目仍存在于题库中')
   }
 }
 
 async function handleDelete(row: Announcement) {
   try {
-    await ElMessageBox.confirm('确定删除该发布题目？删除后学生将无法继续查看或完成。', '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除作业「${row.title}」？删除后学生将无法查看或继续完成该作业。`, '删除确认', { type: 'warning' })
     await deleteAnnouncement(row.id)
     announcements.value = announcements.value.filter(item => item.id !== row.id)
     ElMessage.success('已删除')
@@ -292,7 +292,7 @@ onMounted(async () => {
   try {
     await loadBase()
   } catch {
-    ElMessage.error('发布题目数据加载失败，请稍后重试')
+    ElMessage.error('作业数据加载失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -423,7 +423,7 @@ onMounted(async () => {
             height="420"
             style="width: 100%"
             v-loading="questionLoading"
-            :empty-text="questions.length === 0 ? '当前课程暂无题目，请先到题库管理中新增或导入题目。' : '没有符合条件的题目，请调整关键词或题型。'"
+            :empty-text="questions.length === 0 ? '题库暂无题目，请先到题库管理中新增或导入题目。' : '没有符合条件的题目，请调整关键词或题型。'"
             @selection-change="handleQuestionSelection"
           >
             <el-table-column type="selection" width="50" reserve-selection />

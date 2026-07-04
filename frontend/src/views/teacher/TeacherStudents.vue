@@ -240,7 +240,7 @@ async function exportExcel() {
       </el-table>
 
       <div v-if="!loading && students.length === 0" class="empty-state">
-        暂无学生成绩，请先导入学生或创建班级。
+        当前筛选条件下暂无学生成绩。可调整筛选条件，或到「学生管理」导入学生。
       </div>
 
       <div v-if="total > pageSize" class="pagination-wrap">

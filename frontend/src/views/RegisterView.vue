@@ -72,7 +72,7 @@ async function handleRegister() {
       <!-- Left brand -->
       <div class="brand-side">
         <div class="brand-content">
-          <div class="brand-logo">
+          <div class="brand-logo brand-logo-mark">
             <img
               src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png"
               alt="AI 通识课平台标识"
@@ -182,6 +182,17 @@ async function handleRegister() {
   display: flex;
   justify-content: center;
   margin-bottom: var(--space-xl);
+}
+
+.brand-logo-mark {
+  align-items: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--space-xl);
+  background: rgba(255, 253, 248, 0.92);
+  border: 1px solid rgba(255, 253, 248, 0.28);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22);
 }
 
 .brand-logo-image {

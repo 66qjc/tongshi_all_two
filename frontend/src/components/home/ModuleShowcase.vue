@@ -8,9 +8,9 @@ const modules = [
     key: 'learn',
     mark: '学',
     title: '课程学习',
-    desc: '查看当前可学习课程与资料，按教学节奏继续推进。',
-    status: '进入学习页查看最新课程',
-    actions: ['查看课程资料', '继续当前学习'],
+    desc: '查看公开课程与学习资料，按教学节奏继续推进。',
+    status: '进入公开学习馆查看课程与学习资料',
+    actions: ['查看学习资料', '继续当前学习'],
     route: '/learn',
     color: 'var(--color-learn)',
   },
@@ -19,7 +19,7 @@ const modules = [
     mark: '思',
     title: '练习反思',
     desc: '通过在线练习和错题回看，确认自己是否真正理解。',
-    status: '练习、错题和任务集中处理',
+    status: '作业、练习和错题集中处理',
     actions: ['进入题库练习', '回看错题记录'],
     route: '/practice',
     color: 'var(--color-practice)',
@@ -52,9 +52,9 @@ const modules = [
     <div class="container">
       <div class="section-header fade-up">
         <span class="section-tag">四个入口</span>
-        <h2 class="section-title">按任务选择，不按介绍停留</h2>
+        <h2 class="section-title">按入口选择，直接进入下一步</h2>
         <p class="section-desc">
-          首页只保留学生最常用的四条路径。课程内容以学习页真实数据为准，不再在首页写死旧模块。
+          从这里进入学习、练习、作品和行动四个常用入口，课程内容以公开学习馆中的最新安排为准。
         </p>
       </div>
 

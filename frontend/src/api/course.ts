@@ -56,8 +56,8 @@ export function getCoursesPage(params: {
   return http.get<any, PaginatedResult<Course>>('/courses', { params })
 }
 
-export function getCourseDetail(id: number) {
-  return http.get<any, CourseDetail>(`/courses/${id}`)
+export function getCourseDetail(id: number, silentError = false) {
+  return http.get<any, CourseDetail>(`/courses/${id}`, { silentError })
 }
 
 export function createCourse(data: { name: string; description?: string }) {

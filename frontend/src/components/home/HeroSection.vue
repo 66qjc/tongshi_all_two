@@ -7,24 +7,24 @@ const entries = [
   {
     key: 'learn',
     mark: '学',
-    title: '开始学习',
-    desc: '进入课程与资料，按教学安排继续学习。',
+    title: '公开学习',
+    desc: '浏览 AI 通识课程、图文课时与精选资料。',
     route: '/learn',
     tone: 'learn',
   },
   {
     key: 'practice',
     mark: '思',
-    title: '去练习',
-    desc: '完成题目练习，检查理解和错题。',
+    title: '登录练习',
+    desc: '登录后完成题目练习，检查理解和错题。',
     route: '/practice',
     tone: 'practice',
   },
   {
     key: 'create',
     mark: '践',
-    title: '看作品',
-    desc: '浏览同学作品，提交自己的实践成果。',
+    title: '实践作品',
+    desc: '登录后查看作品展示，并提交自己的实践成果。',
     route: '/create',
     tone: 'create',
   },
@@ -47,22 +47,26 @@ const entries = [
           <span class="hero-badge-mark" aria-hidden="true">
             <img src="/cjlu-logo.svg" alt="" class="hero-badge-logo" />
           </span>
-          <span>中国计量大学 · AI 通识教育课程平台</span>
+          <span>中国计量大学 · 深度 AI 通识学习平台</span>
         </div>
         <h1>
           <span>学 · 思 · 践 · 悟</span>
           <strong>AI 通识，从这里开始</strong>
         </h1>
         <p>
-          六个课程模块，覆盖从 AI 基础理论到工具实践再到伦理思辨的完整知识体系。选择一个方向，开始你的通识之旅。
+          面向所有学习者开放的 AI 通识学习入口，串联基础理论、工具实践、伦理思辨和真实应用。游客可直接浏览公开课程，登录后继续保存学习进度。
         </p>
         <div class="hero-actions">
           <button class="btn-primary" type="button" @click="router.push('/learn')">
-            继续学习
+            进入公开学习馆
           </button>
-          <button class="btn-secondary" type="button" @click="router.push('/practice')">
-            查看练习
+          <button class="btn-secondary" type="button" @click="router.push('/login')">
+            登录保存进度
           </button>
+        </div>
+        <div class="suggestion-panel">
+          <strong>今日建议</strong>
+          <span>先浏览一门公开课程，再进入作业与练习检查理解。</span>
         </div>
       </div>
 
@@ -117,7 +121,6 @@ const entries = [
   border-radius: var(--radius-sm);
   font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 .hero-badge-mark {
@@ -154,7 +157,6 @@ const entries = [
   margin-bottom: var(--space-sm);
   font-size: 1.2rem;
   font-weight: 700;
-  letter-spacing: 0.2em;
   color: rgba(255, 253, 248, 0.68);
 }
 
@@ -162,7 +164,7 @@ const entries = [
   max-width: 640px;
   font-size: 3rem;
   font-weight: 900;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .hero-copy p {
@@ -177,6 +179,31 @@ const entries = [
   gap: var(--space-md);
   margin-top: var(--space-xl);
   flex-wrap: wrap;
+}
+
+.suggestion-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 560px;
+  margin-top: var(--space-lg);
+  padding: 0.9rem 1rem;
+  color: rgba(255, 253, 248, 0.78);
+  background: rgba(255, 253, 248, 0.08);
+  border: 1px solid rgba(255, 253, 248, 0.14);
+  border-radius: var(--radius-sm);
+}
+
+.suggestion-panel strong {
+  flex: 0 0 auto;
+  color: var(--color-bg-card);
+  font-size: 0.9rem;
+}
+
+.suggestion-panel span {
+  min-width: 0;
+  font-size: 0.86rem;
+  line-height: 1.6;
 }
 
 .btn-primary,
@@ -314,6 +341,12 @@ const entries = [
 
   .entry-card {
     min-height: auto;
+  }
+
+  .suggestion-panel {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-xs);
   }
 }
 </style>

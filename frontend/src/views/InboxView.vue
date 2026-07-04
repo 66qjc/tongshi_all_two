@@ -29,7 +29,7 @@ async function handleRead(item: Announcement) {
 
 async function handleComplete(item: Announcement) {
   if (isExpired(item)) {
-    ElMessage.warning('该任务已截止，无法标记完成')
+    ElMessage.warning('该作业已截止，无法标记完成')
     return
   }
   try {
@@ -72,7 +72,7 @@ function formatDate(dateStr: string) {
             </svg>
           </div>
           <h1>消息通知</h1>
-          <p>查看老师发布的题目任务</p>
+          <p>查看老师发布的作业</p>
         </div>
       </div>
     </section>

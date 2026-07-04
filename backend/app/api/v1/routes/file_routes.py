@@ -4,10 +4,15 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import BusinessException
+from app.core.security import oauth2_scheme
 from app.db.session import get_db
+from app.models.entities import User
+from app.schemas.common import AuthUser
 from app.services.file_service import resolve_file_stream
 
 router = APIRouter()
@@ -71,14 +76,45 @@ def _parse_range_header(range_header: str, size: int) -> tuple[int, int] | None:
     return start, min(end, size - 1)
 
 
+async def _get_optional_file_user(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> AuthUser | None:
+    """文件访问专用可选鉴权；无 token 时交给服务层判断公开白名单。"""
+    if not token and settings.allow_query_token_for_files:
+        token = request.query_params.get("token")
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id: str | None = payload.get("sub")
+        if not user_id:
+            raise BusinessException(401, "无效的认证凭据")
+    except JWTError:
+        raise BusinessException(401, "无效的认证凭据")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise BusinessException(401, "无效的认证凭据")
+    return AuthUser(
+        id=user.id,
+        name=user.name,
+        role=user.role,
+        major=user.major,
+        needs_password_change=user.needs_password_change,
+    )
+
+
 @router.get("/files/{file_id}")
 def get_file(
     file_id: int,
     request: Request,
     db: Session = Depends(get_db),
+    current_user: AuthUser | None = Depends(_get_optional_file_user),
 ):
-    """通过 file_id 统一访问文件，自动分发到本地或 S3 存储。"""
-    record, stream = resolve_file_stream(db, file_id)
+    """通过 file_id 统一访问文件，先校验登录态和业务归属。"""
+    record, stream = resolve_file_stream(db, file_id, current_user, enforce_auth=True)
 
     if record is None:
         raise BusinessException(404, "文件不存在")

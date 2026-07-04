@@ -8,6 +8,7 @@ import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 const props = defineProps<{
   lesson: Lesson | null
   materials: Material[]
+  fileUrlResolver?: (material: Material) => string
 }>()
 
 const emit = defineEmits<{
@@ -49,9 +50,8 @@ const segments = computed<Segment[]>(() => {
 })
 
 function materialFileUrl(material: Material): string {
-  if (material.file_id) {
-    return resolveFileUrl(`/api/files/${material.file_id}`)
-  }
+  if (props.fileUrlResolver) return resolveFileUrl(props.fileUrlResolver(material))
+  if (material.file_id) return resolveFileUrl(`/api/files/${material.file_id}`)
   return resolveFileUrl(material.url)
 }
 </script>
@@ -88,8 +88,8 @@ function materialFileUrl(material: Material): string {
             />
           </template>
           <div v-else class="material-missing">
-            <span class="missing-icon">⚠️</span>
-            <span>资料已失效或不可用</span>
+            <span class="missing-icon">!</span>
+            <span>资料已失效或不可用。</span>
           </div>
         </div>
       </template>
@@ -135,7 +135,7 @@ function materialFileUrl(material: Material): string {
   font-weight: 800;
   color: var(--color-text);
   line-height: 1.3;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   margin: 0;
 }
 
@@ -186,9 +186,9 @@ function materialFileUrl(material: Material): string {
 .lesson-body :deep(blockquote) {
   margin: 24px 0;
   padding: 16px 20px;
-  border-left: 4px solid var(--color-primary);
+  border: 1px solid rgba(45, 106, 122, 0.2);
   background: var(--color-primary-light);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: var(--radius-sm);
   color: var(--color-text);
   font-style: italic;
 }
@@ -203,8 +203,8 @@ function materialFileUrl(material: Material): string {
 }
 
 .lesson-body :deep(pre) {
-  background: #1f2937;
-  color: #f3f4f6;
+  background: rgb(31, 41, 55);
+  color: rgb(243, 244, 246);
   padding: 20px;
   border-radius: var(--radius-md);
   overflow-x: auto;
@@ -226,7 +226,7 @@ function materialFileUrl(material: Material): string {
   width: 100%;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: #000;
+  background: rgb(12, 18, 24);
   box-shadow: var(--shadow-md);
 }
 
@@ -249,7 +249,15 @@ function materialFileUrl(material: Material): string {
 }
 
 .missing-icon {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-warning-light, var(--color-border-light));
+  color: var(--color-warning, var(--color-text-muted));
+  font-weight: 800;
 }
 
 .lesson-empty {

@@ -30,16 +30,16 @@ function openInNewWindow() {
 <template>
   <el-dialog
     v-model="dialogVisible"
-    :title="title || '资料查看'"
+    :title="title || '资料预览'"
     width="520px"
     destroy-on-close
   >
     <div v-if="previewUrl" class="preview-card">
       <p class="preview-title">文件已准备好</p>
-      <p class="preview-desc">请使用新窗口查看资料。若浏览器无法直接预览，可在新窗口中下载后查看。</p>
-      <el-button type="primary" @click="openInNewWindow">新窗口查看</el-button>
+      <p class="preview-desc">请在新窗口打开资料。若浏览器无法直接预览，可在新窗口中下载后查看。</p>
+      <el-button type="primary" @click="openInNewWindow">在新窗口打开</el-button>
     </div>
-    <div v-else class="preview-empty">暂无可查看的文件。</div>
+    <div v-else class="preview-empty">暂无可预览文件。</div>
     <template #footer>
       <el-button @click="dialogVisible = false">关闭</el-button>
     </template>

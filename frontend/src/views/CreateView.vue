@@ -58,7 +58,7 @@ function handlePageChange(page: number) {
       <div class="container">
         <div class="gallery-header">
           <h2>学生作品画廊</h2>
-          <p>每一件作品都是 学生 和 AI 碰撞的火花</p>
+          <p>查看同学提交的课程作品、报告和演示链接。</p>
         </div>
 
         <div class="projects-grid">

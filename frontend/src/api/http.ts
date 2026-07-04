@@ -1,6 +1,13 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+// 扩展 Axios 请求配置：silentError 为 true 时不弹出错误提示，用于公开接口与登录接口之间的无噪声兜底
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    silentError?: boolean
+  }
+}
+
 const http = axios.create({
   baseURL: '/api',
   timeout: 10000,
@@ -11,7 +18,7 @@ function normalizeValidationMessage(message: string) {
   if (message.includes('密码必须包含至少一个字母')) return '密码必须包含至少一个字母'
   if (message.includes('密码必须包含至少一个数字')) return '密码必须包含至少一个数字'
   if (message.includes('Field required')) return '请填写完整信息'
-  return message
+  return '提交内容不符合要求，请检查填写内容'
 }
 
 function getErrorMessage(error: unknown) {
@@ -55,7 +62,9 @@ http.interceptors.response.use(
         window.location.href = '/login'
         return Promise.reject(new Error(message || '登录已过期'))
       }
-      ElMessage.error(message || '请求失败')
+      if (!response.config.silentError) {
+        ElMessage.error(message || '请求失败')
+      }
       return Promise.reject(new Error(message))
     }
     return response.data.data
@@ -72,7 +81,9 @@ http.interceptors.response.use(
       return Promise.reject(new Error('登录已过期'))
     }
     const message = getErrorMessage(error)
-    ElMessage.error(message)
+    if (!error.config?.silentError) {
+      ElMessage.error(message)
+    }
     return Promise.reject(new Error(message))
   }
 )

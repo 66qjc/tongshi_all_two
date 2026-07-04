@@ -22,7 +22,7 @@ const stats = ref([
   { label: '总学生数', value: 0, icon: 'students', tone: 'learn' },
   { label: '我的课程', value: 0, icon: 'courses', tone: 'primary' },
   { label: '待审作品', value: 0, icon: 'reviews', tone: 'create' },
-  { label: '本周练习', value: 0, icon: 'practice', tone: 'act' },
+  { label: '累计练习', value: 0, icon: 'practice', tone: 'act' },
 ])
 
 const recentTasks = ref<TaskOverview['tasks']>([])
@@ -37,7 +37,7 @@ onMounted(async () => {
       { label: '总学生数', value: data.total_students, icon: 'students', tone: 'learn' },
       { label: '我的课程', value: data.my_courses, icon: 'courses', tone: 'primary' },
       { label: '待审作品', value: data.pending_reviews, icon: 'reviews', tone: 'create' },
-      { label: '本周练习', value: data.weekly_exercises, icon: 'practice', tone: 'act' },
+      { label: '累计练习', value: data.weekly_exercises, icon: 'practice', tone: 'act' },
     ]
   } catch {
     ElMessage.error('统计数据加载失败')
@@ -80,7 +80,7 @@ onMounted(async () => {
 const quickActions = [
   { label: '发布作业', desc: '选题、设时间、发到班级', path: '/teacher/publish', icon: 'publish' },
   { label: '上传资料', desc: '视频课件或 PDF 讲义', path: '/teacher/materials', icon: 'upload' },
-  { label: '管理题库', desc: '新增、编辑或导入练习题', path: '/teacher/questions', icon: 'questions' },
+  { label: '管理题库', desc: '新增、编辑或导入题目', path: '/teacher/questions', icon: 'questions' },
   { label: '审核作品', desc: '查看并审核学生提交的作品', path: '/teacher/reviews', icon: 'reviews' },
   { label: '学生成绩', desc: '查看完成率、导出成绩单', path: '/teacher/grades', icon: 'grades' },
 ]

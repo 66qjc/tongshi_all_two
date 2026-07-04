@@ -1,14 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { defineAsyncComponent, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { RadarChart } from 'echarts/charts'
-import { TooltipComponent, LegendComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
 import { getPortfolio, type PortfolioData } from '@/api/portfolio'
 
-use([RadarChart, TooltipComponent, LegendComponent, CanvasRenderer])
+const PortfolioRadarChart = defineAsyncComponent(() => import('@/components/portfolio/PortfolioRadarChart.vue'))
 
 const router = useRouter()
 const loading = ref(true)
@@ -129,7 +124,7 @@ onMounted(async () => {
       <div class="container">
         <h2 class="section-title">能力画像</h2>
         <div class="radar-card">
-          <v-chart :option="radarOption" style="height: 360px; width: 100%;" autoresize />
+          <PortfolioRadarChart :option="radarOption" />
         </div>
       </div>
     </section>

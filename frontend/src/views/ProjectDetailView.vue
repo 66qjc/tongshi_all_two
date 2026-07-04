@@ -131,7 +131,7 @@ function openPreview(image: string) {
         <section v-if="project.report_url" class="detail-section">
           <h3>课程报告</h3>
           <a :href="resolveFileUrl(project.report_url)" target="_blank" rel="noopener" class="video-link">
-            查看 PDF 报告
+            在新窗口打开 PDF 报告
           </a>
         </section>
 

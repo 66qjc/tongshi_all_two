@@ -368,7 +368,7 @@ onMounted(async () => {
             <tr><td>fill</td><td>示例课程</td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
           </tbody>
         </table>
-        <p class="import-note">请将"课程名称"填写为当前教师已有课程名称；"标签"支持用逗号、顿号或 | 分隔多个标签；"题型"支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。</p>
+        <p class="import-note">请将「课程名称」填写为当前教师已有课程名称；「标签」支持用逗号、顿号或 | 分隔多个标签；题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。多选题答案列填写排序后的字母组合，如 ABD。</p>
       </div>
       <div class="import-actions">
         <div class="template-block">

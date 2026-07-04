@@ -24,7 +24,7 @@ from app.services.teacher_service import (
     list_all_projects,
     list_students,
 )
-from app.services.project_service import approve_project, reject_project, delete_project, format_project
+from app.services.project_service import approve_project, reject_project, delete_project, format_project, batch_load_liked_set
 from app.services.class_service import _delete_student_data
 from app.services.file_service import resolve_file_stream
 from app.services.auth_service import (
@@ -117,7 +117,8 @@ def get_all_projects(
         db, status=status, page=page, page_size=page_size,
         teacher_id=current_user.id, keyword=keyword,
     )
-    return paginated_success([format_project(db, p, current_user.id) for p in projects], total, page, page_size)
+    liked = batch_load_liked_set(db, [p.id for p in projects], current_user.id)
+    return paginated_success([format_project(db, p, current_user.id, liked_set=liked) for p in projects], total, page, page_size)
 
 
 @router.post("/projects/{project_id}/approve", summary="通过作品审核", description="教师端：将指定作品设为审核通过")

@@ -15,7 +15,7 @@ export interface Material {
   id: number
   course_id: number
   course_name: string
-  type: 'video' | 'pdf'
+  type: 'video' | 'pdf' | 'link'
   title: string
   url: string
   duration: string

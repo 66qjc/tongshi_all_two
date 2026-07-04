@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Course, Project, ProjectImage, ProjectLike, StudentClassEnrollment, User
@@ -11,6 +11,27 @@ from app.services.access_control_service import student_can_access_course
 from app.services.notification_service import create_project_review_notification
 
 logger = logging.getLogger(__name__)
+
+
+def with_project_eager_load(query):
+    """给作品查询添加预加载，避免 N+1 查询。"""
+    return query.options(
+        joinedload(Project.author),
+        joinedload(Project.course),
+        selectinload(Project.images),
+        selectinload(Project.project_likes),
+    )
+
+
+def batch_load_liked_set(db: Session, project_ids: list[int], user_id: str | None) -> set[int]:
+    """批量查询用户已点赞的作品 ID 集合，避免逐条查询。"""
+    if not user_id or not project_ids:
+        return set()
+    rows = db.query(ProjectLike.project_id).filter(
+        ProjectLike.user_id == user_id,
+        ProjectLike.project_id.in_(project_ids),
+    ).all()
+    return {row[0] for row in rows}
 
 
 def normalize_project_images(data: dict) -> list[str]:
@@ -52,8 +73,10 @@ def _teacher_can_review_project(db: Session, teacher_id: str, project: Project) 
 
 
 def list_approved_projects(db: Session, page: int = None, page_size: int = None):
-    query = db.query(Project).filter(Project.status == "approved").order_by(Project.date.desc())
-    total = query.count()
+    query = with_project_eager_load(
+        db.query(Project).filter(Project.status == "approved").order_by(Project.date.desc())
+    )
+    total = db.query(Project).filter(Project.status == "approved").count()
     if page and page_size:
         projects = query.offset((page - 1) * page_size).limit(page_size).all()
     else:
@@ -62,7 +85,9 @@ def list_approved_projects(db: Session, page: int = None, page_size: int = None)
 
 
 def get_project(db: Session, project_id: int):
-    return db.query(Project).filter(Project.id == project_id).first()
+    return with_project_eager_load(
+        db.query(Project).filter(Project.id == project_id)
+    ).first()
 
 
 def get_accessible_project(db: Session, project_id: int, user_id: str):
@@ -76,8 +101,10 @@ def get_accessible_project(db: Session, project_id: int, user_id: str):
 
 
 def get_user_projects(db: Session, user_id: str, page: int = None, page_size: int = None):
-    query = db.query(Project).filter(Project.author_id == user_id).order_by(Project.date.desc())
-    total = query.count()
+    query = with_project_eager_load(
+        db.query(Project).filter(Project.author_id == user_id).order_by(Project.date.desc())
+    )
+    total = db.query(Project).filter(Project.author_id == user_id).count()
     if page and page_size:
         projects = query.offset((page - 1) * page_size).limit(page_size).all()
     else:
@@ -233,57 +260,66 @@ def delete_project(db: Session, project_id: int, teacher_id: str | None = None):
     return project
 
 
-def format_project(db: Session, p, user_id: str | None = None) -> dict:
+def format_project(db: Session, p, user_id: str | None = None, liked_set: set[int] | None = None) -> dict:
     """将 Project ORM 对象格式化为 API 响应 dict（唯一规范版本）。
 
-    所有路由统一调用此函数，避免 _format_project 重复定义。
-    传入 user_id 时返回 is_liked 字段。
+    所有路由统一调用此函数。传入 user_id 时返回 is_liked 字段。
+    传入 liked_set（预批量查询的已点赞作品 ID 集合）可避免逐条查询。
+    调用方应使用 with_project_eager_load() 预加载 relationship，避免 N+1。
     """
-    author = db.query(User).filter(User.id == p.author_id).first()
-    course_id = getattr(p, "course_id", None)
+    # 作者：优先使用预加载的 relationship，回退到查询
+    author = p.author if p.author else db.query(User).filter(User.id == p.author_id).first()
+
+    # 课程名称：优先使用预加载的 relationship
     course_name = ""
-    if course_id:
-        course = getattr(p, "course", None) or db.query(Course).filter(Course.id == course_id).first()
+    if p.course_id:
+        course = p.course if p.course else db.query(Course).filter(Course.id == p.course_id).first()
         course_name = course.name if course else ""
+
+    # 图片列表：使用预加载的 images relationship
     images = [
-        {"id": image.id, "image_url": image.image_url,
-            "sort_order": image.sort_order, "file_id": image.file_id}
-        for image in sorted(p.images, key=lambda item: (item.sort_order, item.id))
-    ] if hasattr(p, "images") and p.images else []
+        {"id": img.id, "image_url": img.image_url, "sort_order": img.sort_order, "file_id": img.file_id}
+        for img in sorted(p.images, key=lambda item: (item.sort_order, item.id))
+    ] if p.images else []
     if not images and p.image_url:
         images = [{"image_url": p.image_url, "sort_order": 0}]
 
-    # 查询当前用户是否已点赞
+    # 点赞状态：优先使用批量预查的 liked_set，回退到预加载 relationship，最终单条查询
     is_liked = False
     if user_id:
-        is_liked = db.query(ProjectLike).filter(
-            ProjectLike.user_id == user_id,
-            ProjectLike.project_id == p.id
-        ).first() is not None
+        if liked_set is not None:
+            is_liked = p.id in liked_set
+        elif p.project_likes is not None:
+            is_liked = any(like.user_id == user_id for like in p.project_likes)
+        else:
+            is_liked = db.query(ProjectLike).filter(
+                ProjectLike.user_id == user_id,
+                ProjectLike.project_id == p.id,
+            ).first() is not None
 
     return {
         "id": p.id,
         "title": p.title,
         "author_id": p.author_id,
         "author_name": author.name if author else "",
-        "course_id": course_id,
+        "course_id": p.course_id,
         "course_name": course_name,
         "major": p.major,
         "description": p.description,
-        "tags": p.tags if hasattr(p, "tags") else [],
+        "tags": p.tags or [],
         "likes": p.likes,
         "is_liked": is_liked,
-        "featured": p.featured if hasattr(p, "featured") else False,
-        "video_url": p.video_url if hasattr(p, "video_url") else "",
-        "report_url": p.report_url if hasattr(p, "report_url") else "",
-        "image_url": p.image_url if hasattr(p, "image_url") else "",
+        "featured": p.featured,
+        "video_url": p.video_url or "",
+        "report_url": p.report_url or "",
+        "image_url": p.image_url or "",
         "images": images,
-        "link_url": getattr(p, "link_url", ""),
-        "status": p.status if hasattr(p, "status") else "",
-        "reject_reason": p.reject_reason if hasattr(p, "reject_reason") else "",
-        "date": p.date if hasattr(p, "date") else "",
-        "report_file_id": getattr(p, "report_file_id", None),
-        "cover_file_id": getattr(p, "cover_file_id", None),
+        "link_url": p.link_url or "",
+        "status": p.status or "",
+        "reject_reason": p.reject_reason or "",
+        "date": p.date or "",
+        "report_file_id": p.report_file_id,
+        "cover_file_id": p.cover_file_id,
     }
 
 
@@ -293,5 +329,9 @@ def list_liked_projects(db: Session, user_id: str) -> list:
     project_ids = [lk.project_id for lk in likes]
     if not project_ids:
         return []
-    projects = db.query(Project).filter(Project.id.in_(project_ids)).all()
-    return [format_project(db, proj, user_id) for proj in projects]
+    projects = with_project_eager_load(
+        db.query(Project).filter(Project.id.in_(project_ids))
+    ).all()
+    # 用户赞过的作品自己一定在 liked_set 中，直接传入避免逐条查询
+    liked_set = set(project_ids)
+    return [format_project(db, proj, user_id, liked_set=liked_set) for proj in projects]

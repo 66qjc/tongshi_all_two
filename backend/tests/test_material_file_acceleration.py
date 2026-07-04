@@ -1,4 +1,7 @@
 """资料文件鉴权和 Nginx 内部跳转测试"""
+from pathlib import Path
+
+from app.core.config import settings
 from app.models.entities import Course, Material, StoredFile
 from tests.conftest import auth_header
 
@@ -21,6 +24,12 @@ def _stored_file(db_session, created_by="T001", object_key="course/test.pdf", co
     return stored
 
 
+def _write_local_file(object_key: str, content: bytes = b"test file"):
+    target = Path(settings.local_upload_dir) / object_key
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(content)
+
+
 def _material(db_session, course_id=1, file_id=None, type_="pdf"):
     material = Material(
         course_id=course_id,
@@ -34,6 +43,54 @@ def _material(db_session, course_id=1, file_id=None, type_="pdf"):
     db_session.commit()
     db_session.refresh(material)
     return material
+
+
+def test_generic_file_rejects_anonymous_user(client, db_session):
+    stored = _stored_file(db_session)
+    _write_local_file(stored.object_key)
+
+    response = client.get(f"/api/files/{stored.id}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    data = response.json()
+    assert data["code"] == 401
+
+
+def test_generic_file_rejects_student_outside_material_course(client, db_session, student_token):
+    other_course = db_session.query(Course).filter(Course.created_by == "T002").first()
+    stored = _stored_file(db_session, created_by="T002", object_key="course/other.pdf")
+    _write_local_file(stored.object_key)
+    _material(db_session, course_id=other_course.id, file_id=stored.id)
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(student_token))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    data = response.json()
+    assert data["code"] == 404
+
+
+def test_generic_file_allows_enrolled_student_for_material(client, db_session, student_token):
+    stored = _stored_file(db_session)
+    _write_local_file(stored.object_key)
+    _material(db_session, file_id=stored.id)
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(student_token))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+
+
+def test_generic_file_allows_owner_teacher_for_material(client, db_session, teacher_token):
+    stored = _stored_file(db_session)
+    _write_local_file(stored.object_key)
+    _material(db_session, file_id=stored.id)
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(teacher_token))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
 
 
 def test_material_file_returns_x_accel_redirect_for_owner_teacher(client, db_session, teacher_token):

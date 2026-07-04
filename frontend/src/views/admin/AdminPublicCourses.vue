@@ -97,7 +97,6 @@ const questionForm = ref({
 
 const previewVisible = ref(false)
 const previewUrl = ref('')
-const previewTitle = ref('')
 const previewFileId = ref<number | undefined>(undefined)
 
 // Excel 导入题目
@@ -110,7 +109,6 @@ const importErrorDialogVisible = ref(false)
 const templateType = ref<'all' | 'choice' | 'fill' | 'multi_choice'>('all')
 
 function previewMaterial(row: Material) {
-  previewTitle.value = row.title
   previewFileId.value = row.file_id
   previewUrl.value = row.url || ''
   previewVisible.value = true
@@ -245,7 +243,7 @@ async function saveCourse() {
 async function removeCourse(course: AdminPublicCourse) {
   try {
     await ElMessageBox.confirm(
-      `确定删除公共课程「${course.name}」吗？教师已添加的副本不会被删除，但后续不再从该公共源同步。`,
+      `确定删除公共课程「${course.name}」吗？教师已添加的课程副本不会被删除，但后续不再从该公共课程源同步资料和阶段。`,
       '删除公共课程',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
     )
@@ -268,6 +266,10 @@ function openCreateMaterial(stageId: number | null = null) {
 
 
 function openEditMaterial(material: Material) {
+  if (material.type === 'link') {
+    ElMessage.warning('该链接资料来自公开学习内容源，本页仅维护上传文件；请到原创建入口修改链接。')
+    return
+  }
   editingMaterialId.value = material.id
   materialForm.value = {
     type: material.type,
@@ -319,10 +321,10 @@ async function saveMaterial() {
     }
     if (editingMaterialId.value) {
       await updateAdminPublicMaterial(selectedCourse.value.id, editingMaterialId.value, payload)
-      ElMessage.success('公共资料已更新，并同步到教师副本')
+      ElMessage.success('公共资料已更新，并同步到教师课程副本')
     } else {
       await createAdminPublicMaterial(selectedCourse.value.id, payload)
-      ElMessage.success('公共资料已新增，并同步到教师副本')
+      ElMessage.success('公共资料已新增，并同步到教师课程副本')
     }
     showMaterialDialog.value = false
     await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
@@ -336,7 +338,7 @@ async function saveMaterial() {
 async function removeMaterial(material: Material) {
   if (!selectedCourse.value) return
   try {
-    await ElMessageBox.confirm('确定删除该公共资料吗？教师副本中的同步资料也会同步删除。', '删除公共资料', {
+    await ElMessageBox.confirm('确定删除该公共资料吗？将删除公共课程源资料，并从已添加该课程的教师课程副本中移除对应同步资料；教师自行新增资料不受影响。', '删除公共资料', {
       type: 'warning',
       confirmButtonText: '确定删除',
       cancelButtonText: '取消',
@@ -395,10 +397,10 @@ async function saveQuestion() {
     }
     if (editingQuestionId.value) {
       await updateAdminPublicQuestion(selectedCourse.value.id, editingQuestionId.value, payload)
-      ElMessage.success('公共题目已更新，并同步到教师副本')
+      ElMessage.success('公共题目已更新，已写入全站共享题库')
     } else {
       await createAdminPublicQuestion(selectedCourse.value.id, payload)
-      ElMessage.success('公共题目已新增，并同步到教师副本')
+      ElMessage.success('公共题目已新增，已写入全站共享题库')
     }
     showQuestionDialog.value = false
     await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
@@ -412,7 +414,7 @@ async function saveQuestion() {
 async function removeQuestion(question: Question) {
   if (!selectedCourse.value) return
   try {
-    await ElMessageBox.confirm('确定删除该公共题目吗？教师副本中的同步题目也会同步删除。', '删除公共题目', {
+    await ElMessageBox.confirm('确定删除该公共题目吗？将从全站共享题库中删除该题目，并清理相关引用和答题记录；教师自行新增题目不受影响。', '删除公共题目', {
       type: 'warning',
       confirmButtonText: '确定删除',
       cancelButtonText: '取消',
@@ -486,7 +488,7 @@ async function handleDeleteStage(stage: AdminCourseStage) {
   if (!selectedCourse.value) return
   const hasMaterials = stageMaterials(stage.id).length > 0
   if (hasMaterials) {
-    ElMessage.warning('该阶段下仍有资料，请先删除或移出资料')
+    ElMessage.warning('该阶段下仍有资料。请先编辑这些资料，将所属阶段改为「未分类」或其他阶段，或删除资料。')
     return
   }
   try {
@@ -580,7 +582,7 @@ onMounted(() => fetchCourses())
     <div class="page-header">
       <div>
         <h1 class="page-title">公共课程管理</h1>
-        <p class="page-subtitle">公共课程资料和题库由管理员维护，变更会同步到已添加该课程的教师副本。</p>
+        <p class="page-subtitle">公共课程资料和题库由管理员维护；资料和阶段会同步到教师课程副本，题库为全站共享。</p>
       </div>
       <el-button type="primary" @click="openCreateCourse">新建公共课程</el-button>
     </div>
@@ -610,7 +612,7 @@ onMounted(() => fetchCourses())
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="教师副本" width="90" align="center">
+          <el-table-column label="教师课程副本" width="110" align="center">
             <template #default="{ row }">{{ row.sync_copy_count || 0 }}</template>
           </el-table-column>
           <el-table-column label="创建时间" width="120">
@@ -640,7 +642,7 @@ onMounted(() => fetchCourses())
           <el-tabs v-model="activeTab">
             <el-tab-pane label="阶段与资料" name="stages">
               <div class="tab-toolbar stage-toolbar">
-                <span class="toolbar-tip">阶段名称与排序修改后会同步到教师副本</span>
+                <span class="toolbar-tip">阶段名称与排序修改后会同步到教师课程副本</span>
                 <el-button type="primary" size="small" @click="openCreateMaterial(null)">新增资料</el-button>
               </div>
               <div v-loading="stageLoading" class="stage-section">
@@ -724,7 +726,7 @@ onMounted(() => fetchCourses())
                   </template>
                 </el-table-column>
                 <template #empty>
-                  <el-empty description="暂无资料，新增后会同步给教师副本" />
+                  <el-empty description="暂无资料，新增后会同步给教师课程副本" />
                 </template>
               </el-table>
             </el-tab-pane>
@@ -757,7 +759,7 @@ onMounted(() => fetchCourses())
                   </template>
                 </el-table-column>
                 <template #empty>
-                  <el-empty description="暂无题目，新增后会同步给教师副本" />
+                  <el-empty description="暂无题目，新增后会写入全站共享题库" />
                 </template>
               </el-table>
             </el-tab-pane>
@@ -888,13 +890,12 @@ onMounted(() => fetchCourses())
       </el-form>
       <template #footer>
         <el-button @click="showQuestionDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveQuestion">保存并同步</el-button>
+        <el-button type="primary" :loading="saving" @click="saveQuestion">保存到题库</el-button>
       </template>
     </el-dialog>
 
     <PdfPreviewDialog
       v-model:visible="previewVisible"
-      :title="previewTitle"
       :url="previewUrl"
       :file-id="previewFileId"
     />
@@ -913,7 +914,7 @@ onMounted(() => fetchCourses())
             <tr><td>fill</td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
           </tbody>
         </table>
-        <p class="import-note">管理员导入会使用当前选中的公共课程，不需要填写课程名称；"标签"支持用逗号、顿号、|、/ 或分号分隔多个标签；"题型"支持 choice、multi_choice 和 fill。多选题答案列填写排序后的字母组合，如 ABD。导入后会自动同步到教师副本。</p>
+        <p class="import-note">管理员导入会使用当前选中的公共课程，不需要填写课程名称；「标签」支持用逗号、顿号、|、/ 或分号分隔多个标签；题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。多选题答案列填写排序后的字母组合，如 ABD。导入后会写入全站共享题库。</p>
       </div>
       <div class="import-actions">
         <div class="template-block">

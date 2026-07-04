@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import HeroSection from '../components/home/HeroSection.vue'
-import CoursePreview from '../components/home/CoursePreview.vue'
+import ModuleShowcase from '../components/home/ModuleShowcase.vue'
+import StatsSection from '../components/home/StatsSection.vue'
 import CtaSection from '../components/home/CtaSection.vue'
 import AnnouncementPopup from '../components/AnnouncementPopup.vue'
 
@@ -55,7 +56,8 @@ onUnmounted(() => {
 <template>
   <div class="home">
     <HeroSection />
-    <CoursePreview />
+    <ModuleShowcase />
+    <StatsSection />
     <CtaSection />
     <AnnouncementPopup />
   </div>

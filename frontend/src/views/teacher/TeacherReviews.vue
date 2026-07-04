@@ -247,7 +247,7 @@ async function handleBatchDownload() {
     </el-table>
 
     <div v-if="!loading && projects.length === 0" class="empty-state">
-      <p>当前没有待审核或已通过的作品。</p>
+      <p>当前筛选条件下暂无作品。有新提交后会出现在这里。</p>
     </div>
 
     <div v-if="total > pageSize" class="pagination-wrap">
@@ -293,9 +293,9 @@ async function handleBatchDownload() {
         <div class="detail-section">
           <label>课程报告</label>
           <div v-if="reportPreviewUrl" class="pdf-preview">
-            <p class="pdf-preview-hint">服务器环境下内嵌预览可能不稳定，请使用新窗口查看 PDF 报告。</p>
+            <p class="pdf-preview-hint">PDF 预览不稳定时，请在新窗口打开报告。</p>
             <a :href="reportPreviewUrl" target="_blank" rel="noopener" class="detail-link">
-              新窗口查看 PDF
+              在新窗口打开 PDF
             </a>
           </div>
           <p v-else class="empty-inline">学生未上传 PDF 报告。</p>

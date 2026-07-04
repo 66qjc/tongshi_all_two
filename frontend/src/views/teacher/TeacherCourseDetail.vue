@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -17,7 +17,6 @@ import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
 import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
-import LessonEditor from '@/components/lesson/LessonEditor.vue'
 import {
   createLesson,
   deleteLesson,
@@ -28,6 +27,12 @@ import {
   type LessonCreatePayload,
   type LessonUpdatePayload,
 } from '@/api/lesson'
+
+const LessonEditor = defineAsyncComponent(() => import('@/components/lesson/LessonEditor.vue'))
+
+type LessonEditorExpose = {
+  insertMaterialPlaceholder: (materialId: number, materialType: 'video' | 'pdf') => void
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -86,7 +91,7 @@ const lessonForm = reactive<{
   sort_order: undefined,
 })
 const savingLesson = ref(false)
-const lessonEditorRef = ref<InstanceType<typeof LessonEditor> | null>(null)
+const lessonEditorRef = ref<LessonEditorExpose | null>(null)
 
 // 资料选择器
 const materialSelectorVisible = ref(false)
@@ -219,7 +224,7 @@ async function handleStageOrderChange(stage: CourseStage) {
 
 async function handleDeleteStage(stage: CourseStage) {
   if (stage.materials.length > 0) {
-    ElMessage.warning('该阶段下仍有资料，请先删除或移出资料')
+    ElMessage.warning('该阶段下仍有资料。请先编辑这些资料，将所属阶段改为「未分类」或其他阶段，或删除资料。')
     return
   }
   try {
@@ -352,7 +357,7 @@ async function handleSaveMaterial() {
 
 async function handleDeleteMaterial(material: Material) {
   try {
-    await ElMessageBox.confirm(`确定删除资料「${material.title}」？这只会删除你课程里的这份资料，不会影响公共课程源内容。`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除资料「${material.title}」？这只会删除本课程副本中的资料，不影响公共课程源内容。`, '删除确认', { type: 'warning' })
     await deleteMaterial(material.id)
     ElMessage.success('已删除')
     await loadCourse()
@@ -466,6 +471,11 @@ async function openMaterialSelector() {
 }
 
 function handleInsertMaterial(material: Material) {
+  if (material.type === 'link') {
+    ElMessage.warning('链接资料暂不支持嵌入课时正文，可在资料区查看。')
+    materialSelectorVisible.value = false
+    return
+  }
   lessonEditorRef.value?.insertMaterialPlaceholder(material.id, material.type)
   materialSelectorVisible.value = false
 }

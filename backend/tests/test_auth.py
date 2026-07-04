@@ -57,6 +57,22 @@ class TestAuth:
         assert data["code"] == 400
         assert "已注册" in data["message"]
 
+    def test_register_rejects_teacher_role(self, client):
+        resp = client.post(
+            "/api/register",
+            json={
+                "id": "T9001",
+                "name": "公开注册教师",
+                "password": "abc123456",
+                "role": "teacher",
+                "major": "",
+            },
+        )
+        data = resp.json()
+        assert resp.status_code == 200
+        assert data["code"] == 400
+        assert "角色" in data["message"]
+
     def test_register_rejects_admin_role(self, client):
         resp = client.post(
             "/api/register",

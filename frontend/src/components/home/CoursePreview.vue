@@ -13,11 +13,10 @@ const modules = [
   <section class="course-preview">
     <div class="container">
       <div class="section-header fade-up">
-        <span class="section-tag">课程大纲</span>
-        <h2 class="section-title">六个模块，构建 AI 知识体系</h2>
+        <span class="section-tag">公开学习馆</span>
+        <h2 class="section-title">按公开课程进入学习资料</h2>
         <p class="section-desc">
-          从概念到实践，从理论到伦理<br />
-          为理工科新生量身定制的 AI 通识课程
+          课程内容以公开学习馆中的实际资料和课时为准<br />
         </p>
       </div>
 

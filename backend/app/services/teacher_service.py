@@ -12,6 +12,7 @@ from app.models.entities import (
     TaskCompletion,
     User,
 )
+from app.services.project_service import with_project_eager_load
 
 
 def _teacher_class_ids(db: Session, teacher_id: str) -> list[int]:
@@ -484,15 +485,15 @@ def list_all_projects(
     teacher_id: str | None = None,
     keyword: str | None = None,
 ):
-    query = db.query(Project)
+    base_query = db.query(Project)
     if teacher_id:
-        query = _apply_teacher_project_scope(query, db, teacher_id)
+        base_query = _apply_teacher_project_scope(base_query, db, teacher_id)
     if status:
-        query = query.filter(Project.status == status)
+        base_query = base_query.filter(Project.status == status)
     if keyword:
-        query = query.filter(Project.title.like(f"%{keyword}%"))
-    query = query.order_by(Project.date.desc())
-    total = query.count()
+        base_query = base_query.filter(Project.title.like(f"%{keyword}%"))
+    total = base_query.count()
+    query = with_project_eager_load(base_query).order_by(Project.date.desc())
     if page and page_size:
         projects = query.offset((page - 1) * page_size).limit(page_size).all()
     else:

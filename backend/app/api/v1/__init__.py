@@ -21,6 +21,7 @@ from app.api.v1.routes.stage_routes import router as stage_router
 from app.api.v1.routes.lessons import router as lessons_router
 from app.api.v1.routes.progress import router as progress_router
 from app.api.v1.routes.notification_routes import router as notification_router
+from app.api.v1.routes.public_learning_routes import router as public_learning_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -43,3 +44,4 @@ api_router.include_router(stage_router)
 api_router.include_router(lessons_router)
 api_router.include_router(progress_router)
 api_router.include_router(notification_router)
+api_router.include_router(public_learning_router)

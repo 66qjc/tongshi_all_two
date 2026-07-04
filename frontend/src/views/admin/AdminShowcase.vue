@@ -501,7 +501,7 @@ onMounted(fetchItems)
           >
             <el-button size="small">{{ coverPreviewUrl ? '重新上传封面' : '选择封面图片' }}</el-button>
             <template #tip>
-              <div class="upload-tip">支持 jpg / png / gif，上传后立即生效</div>
+              <div class="upload-tip">支持 jpg / png / gif，上传后可预览，保存后前台生效</div>
             </template>
           </el-upload>
         </el-form-item>

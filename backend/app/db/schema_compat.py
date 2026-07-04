@@ -660,6 +660,20 @@ def ensure_schema_compatibility(engine) -> None:
         if "courses" in table_names:
             _add_column_if_missing(conn, inspector, "courses", "description", "TEXT NULL")
 
+        # ── CHECK 约束：资料类型和题目类型枚举（仅 MySQL 8.0.16+）─────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "materials" in table_names:
+            _ensure_check_constraint(
+                conn, inspector, "materials", "ck_materials_type",
+                "type IN ('video', 'pdf', 'link')"
+            )
+        if "questions" in table_names:
+            _ensure_check_constraint(
+                conn, inspector, "questions", "ck_questions_type",
+                "type IN ('choice', 'fill', 'multi_choice')"
+            )
+
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:
     """如果表存在且缺少指定列，则 ALTER TABLE ADD COLUMN。"""
@@ -714,3 +728,22 @@ def _make_column_nullable(conn, inspector, table: str, column: str, col_type: st
     if col is not None and not col["nullable"]:
         conn.execute(
             text(f"ALTER TABLE {table} MODIFY {column} {col_type} NULL"))
+
+
+def _ensure_check_constraint(conn, inspector, table: str, name: str, expression: str) -> None:
+    """为 MySQL 表补充 CHECK 约束；SQLite 测试库由模型新建无需处理。"""
+    if conn.dialect.name != "mysql":
+        return
+    table_names = {t for t in inspector.get_table_names()}
+    if table not in table_names:
+        return
+    try:
+        constraints = conn.execute(text(
+            "SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND CONSTRAINT_NAME = :name"
+        ), {"table": table, "name": name}).fetchall()
+        if not constraints:
+            conn.execute(text(f"ALTER TABLE {table} ADD CONSTRAINT {name} CHECK ({expression})"))
+    except Exception:
+        # MySQL 版本不支持 CHECK 约束时静默跳过
+        pass

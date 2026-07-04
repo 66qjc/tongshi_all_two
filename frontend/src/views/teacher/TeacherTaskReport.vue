@@ -107,7 +107,7 @@ onMounted(async () => {
       </div>
 
       <div v-if="loading" class="loading-state">加载中...</div>
-      <div v-else-if="tasks.length === 0" class="empty-state">暂无可查看的作业任务。</div>
+      <div v-else-if="tasks.length === 0" class="empty-state">暂无已发布作业。请先在「发布作业」中发布到班级。</div>
       <div v-else-if="filteredTasks.length === 0" class="empty-state">没有匹配的作业，请调整搜索条件。</div>
       <div v-else class="task-cards">
         <button

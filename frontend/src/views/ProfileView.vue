@@ -293,7 +293,7 @@ function handleTabChange(name: string) {
           </div>
           <div v-else-if="wrongError" class="error-state">{{ wrongError }}</div>
           <div v-else-if="wrongQuestions.length === 0" class="empty-state">
-            <p>暂无错题，继续保持！</p>
+            <p>暂无错题。完成课程练习后，这里会汇总答错题目。</p>
           </div>
           <div v-else class="wrong-list">
             <el-collapse>
@@ -393,7 +393,7 @@ function handleTabChange(name: string) {
           <div v-else-if="likedError" class="error-state">{{ likedError }}</div>
           <div v-else-if="likedProjects.length === 0" class="empty-state">
             <p>暂无收藏作品</p>
-            <p class="hint">去作品展区发现感兴趣的作品吧</p>
+            <p class="hint">暂无收藏作品。可前往作品页查看已审核作品。</p>
           </div>
           <div v-else class="project-grid">
             <div

@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>课程资料 PDF 直读页原型 v2</title>
+  <!--
+    讨论原型，不是正式业务代码。
+    本版目标：
+    - 从“资料工作台”收敛为“单文件沉浸阅读”。
+    - 中间区域直接承载 PDF 原文，资料卡片退到目录和相关资料中。
+    - 左侧只保留书站式资料目录，右侧只保留当前文件导读。
+    - 正式实现时，PDF 阅读区应替换为 <object> 或 <iframe>，URL 使用 getPublicMaterialFileUrl(material.id)。
+  -->
+  <style>
+    :root {
+      --page: oklch(0.972 0.006 84);
+      --paper: oklch(0.994 0.004 84);
+      --paper-soft: oklch(0.948 0.011 84);
+      --ink: oklch(0.225 0.026 236);
+      --muted: oklch(0.49 0.021 236);
+      --faint: oklch(0.68 0.015 236);
+      --line: oklch(0.865 0.012 84);
+      --accent: oklch(0.43 0.075 177);
+      --accent-soft: oklch(0.91 0.036 177);
+      --warm: oklch(0.58 0.115 42);
+      --warm-soft: oklch(0.93 0.035 42);
+      --blue: oklch(0.49 0.09 246);
+      --green: oklch(0.5 0.08 126);
+      --shadow: 0 24px 70px rgba(38, 45, 36, 0.13);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--page);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 0 22px;
+      background: color-mix(in oklch, var(--paper) 94%, transparent);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      font-weight: 900;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      color: var(--paper);
+      background: var(--accent);
+      border-radius: 6px;
+      font-size: 0.78rem;
+      letter-spacing: 0;
+    }
+
+    .brand-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .course-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: var(--paper-soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .course-tabs button {
+      min-width: 88px;
+      height: 34px;
+      border: 0;
+      border-radius: 6px;
+      color: var(--muted);
+      background: transparent;
+      cursor: default;
+      font-weight: 800;
+    }
+
+    .course-tabs .active {
+      color: var(--ink);
+      background: var(--paper);
+      box-shadow: 0 1px 6px rgba(38, 45, 36, 0.08);
+    }
+
+    .reader-layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 268px minmax(540px, 1fr) 304px;
+      gap: 0;
+    }
+
+    .catalog {
+      min-height: 0;
+      padding: 18px 14px 24px 20px;
+      background: color-mix(in oklch, var(--paper-soft) 58%, var(--paper));
+      border-right: 1px solid var(--line);
+      overflow-y: auto;
+    }
+
+    .catalog-title {
+      margin: 0 0 4px;
+      font-size: 1rem;
+      font-weight: 950;
+    }
+
+    .catalog-subtitle {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .chapter {
+      margin: 0 0 18px;
+    }
+
+    .chapter-label {
+      margin: 0 0 8px;
+      color: var(--faint);
+      font-size: 0.72rem;
+      font-weight: 900;
+    }
+
+    .doc-item {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr);
+      gap: 9px;
+      width: 100%;
+      min-height: 52px;
+      margin: 0 0 4px;
+      padding: 8px 9px;
+      text-align: left;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+    }
+
+    .doc-item:hover {
+      color: var(--ink);
+      background: color-mix(in oklch, var(--paper) 78%, var(--accent-soft));
+      border-color: color-mix(in oklch, var(--accent) 18%, var(--line));
+    }
+
+    .doc-item.active {
+      color: var(--ink);
+      background: var(--paper);
+      border-color: color-mix(in oklch, var(--accent) 32%, var(--line));
+      box-shadow: 0 8px 20px rgba(38, 45, 36, 0.06);
+    }
+
+    .doc-icon {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      margin-top: 2px;
+      border-radius: 5px;
+      color: var(--paper);
+      background: var(--warm);
+      font-size: 0.7rem;
+      font-weight: 950;
+    }
+
+    .doc-icon.video {
+      background: var(--blue);
+    }
+
+    .doc-icon.link {
+      background: var(--green);
+    }
+
+    .doc-copy {
+      min-width: 0;
+    }
+
+    .doc-copy strong {
+      display: block;
+      overflow: hidden;
+      color: inherit;
+      font-size: 0.86rem;
+      line-height: 1.42;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .doc-copy small {
+      display: block;
+      margin-top: 3px;
+      color: var(--faint);
+      font-size: 0.72rem;
+      line-height: 1.3;
+    }
+
+    .reader {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      background: var(--page);
+    }
+
+    .reader-strip {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 16px 28px;
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .crumb {
+      margin: 0 0 5px;
+      color: var(--faint);
+      font-size: 0.74rem;
+      font-weight: 900;
+    }
+
+    .reader-title {
+      margin: 0;
+      overflow: hidden;
+      font-size: 1.16rem;
+      line-height: 1.35;
+      font-weight: 950;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .reader-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .reader-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-btn {
+      height: 34px;
+      padding: 0 12px;
+      color: var(--ink);
+      background: var(--paper-soft);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-weight: 850;
+    }
+
+    .action-btn.primary {
+      color: var(--paper);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .document-stage {
+      min-height: 0;
+      padding: 18px 28px 30px;
+      overflow: hidden;
+    }
+
+    .pdf-frame {
+      height: 100%;
+      min-height: 560px;
+      display: grid;
+      grid-template-rows: 42px minmax(0, 1fr);
+      overflow: hidden;
+      background: oklch(0.915 0.008 84);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .pdf-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      background: oklch(0.31 0.021 236);
+      color: oklch(0.955 0.006 84);
+      border-bottom: 1px solid oklch(0.39 0.018 236);
+      font-size: 0.8rem;
+    }
+
+    .pdf-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pdf-tool {
+      width: 28px;
+      height: 26px;
+      color: inherit;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 5px;
+      font-weight: 900;
+    }
+
+    .pdf-canvas {
+      min-height: 0;
+      padding: 28px 0 42px;
+      overflow-y: auto;
+      background:
+        linear-gradient(90deg, rgba(46, 51, 54, 0.08) 0 1px, transparent 1px 100%),
+        oklch(0.9 0.008 84);
+      background-size: 36px 36px;
+    }
+
+    .pdf-page {
+      width: min(720px, calc(100% - 48px));
+      min-height: 930px;
+      margin: 0 auto 24px;
+      padding: 58px 64px 64px;
+      background: oklch(0.995 0.003 84);
+      box-shadow: 0 14px 40px rgba(35, 39, 32, 0.18);
+    }
+
+    .pdf-page h2 {
+      margin: 0 0 18px;
+      font-size: 1.42rem;
+      line-height: 1.42;
+      font-weight: 950;
+    }
+
+    .pdf-page h3 {
+      margin: 32px 0 12px;
+      font-size: 1.02rem;
+      font-weight: 930;
+    }
+
+    .pdf-page p {
+      margin: 0 0 14px;
+      color: oklch(0.31 0.021 236);
+      font-size: 0.94rem;
+      line-height: 1.92;
+    }
+
+    .pdf-page .quote {
+      margin: 24px 0;
+      padding: 16px 18px;
+      background: var(--warm-soft);
+      border: 1px solid color-mix(in oklch, var(--warm) 24%, var(--line));
+      border-radius: 6px;
+      color: oklch(0.35 0.045 42);
+      font-weight: 850;
+      line-height: 1.8;
+    }
+
+    .table-like {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .table-like div {
+      min-height: 42px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      font-size: 0.84rem;
+      line-height: 1.55;
+    }
+
+    .table-like div:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .table-like div:nth-last-child(-n + 2) {
+      border-bottom: 0;
+    }
+
+    .guide {
+      min-height: 0;
+      padding: 18px 20px 28px 16px;
+      background: color-mix(in oklch, var(--paper) 72%, var(--paper-soft));
+      border-left: 1px solid var(--line);
+      overflow-y: auto;
+    }
+
+    .guide-section {
+      padding: 0 0 18px;
+      margin: 0 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .guide-section:last-child {
+      border-bottom: 0;
+    }
+
+    .guide-section h2 {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      font-weight: 950;
+    }
+
+    .guide-section p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.72;
+    }
+
+    .file-facts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .fact {
+      padding: 10px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+
+    .fact span {
+      display: block;
+      color: var(--faint);
+      font-size: 0.7rem;
+      font-weight: 850;
+    }
+
+    .fact strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.9rem;
+      font-weight: 950;
+    }
+
+    .mini-toc,
+    .reading-points,
+    .related-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .mini-toc button {
+      width: 100%;
+      padding: 8px 0;
+      text-align: left;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid color-mix(in oklch, var(--line) 70%, transparent);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+
+    .reading-points li {
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.68;
+    }
+
+    .related-list button {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+      padding: 10px;
+      text-align: left;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+
+    .related-list strong {
+      overflow: hidden;
+      color: var(--ink);
+      font-size: 0.83rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .related-list small {
+      color: var(--faint);
+      font-size: 0.72rem;
+    }
+
+    .mobile-catalog-title {
+      display: none;
+    }
+
+    @media (max-width: 1220px) {
+      .reader-layout {
+        grid-template-columns: 240px minmax(480px, 1fr);
+      }
+
+      .guide {
+        display: none;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        display: block;
+      }
+
+      .topbar {
+        position: static;
+        flex-wrap: wrap;
+        height: auto;
+        padding: 12px 16px;
+      }
+
+      .course-tabs {
+        width: 100%;
+      }
+
+      .course-tabs button {
+        flex: 1;
+      }
+
+      .reader-layout {
+        display: block;
+      }
+
+      .catalog {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: 320px;
+        overflow-y: auto;
+      }
+
+      .chapter {
+        display: grid;
+        gap: 6px;
+        overflow: visible;
+        padding-bottom: 0;
+      }
+
+      .chapter-label {
+        min-width: 0;
+        padding-top: 0;
+      }
+
+      .doc-item {
+        min-width: 0;
+      }
+
+      .reader-strip {
+        grid-template-columns: 1fr;
+        padding: 16px;
+      }
+
+      .reader-title {
+        white-space: normal;
+      }
+
+      .reader-actions {
+        justify-content: stretch;
+      }
+
+      .action-btn {
+        flex: 1;
+      }
+
+      .document-stage {
+        padding: 14px 12px 22px;
+      }
+
+      .pdf-frame {
+        min-height: 640px;
+      }
+
+      .pdf-page {
+        width: calc(100% - 20px);
+        min-height: 760px;
+        padding: 34px 24px 42px;
+      }
+
+      .pdf-page h2 {
+        font-size: 1.18rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">学</span>
+        <span class="brand-text">人工智能通识导论</span>
+      </div>
+      <nav class="course-tabs" aria-label="课程详情页签">
+        <button type="button">课程目录</button>
+        <button class="active" type="button">学习资料</button>
+      </nav>
+    </header>
+
+    <div class="reader-layout">
+      <aside class="catalog" aria-label="资料目录">
+        <h1 class="catalog-title">资料目录</h1>
+        <p class="catalog-subtitle">按课程阶段组织文件，当前文件直接在中间阅读。</p>
+
+        <section class="chapter" aria-label="第一阶段">
+          <p class="chapter-label">阶段 1</p>
+          <button class="doc-item active" type="button" data-doc="intro">
+            <span class="doc-icon">PDF</span>
+            <span class="doc-copy">
+              <strong>人工智能导论讲义</strong>
+              <small>42 页 · 推荐先读</small>
+            </span>
+          </button>
+          <button class="doc-item" type="button" data-doc="history">
+            <span class="doc-icon">PDF</span>
+            <span class="doc-copy">
+              <strong>AI 发展时间线</strong>
+              <small>18 页 · 补充阅读</small>
+            </span>
+          </button>
+        </section>
+
+        <section class="chapter" aria-label="第二阶段">
+          <p class="chapter-label">阶段 2</p>
+          <button class="doc-item" type="button" data-doc="prompt">
+            <span class="doc-icon">PDF</span>
+            <span class="doc-copy">
+              <strong>提示词实践手册</strong>
+              <small>31 页 · 课堂练习</small>
+            </span>
+          </button>
+          <button class="doc-item" type="button" data-doc="video">
+            <span class="doc-icon video">视</span>
+            <span class="doc-copy">
+              <strong>课堂演示视频</strong>
+              <small>12 分钟 · 配套资料</small>
+            </span>
+          </button>
+        </section>
+
+        <section class="chapter" aria-label="第三阶段">
+          <p class="chapter-label">阶段 3</p>
+          <button class="doc-item" type="button" data-doc="ethics">
+            <span class="doc-icon">PDF</span>
+            <span class="doc-copy">
+              <strong>AI 伦理案例包</strong>
+              <small>26 页 · 小组讨论</small>
+            </span>
+          </button>
+          <button class="doc-item" type="button" data-doc="link">
+            <span class="doc-icon link">链</span>
+            <span class="doc-copy">
+              <strong>拓展阅读合集</strong>
+              <small>外部链接 · 选读</small>
+            </span>
+          </button>
+        </section>
+      </aside>
+
+      <main class="reader" aria-label="资料阅读区">
+        <header class="reader-strip">
+          <div>
+            <p class="crumb" id="docCrumb">阶段 1 / 推荐资料 / PDF</p>
+            <h2 class="reader-title" id="docTitle">人工智能导论讲义</h2>
+            <div class="reader-meta" id="docMeta">
+              <span>PDF</span>
+              <span>42 页</span>
+              <span>更新于 2026-06-29</span>
+            </div>
+          </div>
+          <div class="reader-actions">
+            <button class="action-btn" type="button">新窗口打开</button>
+            <button class="action-btn primary" type="button">下载</button>
+          </div>
+        </header>
+
+        <section class="document-stage">
+          <div class="pdf-frame" aria-label="PDF 原文阅读器">
+            <div class="pdf-toolbar">
+              <div class="pdf-tools">
+                <button class="pdf-tool" type="button">-</button>
+                <span id="zoomText">100%</span>
+                <button class="pdf-tool" type="button">+</button>
+              </div>
+              <span id="pageText">第 1 / 42 页</span>
+            </div>
+            <div class="pdf-canvas" id="pdfCanvas">
+              <article class="pdf-page">
+                <h2>第一章：什么是人工智能</h2>
+                <p>人工智能不是一个单独的软件功能，而是一组让计算系统完成感知、推理、生成和决策任务的方法。学习这门课时，最重要的是先建立边界感：哪些能力来自模型，哪些能力来自数据，哪些能力来自产品设计。</p>
+                <p>在通识课程中，理解人工智能不需要先从公式开始。更有效的入口是观察日常任务：搜索、翻译、写作、图像识别、推荐系统和智能助理。这些系统背后有不同的模型和工程取舍，但都围绕同一个问题：如何让机器从数据中提取模式，并在新场景中做出有用输出。</p>
+                <div class="quote">阅读重点：先区分“模型能力”“应用场景”和“使用责任”，不要把一个聊天界面的表现直接等同于全部人工智能。</div>
+                <h3>1.1 能力边界</h3>
+                <p>人工智能系统擅长在已有数据分布附近完成模式匹配和内容生成，但它并不自动理解事实来源、伦理责任和现实后果。课程资料页把 PDF 原文放在阅读中心，是为了让学生在同一个上下文里持续读完材料，而不是在卡片和弹窗之间来回切换。</p>
+              </article>
+
+              <article class="pdf-page">
+                <h2>第二章：从规则系统到生成式模型</h2>
+                <p>早期人工智能常常依赖规则，系统能做什么由开发者明确写出。机器学习之后，系统开始从样本中学习规律。深度学习进一步扩大了模型可处理的数据规模，生成式模型则把文本、图像、音频等内容生产能力推向普通用户。</p>
+                <div class="table-like">
+                  <div><strong>规则系统</strong><br />依赖人工定义条件和流程</div>
+                  <div><strong>机器学习</strong><br />从样本中学习统计规律</div>
+                  <div><strong>深度学习</strong><br />处理更复杂的特征和数据</div>
+                  <div><strong>生成式模型</strong><br />根据上下文生成新内容</div>
+                </div>
+                <h3>2.1 为什么要连续阅读</h3>
+                <p>资料页如果只是资料卡片，学生会先看到资源清单，再决定是否打开文件。对于课程主讲义，这会打断学习节奏。更合理的方式是默认进入当前核心文件，把目录、导读和相关资料作为辅助层。</p>
+              </article>
+
+              <article class="pdf-page">
+                <h2>第三章：课堂使用建议</h2>
+                <p>教师可以把主讲义、案例包和练习说明组织到不同阶段。学生进入“学习资料”页签后，默认打开第一份核心 PDF。左侧用于切换文件，中间保持原文阅读，右侧用于提示当前资料的阅读重点和配套资源。</p>
+                <p>这种结构接近书站体验，也适合课程平台：它没有把所有资源压成一个网格，而是明确告诉学生“现在应该读什么”。当资料数量变多时，目录仍然可控，阅读区仍然稳定。</p>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="guide" aria-label="当前资料导读">
+        <section class="guide-section">
+          <h2>当前文件</h2>
+          <p id="docSummary">本讲义用于建立人工智能通识课程的第一层认知框架，适合作为进入课程后的第一份阅读材料。</p>
+          <div class="file-facts">
+            <div class="fact">
+              <span>类型</span>
+              <strong id="factType">PDF</strong>
+            </div>
+            <div class="fact">
+              <span>篇幅</span>
+              <strong id="factSize">42 页</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h2>本页目录</h2>
+          <div class="mini-toc" id="miniToc">
+            <button type="button">第一章：什么是人工智能</button>
+            <button type="button">第二章：从规则系统到生成式模型</button>
+            <button type="button">第三章：课堂使用建议</button>
+          </div>
+        </section>
+
+        <section class="guide-section">
+          <h2>阅读重点</h2>
+          <ul class="reading-points" id="readingPoints">
+            <li>区分模型能力、应用场景和使用责任。</li>
+            <li>理解通识课不以公式为入口，而以真实任务为入口。</li>
+            <li>把主讲义作为当前学习主线，其他资料只做辅助。</li>
+          </ul>
+        </section>
+
+        <section class="guide-section">
+          <h2>相关资料</h2>
+          <div class="related-list" id="relatedList">
+            <button type="button">
+              <strong>AI 发展时间线</strong>
+              <small>PDF · 阶段 1</small>
+            </button>
+            <button type="button">
+              <strong>课堂演示视频</strong>
+              <small>视频 · 阶段 2</small>
+            </button>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const documents = {
+      intro: {
+        crumb: '阶段 1 / 推荐资料 / PDF',
+        title: '人工智能导论讲义',
+        meta: ['PDF', '42 页', '更新于 2026-06-29'],
+        type: 'PDF',
+        size: '42 页',
+        page: '第 1 / 42 页',
+        summary: '本讲义用于建立人工智能通识课程的第一层认知框架，适合作为进入课程后的第一份阅读材料。',
+        toc: ['第一章：什么是人工智能', '第二章：从规则系统到生成式模型', '第三章：课堂使用建议'],
+        points: ['区分模型能力、应用场景和使用责任。', '理解通识课不以公式为入口，而以真实任务为入口。', '把主讲义作为当前学习主线，其他资料只做辅助。'],
+        related: [['AI 发展时间线', 'PDF · 阶段 1'], ['课堂演示视频', '视频 · 阶段 2']],
+      },
+      history: {
+        crumb: '阶段 1 / 补充阅读 / PDF',
+        title: 'AI 发展时间线',
+        meta: ['PDF', '18 页', '更新于 2026-06-24'],
+        type: 'PDF',
+        size: '18 页',
+        page: '第 1 / 18 页',
+        summary: '用时间线串联人工智能的重要阶段，帮助学生把技术变化放回历史语境中理解。',
+        toc: ['1950 年代的问题意识', '机器学习的兴起', '生成式模型进入公众视野'],
+        points: ['关注每个阶段解决的核心问题。', '不要把技术进步理解成单线替代。', '结合主讲义阅读会更清晰。'],
+        related: [['人工智能导论讲义', 'PDF · 阶段 1'], ['拓展阅读合集', '链接 · 阶段 3']],
+      },
+      prompt: {
+        crumb: '阶段 2 / 课堂练习 / PDF',
+        title: '提示词实践手册',
+        meta: ['PDF', '31 页', '更新于 2026-06-28'],
+        type: 'PDF',
+        size: '31 页',
+        page: '第 1 / 31 页',
+        summary: '围绕课堂任务给出提示词拆解方法，让学生把问题、约束、素材和输出标准写清楚。',
+        toc: ['任务描述', '上下文补充', '输出标准', '迭代与检查'],
+        points: ['先写清楚任务，再追求技巧。', '把约束条件写进提示词。', '用检查清单改进输出。'],
+        related: [['课堂演示视频', '视频 · 阶段 2'], ['AI 伦理案例包', 'PDF · 阶段 3']],
+      },
+      video: {
+        crumb: '阶段 2 / 配套资料 / 视频',
+        title: '课堂演示视频',
+        meta: ['视频', '12 分钟', '更新于 2026-06-28'],
+        type: '视频',
+        size: '12 分钟',
+        page: '00:00 / 12:08',
+        summary: '这份视频适合放在 PDF 阅读之后，用演示方式复盘提示词实践的完整过程。',
+        toc: ['任务说明', '第一次尝试', '根据反馈修改', '最终输出'],
+        points: ['视频不是主线资料，适合作为练习复盘。', '正式实现时可切换为站内播放器。', '仍保留新窗口打开和下载入口。'],
+        related: [['提示词实践手册', 'PDF · 阶段 2'], ['人工智能导论讲义', 'PDF · 阶段 1']],
+      },
+      ethics: {
+        crumb: '阶段 3 / 讨论资料 / PDF',
+        title: 'AI 伦理案例包',
+        meta: ['PDF', '26 页', '更新于 2026-06-30'],
+        type: 'PDF',
+        size: '26 页',
+        page: '第 1 / 26 页',
+        summary: '通过具体案例讨论偏见、隐私、版权和责任边界，适合小组讨论前集中阅读。',
+        toc: ['案例一：数据偏见', '案例二：隐私边界', '案例三：内容版权'],
+        points: ['先描述事实，再讨论判断。', '区分个人使用和平台责任。', '把争议点写成可讨论的问题。'],
+        related: [['人工智能导论讲义', 'PDF · 阶段 1'], ['拓展阅读合集', '链接 · 阶段 3']],
+      },
+      link: {
+        crumb: '阶段 3 / 选读资料 / 链接',
+        title: '拓展阅读合集',
+        meta: ['外部链接', '6 篇文章', '更新于 2026-06-30'],
+        type: '链接',
+        size: '6 篇',
+        page: '外部资料',
+        summary: '选读合集放在主线阅读之后，作为学生继续探索课程主题的入口。',
+        toc: ['行业报告', '科普文章', '政策与规范'],
+        points: ['外部链接不作为主线考核材料。', '正式实现时可显示链接摘要和打开按钮。', '建议放在右侧相关资料或目录末尾。'],
+        related: [['AI 伦理案例包', 'PDF · 阶段 3'], ['AI 发展时间线', 'PDF · 阶段 1']],
+      },
+    };
+
+    const docButtons = Array.from(document.querySelectorAll('.doc-item'));
+    const docCrumb = document.getElementById('docCrumb');
+    const docTitle = document.getElementById('docTitle');
+    const docMeta = document.getElementById('docMeta');
+    const pageText = document.getElementById('pageText');
+    const docSummary = document.getElementById('docSummary');
+    const factType = document.getElementById('factType');
+    const factSize = document.getElementById('factSize');
+    const miniToc = document.getElementById('miniToc');
+    const readingPoints = document.getElementById('readingPoints');
+    const relatedList = document.getElementById('relatedList');
+
+    function renderList(target, items, renderer) {
+      target.innerHTML = items.map(renderer).join('');
+    }
+
+    docButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const doc = documents[button.dataset.doc];
+        if (!doc) return;
+
+        docButtons.forEach((item) => item.classList.toggle('active', item === button));
+        docCrumb.textContent = doc.crumb;
+        docTitle.textContent = doc.title;
+        docMeta.innerHTML = doc.meta.map((item) => `<span>${item}</span>`).join('');
+        pageText.textContent = doc.page;
+        docSummary.textContent = doc.summary;
+        factType.textContent = doc.type;
+        factSize.textContent = doc.size;
+        renderList(miniToc, doc.toc, (item) => `<button type="button">${item}</button>`);
+        renderList(readingPoints, doc.points, (item) => `<li>${item}</li>`);
+        renderList(
+          relatedList,
+          doc.related,
+          (item) => `<button type="button"><strong>${item[0]}</strong><small>${item[1]}</small></button>`,
+        );
+      });
+    });
+  </script>
+</body>
+</html>
