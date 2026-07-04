@@ -257,6 +257,22 @@ def get_reset_requests_for_admin(db: Session, status: str | None = None) -> list
     return [_reset_request_out(db, r) for r in requests]
 
 
+def _teacher_can_resolve_reset_request(db: Session, teacher_id: str, request_id: int) -> PasswordResetRequest | None:
+    """返回当前教师班级内的密码重置申请；不在范围内时返回 None。"""
+    from app.models.entities import Class, StudentClassEnrollment
+
+    return (
+        db.query(PasswordResetRequest)
+        .join(StudentClassEnrollment, StudentClassEnrollment.user_id == PasswordResetRequest.user_id)
+        .join(Class, Class.id == StudentClassEnrollment.class_id)
+        .filter(
+            PasswordResetRequest.id == request_id,
+            Class.created_by == teacher_id,
+        )
+        .first()
+    )
+
+
 def approve_reset_request(db: Session, request_id: int, resolver_id: str) -> dict:
     """审批通过密码重置请求"""
     req = db.query(PasswordResetRequest).filter(
@@ -283,6 +299,14 @@ def approve_reset_request(db: Session, request_id: int, resolver_id: str) -> dic
     return {"message": "密码已重置", "temp_password": new_pwd}
 
 
+def approve_reset_request_for_teacher(db: Session, request_id: int, teacher_id: str) -> dict:
+    """教师审批密码重置前先校验申请人是否属于自己的班级。"""
+    req = _teacher_can_resolve_reset_request(db, teacher_id, request_id)
+    if not req:
+        raise BusinessException(404, "申请不存在")
+    return approve_reset_request(db, request_id, teacher_id)
+
+
 def reject_reset_request(db: Session, request_id: int, resolver_id: str, reason: str) -> dict:
     """驳回密码重置请求"""
     req = db.query(PasswordResetRequest).filter(
@@ -301,6 +325,14 @@ def reject_reset_request(db: Session, request_id: int, resolver_id: str, reason:
     return {"message": "已驳回"}
 
 
+def reject_reset_request_for_teacher(db: Session, request_id: int, teacher_id: str, reason: str) -> dict:
+    """教师驳回密码重置前先校验申请人是否属于自己的班级。"""
+    req = _teacher_can_resolve_reset_request(db, teacher_id, request_id)
+    if not req:
+        raise BusinessException(404, "申请不存在")
+    return reject_reset_request(db, request_id, teacher_id, reason)
+
+
 def _reset_request_out(db: Session, req: PasswordResetRequest) -> dict:
     user = db.query(User).filter(User.id == req.user_id).first()
     resolver_name = ""
@@ -315,7 +347,7 @@ def _reset_request_out(db: Session, req: PasswordResetRequest) -> dict:
         "status": req.status,
         "resolved_by": req.resolved_by,
         "resolved_by_name": resolver_name,
-        "temp_password": req.temp_password or "",
+        "temp_password": "",
         "resolved_at": req.resolved_at.isoformat() if req.resolved_at else "",
         "created_at": req.created_at.isoformat() if req.created_at else "",
     }

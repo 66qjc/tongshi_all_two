@@ -12,8 +12,19 @@ class LocalStorageAdapter:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
+    def _resolve_safe_path(self, object_key: str) -> Path:
+        """解析本地文件路径并确保结果仍位于上传根目录内。"""
+        cleaned = object_key.replace("\\", "/").lstrip("/")
+        if cleaned.startswith("uploads/"):
+            cleaned = cleaned[len("uploads/"):]
+        target = (self.root_dir / cleaned).resolve()
+        root = self.root_dir.resolve()
+        if target != root and root not in target.parents:
+            raise ValueError("文件路径不合法")
+        return target
+
     def save_bytes(self, *, content: bytes, object_key: str, content_type: str = "") -> StoredObject:
-        file_path = self.root_dir / object_key
+        file_path = self._resolve_safe_path(object_key)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(content)
         return StoredObject(
@@ -26,7 +37,7 @@ class LocalStorageAdapter:
         )
 
     def open_write_stream(self, *, object_key: str) -> BinaryIO:
-        file_path = self.root_dir / object_key
+        file_path = self._resolve_safe_path(object_key)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         return open(file_path, "wb")
 
@@ -57,13 +68,13 @@ class LocalStorageAdapter:
         )
 
     def open_stream(self, *, object_key: str) -> BinaryIO:
-        file_path = self.root_dir / object_key
+        file_path = self._resolve_safe_path(object_key)
         return open(file_path, "rb")
 
     def exists(self, *, object_key: str) -> bool:
-        return (self.root_dir / object_key).is_file()
+        return self._resolve_safe_path(object_key).is_file()
 
     def delete(self, *, object_key: str) -> None:
-        file_path = self.root_dir / object_key
+        file_path = self._resolve_safe_path(object_key)
         if file_path.is_file():
             file_path.unlink()

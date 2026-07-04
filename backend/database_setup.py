@@ -1,4 +1,7 @@
-"""一键部署脚本：建库、建表、非敏感种子数据。"""
+"""一键部署脚本：建库、建表。生产环境不填充种子数据（seed_data.py 已清空）。
+管理员初始化请使用：
+    py scripts/create_admin.py --id <管理员账号> --name <管理员姓名> --password <强密码>
+"""
 
 import os
 import sys
@@ -60,13 +63,6 @@ def drop_tables():
     print("  所有表已删除")
 
 
-def seed_data():
-    """插入非敏感种子数据。"""
-    from seed_data import seed
-
-    seed()
-
-
 def check_connection():
     """检查数据库连接。"""
     db_name = os.getenv("MYSQL_DATABASE", "tongshi")
@@ -103,8 +99,7 @@ def main():
         print("\n[2/3] 创建表...")
     create_tables()
 
-    print("\n[3/3] 插入非敏感种子数据...")
-    seed_data()
+    print("\n[3/3] 跳过种子数据（seed_data.py 已清空）")
 
     print("\n" + "=" * 50)
     print("  部署完成")

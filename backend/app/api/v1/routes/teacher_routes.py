@@ -25,12 +25,12 @@ from app.services.teacher_service import (
     list_students,
 )
 from app.services.project_service import approve_project, reject_project, delete_project, format_project, batch_load_liked_set
-from app.services.class_service import _delete_student_data
+from app.services.class_service import remove_students_from_teacher_classes
 from app.services.file_service import resolve_file_stream
 from app.services.auth_service import (
     get_reset_requests_for_teacher,
-    approve_reset_request,
-    reject_reset_request,
+    approve_reset_request_for_teacher,
+    reject_reset_request_for_teacher,
 )
 from app.models.entities import User, Project, Class
 from openpyxl import Workbook
@@ -65,38 +65,21 @@ def get_students(
     return paginated_success(items, total, page, page_size)
 
 
-@router.post("/students/batch-delete", summary="批量删除学生", description="教师端：批量删除学生及其所有关联数据")
+@router.post("/students/batch-delete", summary="批量移出学生", description="教师端：将学生从当前教师管理的班级中移出，不删除学生账号")
 def batch_delete_students(
     student_ids: list[str],
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
     if not student_ids:
-        raise BusinessException(400, "请选择要删除的学生")
-
-    # 验证学生是否属于当前教师
-    teacher_student_ids = set()
-    from app.services.teacher_service import _teacher_student_ids
-    valid_ids = set(_teacher_student_ids(db, current_user.id))
-
-    deleted_count = 0
-    failed_ids = []
-
-    for student_id in student_ids:
-        if student_id not in valid_ids:
-            failed_ids.append(student_id)
-            continue
-        try:
-            _delete_student_data(db, student_id)
-            deleted_count += 1
-        except Exception:
-            failed_ids.append(student_id)
+        raise BusinessException(400, "请选择要移出的学生")
 
     try:
+        deleted_count, failed_ids = remove_students_from_teacher_classes(db, current_user.id, student_ids)
         db.commit()
     except Exception:
         db.rollback()
-        raise BusinessException(500, "批量删除失败")
+        raise BusinessException(500, "批量移出失败")
 
     return success({
         "deleted_count": deleted_count,
@@ -486,7 +469,7 @@ def approve_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    return success(approve_reset_request(db, request_id, current_user.id))
+    return success(approve_reset_request_for_teacher(db, request_id, current_user.id))
 
 
 @router.post("/password-reset-requests/{request_id}/reject", summary="驳回密码重置", description="教师：驳回本班学生的密码重置申请")
@@ -496,4 +479,4 @@ def reject_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    return success(reject_reset_request(db, request_id, current_user.id, data.reason))
+    return success(reject_reset_request_for_teacher(db, request_id, current_user.id, data.reason))

@@ -188,8 +188,11 @@ def can_current_user_read_file(db: Session, record: StoredFile, current_user) ->
 
     from app.services.material_service import can_view_course_materials
 
-    material = db.query(Material).filter(Material.file_id == record.id).first()
-    if material and can_view_course_materials(db, material.course_id, current_user.id, current_user.role):
+    materials = db.query(Material).filter(Material.file_id == record.id).all()
+    if any(
+        can_view_course_materials(db, material.course_id, current_user.id, current_user.role)
+        for material in materials
+    ):
         return True
 
     if _can_read_material_preview_file(db, record.id, current_user.id, current_user.role):

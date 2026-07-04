@@ -871,8 +871,8 @@ class TestTeacherRefactor:
         )
         assert resp.json()["code"] == 400
 
-    def test_uploaded_pdf_can_be_opened_by_browser_without_auth_header(self, client, teacher_token):
-        """上传返回的文件 URL 应能被浏览器直接打开，不能依赖 Authorization 头。"""
+    def test_uploaded_pdf_requires_auth_but_supports_query_token_preview(self, client, teacher_token, monkeypatch):
+        """上传返回的文件 URL 默认拒绝匿名访问，配置允许时支持浏览器 query token 预览。"""
         pdf_content = b"%PDF-1.4 browser preview pdf"
         upload = client.post(
             "/api/upload",
@@ -881,7 +881,11 @@ class TestTeacherRefactor:
         ).json()
         assert upload["code"] == 0
 
-        resp = client.get(upload["data"]["url"])
+        anonymous = client.get(upload["data"]["url"])
+        assert anonymous.json()["code"] == 401
+
+        monkeypatch.setattr("app.core.config.settings.allow_query_token_for_files", True)
+        resp = client.get(f'{upload["data"]["url"]}?token={teacher_token}')
 
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/pdf")
@@ -889,8 +893,8 @@ class TestTeacherRefactor:
         assert resp.headers["content-length"] == str(len(pdf_content))
         assert resp.content.startswith(b"%PDF")
 
-    def test_uploaded_mp4_supports_browser_range_without_auth_header(self, client, teacher_token):
-        """视频标签发起 Range 请求时也无法带 Bearer Token，应可直接分段读取。"""
+    def test_uploaded_mp4_requires_auth_but_supports_query_token_range(self, client, teacher_token, monkeypatch):
+        """视频标签可在显式允许 query token 时发起分段读取。"""
         mp4_content = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"0" * 64
         upload = client.post(
             "/api/upload",
@@ -899,7 +903,11 @@ class TestTeacherRefactor:
         ).json()
         assert upload["code"] == 0
 
-        resp = client.get(upload["data"]["url"], headers={"Range": "bytes=0-15"})
+        anonymous = client.get(upload["data"]["url"], headers={"Range": "bytes=0-15"})
+        assert anonymous.json()["code"] == 401
+
+        monkeypatch.setattr("app.core.config.settings.allow_query_token_for_files", True)
+        resp = client.get(f'{upload["data"]["url"]}?token={teacher_token}', headers={"Range": "bytes=0-15"})
 
         assert resp.status_code == 206
         assert resp.headers["content-type"].startswith("video/mp4")

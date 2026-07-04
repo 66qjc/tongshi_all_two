@@ -107,17 +107,17 @@ function handleSelectionChange(rows: ClassStudent[]) {
 
 async function handleBatchDelete() {
   if (selectedStudentIds.value.length === 0) {
-    ElMessage.warning('请先选择要删除的学生')
+    ElMessage.warning('请先选择要移出的学生')
     return
   }
 
   try {
     await ElMessageBox.confirm(
-      `确定删除选中的 ${selectedStudentIds.value.length} 名学生？该操作会删除学生账号及关联数据，不只是移出当前班级。`,
-      '确认批量删除',
+      `确定将选中的 ${selectedStudentIds.value.length} 名学生从你的班级中移出？该操作不会删除学生账号，也不会影响其他教师班级或课程数据。`,
+      '确认批量移出',
       {
         type: 'warning',
-        confirmButtonText: '确认删除',
+        confirmButtonText: '确认移出',
         cancelButtonText: '取消',
       },
     )
@@ -128,15 +128,15 @@ async function handleBatchDelete() {
   batchDeleting.value = true
   try {
     const result = await batchDeleteStudents(selectedStudentIds.value)
-    ElMessage.success(`成功删除 ${result.deleted_count} 名学生`)
+    ElMessage.success(`成功移出 ${result.deleted_count} 名学生`)
     if (result.failed_ids?.length > 0) {
-      ElMessage.warning(`${result.failed_ids.length} 名学生删除失败`)
+      ElMessage.warning(`${result.failed_ids.length} 名学生移出失败`)
     }
     selectedStudentIds.value = []
     await loadStudents()
     await loadClasses()
   } catch {
-    ElMessage.error('批量删除失败，请稍后重试')
+    ElMessage.error('批量移出失败，请稍后重试')
   } finally {
     batchDeleting.value = false
   }
@@ -264,7 +264,7 @@ onMounted(async () => {
           :loading="batchDeleting"
           @click="handleBatchDelete"
         >
-          批量删除{{ selectedStudentIds.length > 0 ? ` (${selectedStudentIds.length})` : '' }}
+          批量移出{{ selectedStudentIds.length > 0 ? ` (${selectedStudentIds.length})` : '' }}
         </el-button>
         <el-button round @click="openImport">Excel 导入</el-button>
         <el-button type="primary" round @click="openEnroll">手动添加</el-button>

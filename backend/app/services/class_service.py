@@ -111,6 +111,30 @@ def _delete_student_data(db: Session, student_id: str):
                           "student").delete(synchronize_session=False)
 
 
+def remove_students_from_teacher_classes(db: Session, teacher_id: str, student_ids: list[str]) -> tuple[int, list[str]]:
+    """将学生从当前教师管理的班级中移除，不删除学生账号和其他课程数据。"""
+    class_ids = [
+        row[0]
+        for row in db.query(Class.id).filter(Class.created_by == teacher_id).all()
+    ]
+    if not class_ids:
+        return 0, list(student_ids)
+
+    removed_count = 0
+    failed_ids: list[str] = []
+    for student_id in student_ids:
+        query = db.query(StudentClassEnrollment).filter(
+            StudentClassEnrollment.user_id == student_id,
+            StudentClassEnrollment.class_id.in_(class_ids),
+        )
+        if query.first() is None:
+            failed_ids.append(student_id)
+            continue
+        query.delete(synchronize_session=False)
+        removed_count += 1
+    return removed_count, failed_ids
+
+
 def update_class(db: Session, class_id: int, teacher_id: str, name: str | None = None, course_id: int | None = None):
     cls = _owned_class_query(db, teacher_id).filter(Class.id == class_id).first()
     if not cls:

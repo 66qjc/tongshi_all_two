@@ -93,6 +93,19 @@ def test_generic_file_allows_owner_teacher_for_material(client, db_session, teac
     assert response.headers["content-type"].startswith("application/pdf")
 
 
+def test_generic_file_allows_when_any_material_reference_is_accessible(client, db_session, student_token):
+    other_course = db_session.query(Course).filter(Course.created_by == "T002").first()
+    stored = _stored_file(db_session, created_by="T002", object_key="course/shared.pdf")
+    _write_local_file(stored.object_key)
+    _material(db_session, course_id=other_course.id, file_id=stored.id)
+    _material(db_session, course_id=1, file_id=stored.id)
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(student_token))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+
+
 def test_material_file_returns_x_accel_redirect_for_owner_teacher(client, db_session, teacher_token):
     stored = _stored_file(db_session)
     material = _material(db_session, file_id=stored.id)

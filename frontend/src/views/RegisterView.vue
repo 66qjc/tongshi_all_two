@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
@@ -12,7 +12,7 @@ const form = reactive({
   name: '',
   password: '',
   confirmPassword: '',
-  role: 'student' as 'student' | 'teacher',
+  role: 'student' as const,
   major: '',
 })
 const loading = ref(false)
@@ -21,8 +21,6 @@ const majors = [
   '自动化专业', '机械工程', '测控技术', '电气工程',
   '材料科学', '光学工程', '计算机科学', '电子信息',
 ]
-
-const isStudent = computed(() => form.role === 'student')
 
 async function handleRegister() {
   if (!form.id.trim() || !form.name.trim() || !form.password.trim()) {
@@ -41,7 +39,7 @@ async function handleRegister() {
     ElMessage.warning('两次密码不一致')
     return
   }
-  if (isStudent.value && !form.major) {
+  if (!form.major) {
     ElMessage.warning('请选择专业')
     return
   }
@@ -51,17 +49,13 @@ async function handleRegister() {
     form.id.trim(),
     form.name.trim(),
     form.password,
-    form.role,
-    isStudent.value ? form.major : undefined,
+    'student',
+    form.major,
   )
   loading.value = false
   if (success) {
     ElMessage.success('注册成功！')
-    if (form.role === 'teacher') {
-      router.push('/teacher')
-    } else {
-      router.push('/')
-    }
+    router.push('/')
   }
 }
 </script>
@@ -93,16 +87,8 @@ async function handleRegister() {
           <p class="form-subtitle">创建你的平台账号</p>
 
           <div class="form-group">
-            <label>身份</label>
-            <el-radio-group v-model="form.role" size="large">
-              <el-radio-button value="student">学生</el-radio-button>
-              <el-radio-button value="teacher">教师</el-radio-button>
-            </el-radio-group>
-          </div>
-
-          <div class="form-group">
-            <label>学号 / 工号</label>
-            <el-input v-model="form.id" placeholder="请输入学号或工号" size="large" />
+            <label>学号</label>
+            <el-input v-model="form.id" placeholder="请输入学号" size="large" />
           </div>
 
           <div class="form-group">
@@ -110,7 +96,7 @@ async function handleRegister() {
             <el-input v-model="form.name" placeholder="请输入姓名" size="large" />
           </div>
 
-          <div v-if="isStudent" class="form-group">
+          <div class="form-group">
             <label>专业</label>
             <el-select v-model="form.major" placeholder="选择专业" size="large" style="width: 100%">
               <el-option v-for="m in majors" :key="m" :label="m" :value="m" />
