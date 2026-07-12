@@ -17,6 +17,7 @@ User(teacher) -> Course -> Question -> QuizAttempt
 User(teacher) -> Course -> Project
 User(teacher) -> Course -> Lesson
 User(student) -> CourseProgress -> Course / Lesson
+User(student) -> LessonProgress -> Course / Lesson
 Announcement -> AnnouncementClass -> Class
 Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ```
@@ -70,11 +71,15 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 班级必须归属一门课程
 - 发布作业可以一次选择同一课程下的多个班级
 - 作业练习必须通过 `QuizAttempt.announcement_id` 记录作业维度
+- 作业只有在全部配置题目都已有答题记录后才创建 `TaskCompletion`；答题、评分和完成记录在同一事务中提交
+- 所有密码写入路径必须递增 `User.token_version`；登录态改密返回替换 Token，前端先保存新 Token 再继续密保或导航
+- 密码修改、密保重置、教师/管理员审批重置和管理员直接重置必须写入审计日志；软删除用户不能登录或复用旧 Token
 - 学生提交作品必须选择自己已加入班级对应的课程
-- 教师只能访问自己创建的课程及其下属班级、资料、题目、学生成绩和作品审核范围
+- 教师只能访问自己创建的课程及其下属班级、资料、学生成绩和作品审核范围；共享题目的编辑权依据 `Question.created_by`
 - 教师可以删除自己课程下的资料，包括公共课程同步到教师课程副本里的资料，但不会影响公共课程源
-- 教师可以新增和编辑自己课程中的题目，但不能删除题目；题目删除仅由管理员执行
-- 公共课程的题库为全站共享题库，不再复制题目到教师课程副本；教师和管理员新增或导入题目会写入公共题库并记录贡献日志
+- 教师可以新增和编辑自己创建的题目，但不能删除题目；题目删除仅由管理员执行
+- 公共课程的题库为全站共享题库，不再复制题目到教师课程副本；教师和管理员新增或导入题目会写入 `created_by` 并记录贡献日志
+- 删除教师课程或公共课程前必须把有效题目转挂到其他未删除课程；共享题目不随课程软删除或恢复，没有承接课程时拒绝删除
 - 公共课程题库的新增与导入会记录到 `question_contribution_logs`，保存课程快照、操作人、动作类型、题目数量和时间
 - 课程正式 API 统一使用 `/api/courses*`；历史 `/api/questions/courses*` 兼容入口已删除。
 - 课程搜索使用 `ilike()`（大小写不敏感 + 中文子串），不再使用 `contains()`。
@@ -85,9 +90,82 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 学生端和教师端资料展示统一使用图文资料卡片和站内预览；旧 `/api/files/{id}` 保留给图片、作品报告等通用文件访问
 - 学生端“学”页面课时内容只能展示学生已加入课程下的已发布课时；草稿课时对学生不可见
 - 课时富文本在创建、更新和读取时都必须经过后端白名单清洗；前端 `v-html` 仅渲染后端清洗后的内容
-- 删除课时时必须清空 `course_progress.last_lesson_id` 引用，避免学习进度指向已删除课时
+- 删除课时时必须清空 `course_progress.last_lesson_id` 引用，并删除对应 `lesson_progress` 记录，避免学习进度指向已删除课时
 
 ## 修改记录
+
+### 2026-07-09 课程课时级进度追踪第一版
+
+- 数据：新增 `lesson_progress` 课时进度表与 `LessonProgress` ORM，记录状态、完成百分比、断点位置、累计学习时长、访问次数和关键时间戳；`schema_compat.py` 会在旧库启动时补表。
+- 接口：`progress_service.py` 新增课时进度上报、课程进度汇总、班级学生进度、课程学习统计；`/api/courses/{course_id}/progress` 保留 `last_lesson_id` 并增加 `total_lessons`、`completed_lessons`、`total_duration`、`completion_rate`、`lessons`。
+- 前端：`CourseDetailView.vue` 对已登录学生的鉴权课程启用 30 秒心跳、页面隐藏/卸载前补报、视频断点采集与恢复；`LearnView.vue` 优先展示后端完成率。
+- 回归保护：`backend/tests/test_lessons_progress.py` 覆盖课时进度累加与自动完成、课程进度明细、教师查看班级学生进度、课程学习统计。
+- 服务器部署影响：需要备份数据库、拉取代码、重启后端以补建 `lesson_progress` 表，并重新构建部署前端静态资源；不需要修改环境变量或 Nginx 配置。
+
+
+### 2026-07-08 本地 PDF 浏览器展示修复
+
+- 问题：本地生产预览中，资料弹窗和课程资料直读器把受保护的 `/api/files/{file_id}` 或 `/api/materials/{id}/file` 地址直接交给 `<object>`、`video`、PDF.js 或新窗口。浏览器内嵌标签无法携带 `Authorization` 请求头，而当前后端未开启 query token，导致 PDF 预览拿到 JSON 401；旧的 `/api/materials/{id}/file` 还依赖 Nginx `X-Accel-Redirect`，不适合本地直连 FastAPI 预览。
+- 修复：新增 `frontend/src/composables/useAuthenticatedFileUrl.ts`，统一用 `fetch` 携带 `auth_token` 读取 `/api/` 文件流，再通过 `URL.createObjectURL()` 生成 `blob:` 地址供 `<object>`、`video`、PDF.js 和“在新窗口打开”使用；`MaterialPreviewDialog.vue` 优先用 `material.file_id` 走 `/api/files/{file_id}`，`MaterialInlineReader.vue` 改为用 `blobUrl` 渲染 PDF/视频。
+- 学习页补充：`CourseDetailView.vue` 在用户已登录且资料有 `file_id` 时优先返回 `/api/files/{file_id}`，让直读器能走带认证文件流；未登录公开资料仍保留公开资料专用 URL 降级路径。
+- 回归保护：更新 `frontend/tests/material-preview-static.test.mjs`、`frontend/tests/public-learning-static.test.mjs`，要求资料弹窗和直读器必须使用 `useAuthenticatedFileUrl` 与 `blobUrl`，防止再次把受保护文件地址直接塞给浏览器内嵌标签。
+- 验证：执行 `node frontend/tests/material-preview-static.test.mjs`、`node frontend/tests/public-learning-static.test.mjs`、`node frontend/tests/local-file-preview-static.test.mjs`、`npm run build`；并用本地 Playwright 验证教师端资料页选择“Python 基础讲义”后，浏览器请求 `/api/files/*` 返回 `application/pdf`，预览 `<object>` 的 `data` 为 `blob:`。
+- 服务器部署影响：本次按用户要求不写入服务器，只在本地生产环境测试；真正上线时需要服务器拉取前端代码并重新构建、部署前端静态资源；不需要后端重启，不需要数据库迁移，不需要修改环境变量或 Nginx 配置。
+
+### 2026-07-07 课程资料页直读式文档站落地
+
+- 问题：学习资料页此前虽然有三栏，但中间仍是资料卡片流，PDF/视频需要点“预览”进入弹窗，不符合古月居图书资源、Material for MkDocs、Docusaurus、VitePress 这类学习文档站的直读体验。
+- 修复：`/learn/course/:courseId?tab=materials` 改为文档站式直读结构，左侧按阶段列出资料目录，中间使用 `MaterialInlineReader` 直接阅读当前 PDF、视频或链接资料，右侧只展示当前资料导读、原资料入口和上一份/下一份资料。
+- PDF 直读：`MaterialInlineReader.vue` 使用 `vue-pdf-embed` essential 入口并显式配置 PDF.js worker；默认优先选择更适合学习的长 PDF，首屏先渲染前 2 页并提供“加载更多页面”，避免长 PDF 首次打开长时间停在加载状态；异常 PDF 保留中文失败提示和“打开原资料”降级入口。
+- 实时刷新：资料页保留轻量轮询能力，当前资料存在 `pending` / `processing` 预览状态时定时刷新，页面重新可见时立即刷新；不引入 WebSocket，不改变后端接口。
+- 保留边界：不修改后端接口、数据库结构、资料上传流程、教师端资料管理或管理员公共课程资料管理；`MaterialPreviewDialog` 继续保留给课程正文和管理场景备用。
+- 验证：执行 `node .\tests\public-learning-static.test.mjs`、`npm run type-check`、`npm run build`；用 Playwright 在本地生产数据上验证桌面端和移动端资料页，确认中间区存在 PDF canvas、资料 tab 主流程不再出现 `MaterialRichCard`、视频和链接可在中间区直接切换、移动端无横向溢出。截图保存在 `output/webtest/inline-reader/course-materials-inline-desktop.png`、`output/webtest/inline-reader/course-materials-inline-mobile.png`、`output/webtest/inline-reader/course-materials-inline-mobile-reader.png`。
+- 服务器部署影响：本次为前端页面改造；上线需要服务器拉取前端代码、重新构建并部署前端静态资源；不需要后端重启，不需要数据库迁移，不需要修改环境变量或 Nginx 配置。
+
+### 2026-07-07 课程资料页直读式文档站实施计划
+
+- 背景：在 2026-07-06 完成资料页直读式文档站调研后，继续把方案拆成可执行实施计划，便于后续正式编码时逐项验收。
+- 计划：新增 `docs/superpowers/plans/2026-07-07-course-materials-inline-reader.md`，覆盖静态回归测试、`MaterialInlineReader` 组件、`CourseDetailView.vue` 资料 tab 直读改造、桌面/移动端 Playwright 截图验收、资料预览状态轻量实时刷新和最终文档记录。
+- 范围：计划明确第一阶段只改前端资料展示，不改后端接口、数据库结构、上传流程、教师端资料管理或管理员公共课程资料管理；`MaterialPreviewDialog` 继续保留给课程正文和管理场景备用。
+- 服务器部署影响：本次仅新增实施计划和修改记录，不影响服务器；不需要服务器拉代码、重启服务、重新构建前端、数据库迁移、环境变量修改或 Nginx 配置调整。若后续按计划改正式前端页面，上线时需要重新构建并部署前端静态资源。
+
+### 2026-07-06 课程资料页直读式文档站调研
+
+- 背景：用户希望学习资料页接近 `https://book.guyuehome.com/` 这类学习文档站，而不是资料卡片列表、预览按钮和弹窗式 PDF 查看，并要求先拓展调研同类学习网站。
+- 调研：新增 `docs/superpowers/specs/2026-07-06-course-materials-inline-reader-research-design.md`，对比古月居图书资源、Material for MkDocs、Docusaurus、VitePress、GitBook、Mintlify、Nextra 的导航和阅读结构。
+- 现状判断：当前 `/learn/course/:courseId?tab=materials` 虽已有左目录、中资料流、右索引的三栏，但中间仍是 `MaterialRichCard` 卡片流，点击后进入 `MaterialPreviewDialog`，PDF/视频不作为页面主阅读对象。
+- 推荐方向：资料页后续应改为“课程资料直读器”，左侧阶段化资料目录负责切换资料，中间直接嵌入当前 PDF/视频/链接阅读框，右侧只展示当前资料导读和相邻资料；资料预览弹窗降级为备用路径。
+- 服务器部署影响：本次仅新增调研设计文档和修改记录，不影响服务器；不需要服务器拉代码、重启服务、重新构建前端、数据库迁移、环境变量修改或 Nginx 配置调整。若后续按方案改正式前端页面，上线时需要重新构建并部署前端静态资源。
+
+### 2026-07-06 对抗式真实网页三轮测试与移动端整改
+
+- 测试范围：在当前分支本地生产环境完成三轮真实网页测试，覆盖游客、学生、教师、管理员四类身份；逐页截图检查排版、按钮色彩、弹窗、Toast、空状态和文件预览链路。最终报告目录为 `output/webtest/screenshots/2026-07-06T14-16-31-411Z/`，本轮共生成 77 张截图、记录 47 次真实 API 操作，最终 `pageIssues=0`、`layoutIssues=0`。
+- 真实学习资料：本轮测试不使用空白或占位文件，生成并上传符合 AI 通识教育主题的长内容资料，包括 `ai-literacy-learning-handbook.pdf`（12 页）、`student-ai-project-report.pdf`（8 页）、`public-ai-literacy-reading-pack.pdf`（10 页），并配套生成 AI 通识课程封面、读书会图解、学生项目封面和流程图图片，用于浏览器端上传、打开和截图验证。
+- 本地生产数据：教师端课程资料、管理员公共课程资料、学生作品、Excel 导入数据、管理员端公益活动和读书会图文混排内容均已真实写入本地生产环境 SQLite 数据库 `output/webtest/webtest.sqlite`；管理员端公众号/图文信息已覆盖列表、发布、前台活动页和详情页真实查看流程。
+- 发现并整改：修复畸形 `auth_user` 本地缓存导致登录态解析异常；修复学生成长档案雷达图 ECharts 坐标轴可读性 warning；修复 390px 窄屏下教师端资料页、管理员公共课程页、管理员图文管理页横向溢出问题，涉及 `PortfolioView.vue`、`TeacherLayout.vue`、`TeacherMaterials.vue`、`AdminLayout.vue`、`AdminPublicCourses.vue`、`AdminShowcase.vue`。
+- 回归保护：新增 `frontend/tests/auth-storage-static.test.mjs`、`frontend/tests/vue-console-warning-static.test.mjs`、`frontend/tests/frontend-typography-static.test.mjs`、`frontend/tests/mobile-admin-layout-static.test.mjs`，并保留 `output/webtest/adversarial-webtest.mjs`、`output/webtest/regression-layout-check.mjs` 作为本地网页真机流程复测脚本。
+- 验证：已执行 `node .\frontend\tests\auth-storage-static.test.mjs`、`node .\frontend\tests\vue-console-warning-static.test.mjs`、`node .\frontend\tests\frontend-typography-static.test.mjs`、`node .\frontend\tests\mobile-admin-layout-static.test.mjs`、`node .\output\webtest\regression-layout-check.mjs`、`node .\output\webtest\adversarial-webtest.mjs`、`npm run type-check`、`npm run build`、`git diff --check`。`npm run build` 仅保留 Vite 对现有大 chunk 的体积提示。
+- 服务器部署影响：本轮真实测试数据只保存在本地生产环境，不同步服务器数据库；若上线本分支的前端整改，需要服务器拉取前端代码、重新构建并部署前端静态资源；不需要后端重启、不需要数据库迁移、不需要调整环境变量或 Nginx 配置。
+
+### 2026-07-06 教师端页面 UI 回退
+
+- 背景：本轮教师端产品 UI 大改后的页面观感和排版不符合验收预期，用户要求将教师端页面退回。
+- 回退：`frontend/src/views/teacher/` 下教师端页面恢复到本轮 UI 大改前状态，并删除教师端重设计专用计划 `docs/superpowers/plans/2026-07-05-teacher-ui-redesign.md` 和静态测试 `frontend/tests/teacher-ui-redesign-static.test.mjs`。
+- 保留：继续保留非教师端的全局排版底座、首页/公开页/学生端文字排版优化，以及 `App.vue`、`main.ts`、`AdminPublicCourses.vue` 的本地 warning 收口；不修改后端接口、数据库结构、权限边界、路由语义或服务器配置。
+- 回归保护：`frontend/tests/frontend-typography-static.test.mjs` 调整为只覆盖全局排版、首页/公开页和学生端文字排版，不再强制教师端新版 UI 结构；教师端仍保留既有工作台隔离和课程搜索静态测试。
+- 验证：本次只在本地生产环境验证，不写入服务器、不部署服务器。
+- 服务器部署影响：本次按用户要求不写入服务器；真正上线时若保留本分支其他前端改动，需要服务器拉取前端代码并重新构建、部署前端静态资源；不需要后端重启，不需要数据库迁移，不需要修改环境变量或 Nginx 配置。
+
+### 2026-07-06 全站前端 UI 与文字排版优化
+
+- 问题：首页、公开/认证页和学生端任务页存在标题字体语气不统一、局部宋体大字距残留、中文长句断行不稳、数字排版缺少等宽约束等问题。
+- 优化：`frontend/src/assets/main.css` 增加固定排版 token、标题/正文断行保护和等宽数字工具类；首页公共外壳、首页模块、公开活动/关于/联系/隐私/登录注册/修改密码/404 页面、学生端学习/答题/练习/作品/个人/消息页面统一标题层级、说明文字行高和正文行宽。
+- 稳定性：`App.vue` 页面切换动画包裹单一真实 DOM 节点，`main.ts` 显式注册 Element Plus 单选组别名，管理员公共课程资料阶段选择和题型标签避免传入 Element Plus 会产生 warning 的 `null` value 或空字符串 tag type。
+- 细节收口：学生消息未读卡片移除 3px 侧边色条，改为完整边框、浅底和点状状态提示。
+- 保留：不修改后端接口、数据库结构、权限边界、路由语义、课程/作业/资料/作品业务逻辑，不新增 UI 框架、状态管理方案或服务器配置；教师端页面已按反馈回退，不纳入本条 UI 优化结果。
+- 回归保护：新增 `frontend/tests/frontend-typography-static.test.mjs` 和 `frontend/tests/vue-console-warning-static.test.mjs`，覆盖全局排版 token、`text-wrap` 断行保护、`tabular-nums` 工具类、学生端任务页与答题页标题去大字距、公开/认证页标题回归 sans 口径、学习页长说明断行保护、学生消息粗侧边色条和纯白文字色残留，以及 Vue Transition / Element Plus warning 易回归点。
+- 验证：本轮按本地生产环境流程执行前端静态测试子集、`npm run build`、本地网页交互检查和 `git diff --check`；服务器不写入、不部署。
+- 服务器部署影响：本次按用户要求不写入服务器，只在本地生产环境测试；真正上线时需要服务器拉取前端代码并重新构建、部署前端静态资源；不需要后端重启，不需要数据库迁移，不需要修改环境变量或 Nginx 配置。
 
 ### 2026-07-04 前端长文案一致性修复
 
@@ -197,3 +275,32 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 修复：将上述第一类 SVG 单字图标和第二类页面单字图标统一替换为 `/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png`，保留原有导航、Hero 和卡片布局尺寸；删除无引用的旧 `frontend/public/favicon.svg` 和 `frontend/public/favicon.ico`，浏览器图标继续由 `frontend/index.html` 指向新的 PNG 网站图标。
 - 回归保护：新增 `frontend/tests/site-icon-replacement-static.test.mjs`，静态检查目标页面必须引用网站图标，防止这些位置重新出现旧单字图标结构，并确认旧 favicon 文件不再保留。
 - 服务器部署影响：需要服务器拉取前端代码并重新构建、部署前端静态资源；不需要后端重启，不需要数据库迁移，不需要调整环境变量或服务器配置。
+
+### 2026-07-09 课程进度追踪、软删除回收站、通知中心与审计日志扩展
+
+- 课程进度追踪：新增 `lesson_progress` 表、课时进度上报接口、课程进度汇总、班级学生进度和课程学习分析；学生课程详情页接入心跳上报、最新断点保存/恢复、`pagehide` keepalive 补报和完成率展示；教师课程详情新增学习分析标签页，展示学生完成率、学习时长、课时热度和疑似刷课指标。
+- 软删除机制：七类核心资源增加 `deleted_at/deleted_by`；课程删除进入回收站并级联班级、资料和公告，共享题目先转挂且不进入恢复批次；管理员端新增“数据回收站”页面和恢复/彻底删除接口。
+- 通知系统扩展：系统通知支持分类、优先级、站内跳转链接、偏好设置、批量发送、分类/未读筛选和全部已读；教师只能向自己班级的学生发送，管理员可向任意未删除学生发送；学生端 `/inbox` 与 `/student/notifications` 统一为通知中心，`/student/settings/notifications` 可直接打开通知偏好；顶部通知铃铛提供最近通知下拉；兼容层幂等初始化默认模板，过期通知不会进入列表或未读数，作业截止提醒与过期已读通知清理服务可供外部定时器调用。
+- 审计日志系统：新增 `audit_logs`、管理员审计日志页面和查询/导出接口；支持用户、动作、资源类型、资源 ID、状态、时间范围筛选；回收站可直接跳转到指定资源操作历史；导出操作会写入 `audit_log.export` 审计记录。
+- 回归保护：新增/扩展 `backend/tests/test_lessons_progress.py`、`backend/tests/test_030405_management_systems.py`、`frontend/tests/teacher-course-analytics-static.test.mjs`、`frontend/tests/notification-center-static.test.mjs`、`frontend/tests/admin-audit-logs-static.test.mjs`。
+- 验证：`backend\.venv\Scripts\python.exe -m pytest backend/tests/test_lessons_progress.py backend/tests/test_030405_management_systems.py -q` 通过（22 passed, 1 warning）；教师学习分析、通知中心和管理员审计日志静态检查通过；`frontend` 下 `npm run build` 通过。
+- 服务器部署影响：需要服务器拉代码、重启后端、重新构建并部署前端静态资源；需要数据库兼容层补齐新增表、字段和默认通知模板；建议部署前备份数据库；如需自动发送作业截止提醒或清理过期通知，需额外配置定时任务或调度进程；不需要修改环境变量或 Nginx 配置。
+
+### 2026-07-11 多角度代码审查阶段 B 修复
+
+- 学生流程：随机点名改用班级学生接口并防止旧请求覆盖；作品广场继续要求登录，作品通知统一跳转 `/create/project/{id}`；通知中心恢复 15 秒轮询、重新可见刷新和跨组件刷新，偏好设置不参与轮询；页头通知必须先标记已读成功再跳转。
+- 课时进度：`LessonProgressIn.visit_started` 显式区分真实进入与普通心跳；SQLite/MySQL 按方言使用原子 upsert，时长和访问次数由数据库表达式累加，完成状态和最高进度不回退；课程页仅在真实切课时增加访问次数，隐藏、`pagehide` 和卸载共用一次性 keepalive 补报。
+- 课时完成：无视频课时向已登录学生显示“完成本课”，主动上报 100%；视频课时继续按播放位置计算，不把按钮隐藏作为防刷课手段。
+- 课程分析：`GET /api/courses/{course_id}/analytics` 接受 `page/page_size`，学生明细返回 `{items,total,page,page_size}`；有效学生、学生汇总和课时汇总均由数据库聚合，教师端使用服务端分页，不再加载全部 `LessonProgress` ORM。
+- 回归保护：新增并发首次上报、100 名学生 × 20 个课时规模、访问次数、非视频完成和分页静态契约；修正静态测试运行目录和已过期首页品牌断言。
+- 验证：阶段 B 后端回归 `16 passed, 1 skipped, 1 warning`，跳过项为未配置 `TEST_MYSQL_URL` 的 MySQL 并发用例；全部前端静态测试通过；`npm run build --prefix frontend` 通过，仅保留既有大 chunk 警告。真实浏览器流程和 MySQL 实库仍需部署前验收。
+- 服务器部署影响：需要服务器拉取代码、重启后端服务、重新构建并部署前端静态资源；本阶段不新增表或字段，不需要数据库迁移，不需要调整环境变量、Redis 或 Nginx 配置。
+
+### 2026-07-12 阶段 C 文件鉴权与流式预览修复（Task 4 + Task 5）
+
+- 前端新增 `AuthenticatedFileImage.vue` 通用组件和 `useAuthenticatedFileUrl.ts` 组合式函数，统一管理私有文件短时签名 URL 的获取、续签和取消。
+- 迁移作品详情页封面/图片、教师审核报告预览、管理员 PDF 预览等剩余消费者到签名 URL 方案，杜绝普通登录 JWT 出现在 URL 中。
+- 作品封面优先使用 `file_id/cover_file_id`，历史外链作回退；公开活动封面继续匿名直连。
+- Task 5 使用临时 SQLite + local 存储验收全链路（真实 2.67MB MP4，ftyp 魔数通过）：签名 URL 获取、文件体下载、Range 206（含中段 Range）、无认证拒绝、URL 安全检查全部 26/26 PASS。
+- 回归保护：新增 `protected-file-consumers-static.test.mjs`、`file-access-url-static.test.mjs`；既有 pytest 78 passed。
+- 服务器部署影响：需要服务器拉代码、重启后端、重新构建前端；不需要数据库迁移或环境变量调整。真实 Nginx 文件体传输和 Range 需部署后验收。

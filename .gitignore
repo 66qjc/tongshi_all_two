@@ -56,3 +56,12 @@ backend/setup_mysql.sh
 tongshi_all_two/
 output/
 .worktrees/
+uploads/
+backend/uploads/
+# 8. 手工 API 测试残留
+/test_upload.*
+/tmp_*.json
+/*test_body.json
+/*test_question.json
+/backend/test_upload.*
+/backend/=*
