@@ -32,7 +32,8 @@ from app.services.auth_service import (
     approve_reset_request_for_teacher,
     reject_reset_request_for_teacher,
 )
-from app.models.entities import User, Project, Class
+from app.services.audit_service import create_audit_log
+from app.models.entities import User, Project, Class, PasswordResetRequest
 from openpyxl import Workbook
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
@@ -469,7 +470,24 @@ def approve_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    return success(approve_reset_request_for_teacher(db, request_id, current_user.id))
+    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
+    target_user_id = req.user_id if req else None
+    try:
+        result = approve_reset_request_for_teacher(db, request_id, current_user.id)
+        create_audit_log(
+            db,
+            user=current_user,
+            action="user.password_reset",
+            resource_type="users",
+            resource_id=target_user_id,
+            resource_name=target_user_id,
+            details={"request_id": request_id, "result": "approved"},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return success(result)
 
 
 @router.post("/password-reset-requests/{request_id}/reject", summary="驳回密码重置", description="教师：驳回本班学生的密码重置申请")
@@ -479,4 +497,21 @@ def reject_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    return success(reject_reset_request_for_teacher(db, request_id, current_user.id, data.reason))
+    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
+    target_user_id = req.user_id if req else None
+    try:
+        result = reject_reset_request_for_teacher(db, request_id, current_user.id, data.reason)
+        create_audit_log(
+            db,
+            user=current_user,
+            action="user.password_reset",
+            resource_type="users",
+            resource_id=target_user_id,
+            resource_name=target_user_id,
+            details={"request_id": request_id, "result": "rejected", "reason": data.reason},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return success(result)

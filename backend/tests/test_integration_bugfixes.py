@@ -3,7 +3,7 @@ import io
 from pathlib import Path
 
 from app.core.security import get_password_hash
-from app.models.entities import Announcement, AnnouncementClass, Class, Course, Material, Project, Question, StoredFile, StudentClassEnrollment, TaskCompletion, User
+from app.models.entities import Announcement, AnnouncementClass, Class, Course, Material, Project, Question, StoredFile, StudentClassEnrollment, StudentNotification, TaskCompletion, User
 from tests.conftest import auth_header
 
 
@@ -119,9 +119,14 @@ class TestTeacherRefactor:
         data = resp.json()
 
         assert data["code"] == 0
-        assert db_session.query(Course).filter(Course.id == 1).first() is None
-        assert db_session.query(Class).filter(Class.course_id == 1).count() == 0
-        assert db_session.query(Question).filter(Question.course_id == 1).count() == 0
+        # 软删除：课程和子资源都被标记为已删除
+        deleted_course = db_session.query(Course).filter(Course.id == 1).first()
+        assert deleted_course is not None
+        assert deleted_course.deleted_at is not None
+        # 级联软删除：班级和题目也被标记
+        deleted_classes = db_session.query(Class).filter(Class.course_id == 1, Class.deleted_at.isnot(None)).count()
+        deleted_questions = db_session.query(Question).filter(Question.course_id == 1, Question.deleted_at.isnot(None)).count()
+        assert deleted_classes > 0 or deleted_questions > 0  # 至少有一些子资源被软删除
 
     def test_delete_empty_course_succeeds(self, client, teacher_token):
         create_data = client.post(
@@ -583,7 +588,11 @@ class TestTeacherRefactor:
 
         delete_resp = client.delete(f"/api/courses/{copy_id}", headers=auth_header(teacher_token))
         assert delete_resp.json()["code"] == 0
-        assert db_session.query(Course).filter(Course.id == copy_id).first() is None
+        # 软删除：课程记录仍存在但 deleted_at 不为空
+        deleted_course = db_session.query(Course).filter(Course.id == copy_id).first()
+        assert deleted_course is not None
+        assert deleted_course.deleted_at is not None
+        # 副本的子资源（资料、题目）不受影响，公共源也不受影响
         assert db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).first() is not None
         assert db_session.query(Question).filter(Question.id == question_resp.json()["data"]["id"]).first() is not None
         assert db_session.query(Course).filter(Course.id == public_course_id).first() is not None
@@ -871,8 +880,8 @@ class TestTeacherRefactor:
         )
         assert resp.json()["code"] == 400
 
-    def test_uploaded_pdf_requires_auth_but_supports_query_token_preview(self, client, teacher_token, monkeypatch):
-        """上传返回的文件 URL 默认拒绝匿名访问，配置允许时支持浏览器 query token 预览。"""
+    def test_uploaded_pdf_uses_signed_url_and_supports_open_ended_range(self, client, teacher_token):
+        """上传后的 PDF 通过短时签名 URL 完成浏览器分段读取。"""
         pdf_content = b"%PDF-1.4 browser preview pdf"
         upload = client.post(
             "/api/upload",
@@ -884,17 +893,26 @@ class TestTeacherRefactor:
         anonymous = client.get(upload["data"]["url"])
         assert anonymous.json()["code"] == 401
 
-        monkeypatch.setattr("app.core.config.settings.allow_query_token_for_files", True)
-        resp = client.get(f'{upload["data"]["url"]}?token={teacher_token}')
+        legacy_query = client.get(f'{upload["data"]["url"]}?token={teacher_token}')
+        assert legacy_query.json()["code"] == 401
 
-        assert resp.status_code == 200
+        access = client.post(
+            f'{upload["data"]["url"]}/access-url',
+            headers=auth_header(teacher_token),
+        ).json()
+        assert access["code"] == 0
+        resp = client.get(access["data"]["url"], headers={"Range": "bytes=0-"})
+
+        assert resp.status_code == 206
         assert resp.headers["content-type"].startswith("application/pdf")
         assert "inline" in resp.headers["content-disposition"]
+        assert resp.headers["accept-ranges"] == "bytes"
+        assert resp.headers["content-range"] == f"bytes 0-{len(pdf_content) - 1}/{len(pdf_content)}"
         assert resp.headers["content-length"] == str(len(pdf_content))
-        assert resp.content.startswith(b"%PDF")
+        assert resp.content == pdf_content
 
-    def test_uploaded_mp4_requires_auth_but_supports_query_token_range(self, client, teacher_token, monkeypatch):
-        """视频标签可在显式允许 query token 时发起分段读取。"""
+    def test_uploaded_mp4_uses_signed_url_and_supports_bounded_range(self, client, teacher_token):
+        """上传后的视频通过短时签名 URL 完成定长分段读取。"""
         mp4_content = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"0" * 64
         upload = client.post(
             "/api/upload",
@@ -906,12 +924,24 @@ class TestTeacherRefactor:
         anonymous = client.get(upload["data"]["url"], headers={"Range": "bytes=0-15"})
         assert anonymous.json()["code"] == 401
 
-        monkeypatch.setattr("app.core.config.settings.allow_query_token_for_files", True)
-        resp = client.get(f'{upload["data"]["url"]}?token={teacher_token}', headers={"Range": "bytes=0-15"})
+        legacy_query = client.get(
+            f'{upload["data"]["url"]}?token={teacher_token}',
+            headers={"Range": "bytes=0-15"},
+        )
+        assert legacy_query.json()["code"] == 401
+
+        access = client.post(
+            f'{upload["data"]["url"]}/access-url',
+            headers=auth_header(teacher_token),
+        ).json()
+        assert access["code"] == 0
+        resp = client.get(access["data"]["url"], headers={"Range": "bytes=0-15"})
 
         assert resp.status_code == 206
         assert resp.headers["content-type"].startswith("video/mp4")
+        assert resp.headers["accept-ranges"] == "bytes"
         assert resp.headers["content-range"] == f"bytes 0-15/{len(mp4_content)}"
+        assert resp.headers["content-length"] == "16"
         assert resp.content == mp4_content[:16]
 
     def test_batch_download_only_uses_teacher_students(self, client, db_session, teacher_token, other_teacher_token):
@@ -979,7 +1009,7 @@ class TestProjectReview:
         assert resp.json()["code"] == 0
         return resp.json()["data"]["id"]
 
-    def test_teacher_approve_project(self, client, student_token, teacher_token):
+    def test_teacher_approve_project(self, client, db_session, student_token, teacher_token):
         """教师通过作品审核 → 状态变更为 approved。"""
         pid = self._create_project(client, student_token, "待审核作品")
 
@@ -991,6 +1021,11 @@ class TestProjectReview:
 
         detail = client.get(f"/api/projects/{pid}", headers=auth_header(student_token)).json()
         assert detail["data"]["status"] == "approved"
+        notification = db_session.query(StudentNotification).filter(
+            StudentNotification.project_id == pid,
+            StudentNotification.type == "project_approved",
+        ).one()
+        assert notification.action_url == f"/create/project/{pid}"
 
     def test_teacher_reject_project_with_reason(self, client, student_token, teacher_token):
         """教师驳回作品 → 状态变更为 rejected，驳回理由不为空。"""

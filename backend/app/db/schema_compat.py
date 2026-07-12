@@ -49,6 +49,59 @@ def ensure_schema_compatibility(engine) -> None:
                 "CREATE INDEX ix_question_contribution_logs_created_at ON question_contribution_logs (created_at)"
             ))
 
+
+        # lesson_progress 表：课时级学习进度
+        if "lesson_progress" not in table_names and {"users", "courses", "lessons"}.issubset(table_names):
+            dialect_name = conn.dialect.name
+            if dialect_name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE lesson_progress (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id VARCHAR(32) NOT NULL,
+                        course_id INTEGER NOT NULL,
+                        lesson_id INTEGER NOT NULL,
+                        status VARCHAR(16) NOT NULL DEFAULT 'not_started',
+                        progress_percent INTEGER NOT NULL DEFAULT 0,
+                        last_position INTEGER NOT NULL DEFAULT 0,
+                        duration_seconds INTEGER NOT NULL DEFAULT 0,
+                        first_viewed_at TIMESTAMP,
+                        last_viewed_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        view_count INTEGER NOT NULL DEFAULT 0,
+                        CONSTRAINT uq_lesson_progress_user_lesson UNIQUE (user_id, lesson_id),
+                        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                        FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                        FOREIGN KEY(lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE lesson_progress (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        user_id VARCHAR(32) NOT NULL,
+                        course_id INTEGER NOT NULL,
+                        lesson_id INTEGER NOT NULL,
+                        status VARCHAR(16) NOT NULL DEFAULT 'not_started',
+                        progress_percent INTEGER NOT NULL DEFAULT 0,
+                        last_position INTEGER NOT NULL DEFAULT 0,
+                        duration_seconds INTEGER NOT NULL DEFAULT 0,
+                        first_viewed_at DATETIME NULL,
+                        last_viewed_at DATETIME NULL,
+                        completed_at DATETIME NULL,
+                        view_count INTEGER NOT NULL DEFAULT 0,
+                        CONSTRAINT uq_lesson_progress_user_lesson UNIQUE (user_id, lesson_id),
+                        CONSTRAINT fk_lesson_progress_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_lesson_progress_course_id FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_lesson_progress_lesson_id FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX ix_lesson_progress_user_course ON lesson_progress (user_id, course_id)"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_lesson_progress_status ON lesson_progress (status)"
+            ))
+
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
 
@@ -253,9 +306,20 @@ def ensure_schema_compatibility(engine) -> None:
         _add_column_if_missing(
             conn, inspector, "student_class_enrollment", "import_order", "INTEGER NOT NULL DEFAULT 0")
 
-        # ── users 表新增 needs_password_change 列 ────────────────────────
+        # ── questions 表新增题库优化字段 ────────────────────────────
+        _add_column_if_missing(
+            conn, inspector, "questions", "created_by", "VARCHAR(32) NULL")
+        _add_column_if_missing(
+            conn, inspector, "questions", "star_rating", "INTEGER NOT NULL DEFAULT 3")
+        _add_column_if_missing(
+            conn, inspector, "questions", "stem_hash", "VARCHAR(64) NULL")
+
+        # ── users 表新增 needs_password_change / token_version 列 ──────────
         _add_column_if_missing(
             conn, inspector, "users", "needs_password_change", "BOOLEAN NOT NULL DEFAULT 0")
+        # token_version：改密时递增，使所有旧 JWT 立即失效
+        _add_column_if_missing(
+            conn, inspector, "users", "token_version", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(
             conn, inspector, "password_reset_requests", "temp_password", "VARCHAR(32) NULL")
 
@@ -673,6 +737,190 @@ def ensure_schema_compatibility(engine) -> None:
                 conn, inspector, "questions", "ck_questions_type",
                 "type IN ('choice', 'fill', 'multi_choice')"
             )
+
+
+        # ── 软删除字段、通知扩展和审计日志表 ─────────────────────────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        for table in ["users", "courses", "classes", "announcements", "projects", "materials", "questions"]:
+            _add_column_if_missing(conn, inspector, table, "deleted_at", "DATETIME NULL")
+            _add_column_if_missing(conn, inspector, table, "deleted_by", "VARCHAR(32) NULL")
+
+        inspector = inspect(conn)
+        if "student_notifications" in table_names:
+            _add_column_if_missing(conn, inspector, "student_notifications", "category", "VARCHAR(32) NOT NULL DEFAULT 'project'")
+            _add_column_if_missing(conn, inspector, "student_notifications", "priority", "VARCHAR(16) NOT NULL DEFAULT 'normal'")
+            _add_column_if_missing(conn, inspector, "student_notifications", "action_url", "VARCHAR(512) DEFAULT ''")
+            _add_column_if_missing(conn, inspector, "student_notifications", "extra_data", "JSON NULL" if conn.dialect.name != "sqlite" else "TEXT")
+            _add_column_if_missing(conn, inspector, "student_notifications", "expires_at", "DATETIME NULL")
+            _add_column_if_missing(conn, inspector, "student_notifications", "sent_at", "DATETIME NULL")
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "notification_preferences" not in table_names:
+            if conn.dialect.name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE notification_preferences (
+                        user_id VARCHAR(32) PRIMARY KEY,
+                        enable_assignment_due BOOLEAN NOT NULL DEFAULT 1,
+                        enable_grade_published BOOLEAN NOT NULL DEFAULT 1,
+                        enable_course_update BOOLEAN NOT NULL DEFAULT 1,
+                        enable_project_review BOOLEAN NOT NULL DEFAULT 1,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE notification_preferences (
+                        user_id VARCHAR(32) NOT NULL PRIMARY KEY,
+                        enable_assignment_due BOOLEAN NOT NULL DEFAULT TRUE,
+                        enable_grade_published BOOLEAN NOT NULL DEFAULT TRUE,
+                        enable_course_update BOOLEAN NOT NULL DEFAULT TRUE,
+                        enable_project_review BOOLEAN NOT NULL DEFAULT TRUE,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_notification_preferences_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    )
+                """))
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "notification_templates" not in table_names:
+            if conn.dialect.name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE notification_templates (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        code VARCHAR(64) NOT NULL UNIQUE,
+                        category VARCHAR(32) NOT NULL DEFAULT 'system',
+                        title_template VARCHAR(256) NOT NULL,
+                        content_template TEXT NOT NULL DEFAULT '',
+                        action_url_template VARCHAR(512) NOT NULL DEFAULT '',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE notification_templates (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        code VARCHAR(64) NOT NULL UNIQUE,
+                        category VARCHAR(32) NOT NULL DEFAULT 'system',
+                        title_template VARCHAR(256) NOT NULL,
+                        content_template TEXT NOT NULL,
+                        action_url_template VARCHAR(512) NOT NULL DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            conn.execute(text("CREATE INDEX ix_notification_templates_code ON notification_templates (code)"))
+            conn.execute(text("CREATE INDEX ix_notification_templates_category ON notification_templates (category)"))
+
+        # 通知模板：新库建表或旧库补表后，幂等补齐默认模板。
+        if "notification_templates" in inspect(conn).get_table_names():
+            default_templates = [
+                {
+                    "code": "assignment_due_soon",
+                    "category": "assignment",
+                    "title_template": "作业《$title》即将截止",
+                    "content_template": "请及时完成作业，避免错过截止时间。",
+                    "action_url_template": "/practice/announcement/$announcement_id",
+                },
+                {
+                    "code": "grade_published",
+                    "category": "grade",
+                    "title_template": "成绩已发布",
+                    "content_template": "你有新的成绩通知，请及时查看。",
+                    "action_url_template": "/profile",
+                },
+                {
+                    "code": "course_material_added",
+                    "category": "course",
+                    "title_template": "课程资料已更新",
+                    "content_template": "课程《$course_name》新增了学习资料。",
+                    "action_url_template": "/learn/course/$course_id",
+                },
+                {
+                    "code": "project_rejected",
+                    "category": "project",
+                    "title_template": "作品《$project_title》审核未通过",
+                    "content_template": "$reason",
+                    "action_url_template": "/projects/$project_id",
+                },
+            ]
+            for template in default_templates:
+                exists = conn.execute(
+                    text("SELECT 1 FROM notification_templates WHERE code = :code"),
+                    {"code": template["code"]},
+                ).first()
+                if exists:
+                    continue
+                conn.execute(text("""
+                    INSERT INTO notification_templates (code, category, title_template, content_template, action_url_template)
+                    VALUES (:code, :category, :title_template, :content_template, :action_url_template)
+                """), template)
+
+        # ── task_completions 表：作业评分字段 ──────────────────────────────
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "task_completions" in table_names:
+            _add_column_if_missing(conn, inspector, "task_completions", "score", "FLOAT NULL")
+            _add_column_if_missing(conn, inspector, "task_completions", "max_score", "FLOAT NOT NULL DEFAULT 100.0")
+
+        # ── announcements 表：作业满分配置 ──────────────────────────────────
+        inspector = inspect(conn)
+        if "announcements" in table_names:
+            _add_column_if_missing(conn, inspector, "announcements", "max_score", "FLOAT NOT NULL DEFAULT 100.0")
+            json_type = "JSON NULL" if conn.dialect.name == "mysql" else "TEXT"
+            _add_column_if_missing(conn, inspector, "announcements", "question_scores", json_type)
+
+        inspector = inspect(conn)
+        table_names = set(inspector.get_table_names())
+        if "audit_logs" not in table_names:
+            if conn.dialect.name == "sqlite":
+                conn.execute(text("""
+                    CREATE TABLE audit_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id VARCHAR(32),
+                        user_role VARCHAR(16),
+                        action VARCHAR(64) NOT NULL,
+                        resource_type VARCHAR(32),
+                        resource_id VARCHAR(64),
+                        resource_name VARCHAR(256),
+                        details TEXT,
+                        ip_address VARCHAR(64),
+                        user_agent VARCHAR(512),
+                        status VARCHAR(16) NOT NULL DEFAULT 'success',
+                        error_message VARCHAR(512),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE audit_logs (
+                        id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        user_id VARCHAR(32) NULL,
+                        user_role VARCHAR(16) NULL,
+                        action VARCHAR(64) NOT NULL,
+                        resource_type VARCHAR(32) NULL,
+                        resource_id VARCHAR(64) NULL,
+                        resource_name VARCHAR(256) NULL,
+                        details JSON NULL,
+                        ip_address VARCHAR(64) NULL,
+                        user_agent VARCHAR(512) NULL,
+                        status VARCHAR(16) NOT NULL DEFAULT 'success',
+                        error_message VARCHAR(512) NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_audit_logs_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                    )
+                """))
+            conn.execute(text("CREATE INDEX ix_audit_logs_user_id ON audit_logs (user_id)"))
+            conn.execute(text("CREATE INDEX ix_audit_logs_action ON audit_logs (action)"))
+            conn.execute(text("CREATE INDEX ix_audit_logs_resource_type ON audit_logs (resource_type)"))
+            conn.execute(text("CREATE INDEX ix_audit_logs_created_at ON audit_logs (created_at)"))
+        elif conn.dialect.name != "sqlite":
+            try:
+                conn.execute(text("ALTER TABLE audit_logs MODIFY COLUMN resource_id VARCHAR(64) NULL"))
+            except Exception:
+                pass
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:

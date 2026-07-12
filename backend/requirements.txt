@@ -13,3 +13,4 @@ boto3
 moto
 python-magic
 PyMuPDF
+redis>=5.0.0

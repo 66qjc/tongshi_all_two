@@ -4,16 +4,22 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.exceptions import BusinessException
-from app.core.security import oauth2_scheme
+from app.core.response import success
+from app.core.security import (
+    INVALID_FILE_ACCESS_MESSAGE,
+    authenticate_bearer_token,
+    create_file_access_token,
+    decode_file_access_token,
+    get_current_user,
+    oauth2_scheme,
+)
 from app.db.session import get_db
 from app.models.entities import User
 from app.schemas.common import AuthUser
-from app.services.file_service import resolve_file_stream
+from app.services.file_service import get_authorized_file_record, resolve_file_stream
 
 router = APIRouter()
 
@@ -24,6 +30,48 @@ def _close_stream(stream) -> None:
     close = getattr(stream, "close", None)
     if callable(close):
         close()
+
+
+class _CloseOnceStream:
+    """代理文件流，并确保底层资源最多关闭一次。"""
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        _close_stream(self._stream)
+
+
+class _ClosingStreamingResponse(StreamingResponse):
+    """无论响应完成、发送失败还是客户端断开，都关闭文件流。"""
+
+    def __init__(self, content, *, stream, **kwargs):
+        self._stream = stream
+        super().__init__(content, **kwargs)
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _close_stream(self._stream)
+
+
+def _read_stream(stream):
+    try:
+        while True:
+            chunk = stream.read(64 * 1024)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        _close_stream(stream)
 
 
 def _read_range(stream, start: int, end: int):
@@ -71,39 +119,63 @@ def _parse_range_header(range_header: str, size: int) -> tuple[int, int] | None:
         start = max(size - suffix, 0)
         end = size - 1
 
+    if end < start:
+        return None
     if start >= size:
         return None
     return start, min(end, size - 1)
 
 
 async def _get_optional_file_user(
+    file_id: int,
     request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> AuthUser | None:
-    """文件访问专用可选鉴权；无 token 时交给服务层判断公开白名单。"""
-    if not token and settings.allow_query_token_for_files:
-        token = request.query_params.get("token")
-    if not token:
-        return None
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        user_id: str | None = payload.get("sub")
-        if not user_id:
-            raise BusinessException(401, "无效的认证凭据")
-    except JWTError:
-        raise BusinessException(401, "无效的认证凭据")
+    """文件访问可选鉴权，查询参数只接受当前文件的短时凭据。"""
+    if "token" in request.query_params:
+        raise BusinessException(401, INVALID_FILE_ACCESS_MESSAGE)
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise BusinessException(401, "无效的认证凭据")
-    return AuthUser(
-        id=user.id,
-        name=user.name,
-        role=user.role,
-        major=user.major,
-        needs_password_change=user.needs_password_change,
+    if "access_token" in request.query_params:
+        file_token = request.query_params.get("access_token") or ""
+        user_id = decode_file_access_token(file_token, file_id)
+        user = db.query(User).filter(
+            User.id == user_id,
+            User.deleted_at.is_(None),
+        ).first()
+        if not user:
+            raise BusinessException(401, INVALID_FILE_ACCESS_MESSAGE)
+        return AuthUser(
+            id=user.id,
+            name=user.name,
+            role=user.role,
+            major=user.major,
+            needs_password_change=user.needs_password_change,
+        )
+
+    if token:
+        return authenticate_bearer_token(token, db)
+    return None
+
+
+@router.post("/files/{file_id}/access-url")
+def create_file_access_url(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+):
+    """校验当前权限后签发五分钟有效的单文件访问 URL。"""
+    get_authorized_file_record(
+        db,
+        file_id,
+        current_user,
+        allow_anonymous=False,
     )
+    token = create_file_access_token(current_user.id, file_id)
+    return success({
+        "url": f"/api/files/{file_id}?access_token={quote(token, safe='')}",
+        "expires_in": 300,
+    })
 
 
 @router.get("/files/{file_id}")
@@ -121,6 +193,8 @@ def get_file(
 
     if stream is None:
         raise BusinessException(404, "文件内容已丢失")
+
+    stream = _CloseOnceStream(stream)
 
     content_type = record.content_type or "application/octet-stream"
     filename = record.original_name or record.stored_name or "download"
@@ -143,15 +217,17 @@ def get_file(
                 "Content-Range": f"bytes {start}-{end}/{file_size}",
                 "Content-Length": str(end - start + 1),
             })
-            return StreamingResponse(
+            return _ClosingStreamingResponse(
                 _read_range(stream, start, end),
+                stream=stream,
                 status_code=206,
                 media_type=content_type,
                 headers=headers,
             )
 
-    return StreamingResponse(
-        stream,
+    return _ClosingStreamingResponse(
+        _read_stream(stream),
+        stream=stream,
         media_type=content_type,
         headers=headers,
     )

@@ -1,7 +1,7 @@
 """Database models"""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
@@ -16,6 +16,10 @@ class User(Base):
     major = Column(String(64), default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     needs_password_change = Column(Boolean, nullable=False, default=False)
+    # 每次改密时递增，用于使旧 JWT 立即失效
+    token_version = Column(Integer, nullable=False, default=0)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
 
     quiz_attempts = relationship(
         "QuizAttempt", back_populates="user", cascade="all, delete-orphan")
@@ -34,6 +38,8 @@ class Class(Base):
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
     created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
 
     course = relationship("Course", back_populates="classes")
     creator = relationship("User", foreign_keys=[created_by])
@@ -70,6 +76,8 @@ class Course(Base):
     question_bank_root_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
     description = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
 
     creator = relationship("User", foreign_keys=[created_by])
     classes = relationship("Class", back_populates="course", cascade="all, delete-orphan")
@@ -145,6 +153,36 @@ class CourseProgress(Base):
     last_lesson = relationship("Lesson")
 
 
+class LessonProgress(Base):
+    """课时级学习进度。"""
+    __tablename__ = "lesson_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "lesson_id", name="uq_lesson_progress_user_lesson"),
+        Index("ix_lesson_progress_user_course", "user_id", "course_id"),
+        Index("ix_lesson_progress_status", "status"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(32), ForeignKey(
+        "users.id", ondelete="CASCADE"), nullable=False, index=True)
+    course_id = Column(Integer, ForeignKey(
+        "courses.id", ondelete="CASCADE"), nullable=False, index=True)
+    lesson_id = Column(Integer, ForeignKey(
+        "lessons.id", ondelete="CASCADE"), nullable=False, index=True)
+    status = Column(String(16), nullable=False, default="not_started")
+    progress_percent = Column(Integer, nullable=False, default=0)
+    last_position = Column(Integer, nullable=False, default=0)
+    duration_seconds = Column(Integer, nullable=False, default=0)
+    first_viewed_at = Column(DateTime, nullable=True)
+    last_viewed_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    view_count = Column(Integer, nullable=False, default=0)
+
+    user = relationship("User")
+    course = relationship("Course")
+    lesson = relationship("Lesson")
+
+
 class Material(Base):
     __tablename__ = "materials"
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -157,6 +195,8 @@ class Material(Base):
     pages = Column(Integer, default=0)
     size = Column(String(32), default="0 MB")
     date = Column(String(32), default="")
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
     file_id = Column(Integer, ForeignKey(
         "stored_files.id"), nullable=True, index=True)
     source_material_id = Column(Integer, ForeignKey(
@@ -211,8 +251,15 @@ class Question(Base):
     tags = Column(JSON, default=list)
     source_question_id = Column(Integer, ForeignKey(
         "questions.id"), nullable=True, index=True)
+    # 题库优化字段
+    created_by = Column(String(32), ForeignKey("users.id"), nullable=True, index=True)
+    star_rating = Column(Integer, nullable=False, default=3)  # 1-5星，默认3星
+    stem_hash = Column(String(64), nullable=True, index=True)  # 题干MD5，用于防重复
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
 
     course = relationship("Course", back_populates="questions")
+    creator = relationship("User", foreign_keys=[created_by])
 
 
 class QuestionContributionLog(Base):
@@ -232,6 +279,13 @@ class QuestionContributionLog(Base):
 
 class QuizAttempt(Base):
     __tablename__ = "quiz_attempts"
+    __table_args__ = (
+        # 高频联合查询：按用户+任务聚合，用于任务完成度统计
+        Index("ix_quiz_attempt_user_ann", "user_id", "announcement_id"),
+        # 高频联合查询：按用户+题目聚合，用于错题本和答题统计
+        Index("ix_quiz_attempt_user_question", "user_id", "question_id"),
+    )
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(32), ForeignKey(
         "users.id"), nullable=False, index=True)
@@ -271,6 +325,8 @@ class Project(Base):
         "stored_files.id"), nullable=True, index=True)
     cover_file_id = Column(Integer, ForeignKey(
         "stored_files.id"), nullable=True, index=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
 
     author = relationship("User", back_populates="projects")
     course = relationship("Course")
@@ -321,6 +377,12 @@ class StudentNotification(Base):
     title = Column(String(128), nullable=False)
     content = Column(Text, default="")
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    category = Column(String(32), nullable=False, default="project", index=True)
+    priority = Column(String(16), nullable=False, default="normal", index=True)
+    action_url = Column(String(512), default="")
+    extra_data = Column(JSON, default=dict)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    sent_at = Column(DateTime, nullable=True)
     is_read = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -344,6 +406,11 @@ class Announcement(Base):
     start_time = Column(DateTime, nullable=True)
     end_time = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    deleted_at = Column(DateTime, nullable=True, index=True)
+    deleted_by = Column(String(32), nullable=True, index=True)
+    # 作业评分配置
+    max_score = Column(Float, nullable=False, default=100.0)  # 作业满分
+    question_scores = Column(JSON, nullable=True)  # 每题分值配置 {question_id: score}
 
     class_ = relationship("Class")
     course = relationship("Course")
@@ -398,6 +465,9 @@ class TaskCompletion(Base):
     user_id = Column(String(32), ForeignKey(
         "users.id", ondelete="CASCADE"), nullable=False, index=True)
     completed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # 作业评分字段
+    score = Column(Float, nullable=True)  # 最终得分（百分制）
+    max_score = Column(Float, nullable=False, default=100.0)  # 满分
 
     announcement = relationship("Announcement", back_populates="completions")
     user = relationship("User")
@@ -498,3 +568,51 @@ class PasswordResetRequest(Base):
 
     applicant = relationship("User", foreign_keys=[user_id])
     resolver = relationship("User", foreign_keys=[resolved_by])
+
+
+class NotificationPreference(Base):
+    """学生通知偏好设置。"""
+    __tablename__ = "notification_preferences"
+
+    user_id = Column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    enable_assignment_due = Column(Boolean, nullable=False, default=True)
+    enable_grade_published = Column(Boolean, nullable=False, default=True)
+    enable_course_update = Column(Boolean, nullable=False, default=True)
+    enable_project_review = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User")
+
+
+class NotificationTemplate(Base):
+    """通知模板。"""
+    __tablename__ = "notification_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), nullable=False, unique=True, index=True)
+    category = Column(String(32), nullable=False, default="system", index=True)
+    title_template = Column(String(256), nullable=False)
+    content_template = Column(Text, nullable=False, default="")
+    action_url_template = Column(String(512), nullable=False, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class AuditLog(Base):
+    """系统审计日志。"""
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_role = Column(String(16), nullable=True)
+    action = Column(String(64), nullable=False, index=True)
+    resource_type = Column(String(32), nullable=True, index=True)
+    resource_id = Column(String(64), nullable=True, index=True)
+    resource_name = Column(String(256), nullable=True)
+    details = Column(JSON, default=dict)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    status = Column(String(16), nullable=False, default="success", index=True)
+    error_message = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    user = relationship("User")

@@ -3,9 +3,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import get_current_user, verify_password, get_password_hash
+from app.core.security import get_current_user
 from app.core.response import success
-from app.core.exceptions import BusinessException
 from app.schemas.common import (
     AuthUser, LoginRequest, RegisterRequest, ChangePasswordRequest,
     ForgotPasswordCheckRequest,
@@ -13,11 +12,11 @@ from app.schemas.common import (
 )
 from app.services.auth_service import (
     login_user, register_user,
+    change_user_password,
     get_security_questions, update_security_questions,
     get_forgot_password_questions, verify_answers_and_reset_password,
     submit_reset_request,
 )
-from app.models.entities import User
 
 router = APIRouter(tags=["auth"])
 
@@ -43,16 +42,12 @@ def change_password(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ):
-    """修改密码（任何已登录用户可用，首次登录教师必须调用）"""
-    user = db.query(User).filter(User.id == current_user.id).first()
-    if not user:
-        raise BusinessException(404, "用户不存在")
-    if not verify_password(req.old_password, user.hashed_password):
-        raise BusinessException(400, "旧密码不正确")
-    user.hashed_password = get_password_hash(req.new_password)
-    user.needs_password_change = False
-    db.commit()
-    return success({"message": "密码修改成功"})
+    return success(change_user_password(
+        db,
+        current_user.id,
+        req.old_password,
+        req.new_password,
+    ))
 
 
 # ── 密保问题管理（需登录）───────────────────────────────────────────────

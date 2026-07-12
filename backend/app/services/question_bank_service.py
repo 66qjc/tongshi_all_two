@@ -5,6 +5,7 @@ import re
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import BusinessException
 from app.models.entities import Course, Question
 
 
@@ -39,6 +40,31 @@ def get_question_bank_course(db: Session, course: Course | None) -> Course | Non
     if course is None:
         return get_shared_question_bank_root_course(db)
     return resolve_question_bank_course(db, course)
+
+
+def rehome_questions_before_course_delete(db: Session, course: Course) -> Course | None:
+    """删除课程前把有效共享题转挂到另一门未删除课程。"""
+    questions = db.query(Question).filter(
+        Question.course_id == course.id,
+        Question.deleted_at.is_(None),
+    ).all()
+    if not questions:
+        return None
+
+    target = db.query(Course).filter(
+        Course.id != course.id,
+        Course.deleted_at.is_(None),
+    ).order_by(
+        Course.is_public.desc(),
+        Course.id.asc(),
+    ).first()
+    if target is None:
+        raise BusinessException(400, "当前没有可承接共享题库的课程，暂时无法删除该课程")
+
+    for question in questions:
+        question.course_id = target.id
+    db.flush()
+    return target
 
 
 def normalize_question_stem(stem: str) -> str:

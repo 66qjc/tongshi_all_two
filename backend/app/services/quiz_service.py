@@ -1,11 +1,13 @@
 """练习与错题本服务。"""
 from datetime import datetime, timezone
 
+from sqlalchemy import func as sa_func, case
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.exceptions import BusinessException
 from app.core.timezone_utils import beijing_today, to_beijing_iso
-from app.models.entities import Class, Course, Question, QuizAttempt, StudentClassEnrollment
+from app.models.entities import Announcement, Class, Course, Question, QuizAttempt, StudentClassEnrollment, TaskCompletion
 from app.services.access_control_service import student_can_access_course
 from app.services.task_service import get_accessible_assignment, validate_assignment_available
 
@@ -49,7 +51,16 @@ def submit_answer(
         is_correct=is_correct,
     )
     db.add(attempt)
-    db.commit()
+    try:
+        db.flush()
+        if announcement_id is not None:
+            _update_assignment_score(db, user_id, announcement_id)
+        db.commit()
+        db.refresh(attempt)
+    except SQLAlchemyError:
+        db.rollback()
+        raise BusinessException(500, "提交答案失败，请稍后重试")
+
     return {
         "id": attempt.id,
         "question_id": question_id,
@@ -110,28 +121,33 @@ def get_quiz_stats(db: Session, user_id: str):
             "today_count": 0,
         }
 
-    course_question_ids = db.query(Question.id).filter(Question.course_id.in_(student_course_id_list))
+    course_question_ids = db.query(Question.id).filter(
+        Question.course_id.in_(student_course_id_list)
+    )
 
     total_questions = db.query(Question).filter(
         Question.course_id.in_(student_course_id_list)
     ).count()
-    questions_done = db.query(QuizAttempt).filter(
-        QuizAttempt.user_id == user_id,
-        QuizAttempt.question_id.in_(course_question_ids),
-    ).count()
-    correct = db.query(QuizAttempt).filter(
-        QuizAttempt.user_id == user_id,
-        QuizAttempt.is_correct == True,
-        QuizAttempt.question_id.in_(course_question_ids),
-    ).count()
-    accuracy = int(correct / questions_done * 100) if questions_done > 0 else 0
 
+    # 三次 COUNT 合并为一次聚合查询，减少数据库往返
     today = beijing_today()
-    today_count = db.query(QuizAttempt).filter(
+    row = db.query(
+        sa_func.count(QuizAttempt.id).label("done"),
+        sa_func.sum(
+            case((QuizAttempt.is_correct == True, 1), else_=0)  # noqa: E712
+        ).label("correct"),
+        sa_func.sum(
+            case((QuizAttempt.answered_at >= today, 1), else_=0)
+        ).label("today"),
+    ).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.question_id.in_(course_question_ids),
-        QuizAttempt.answered_at >= today,
-    ).count()
+    ).one()
+
+    questions_done = row.done or 0
+    correct = row.correct or 0
+    today_count = row.today or 0
+    accuracy = int(correct / questions_done * 100) if questions_done > 0 else 0
 
     return {
         "total_questions": total_questions,
@@ -145,21 +161,21 @@ def get_course_quiz_stats(db: Session, user_id: str, course_id: int):
     if not student_can_access_course(db, user_id, course_id):
         raise BusinessException(404, "课程不存在或无权限访问")
 
-    shared_question_ids = db.query(Question.id)
-
-    questions_done = db.query(QuizAttempt).filter(
+    # 设计说明：平台采用"全站共享题库"模式，任意题目均可在任意课程入口练习。
+    # 因此自由练习统计不按 course_id 过滤题目归属，而是统计该学生全部自由练习记录
+    # （announcement_id IS NULL）。课程入口仅用于权限验证，不限缩题目范围。
+    row = db.query(
+        sa_func.count(QuizAttempt.id).label("done"),
+        sa_func.sum(
+            case((QuizAttempt.is_correct == True, 1), else_=0)  # noqa: E712
+        ).label("correct"),
+    ).filter(
         QuizAttempt.user_id == user_id,
         QuizAttempt.announcement_id.is_(None),
-        QuizAttempt.question_id.in_(shared_question_ids),
-    ).count()
+    ).one()
 
-    correct_count = db.query(QuizAttempt).filter(
-        QuizAttempt.user_id == user_id,
-        QuizAttempt.is_correct == True,
-        QuizAttempt.announcement_id.is_(None),
-        QuizAttempt.question_id.in_(shared_question_ids),
-    ).count()
-
+    questions_done = row.done or 0
+    correct_count = row.correct or 0
     accuracy = int(correct_count / questions_done * 100) if questions_done > 0 else 0
 
     return {
@@ -223,3 +239,73 @@ def get_wrong_questions(db: Session, user_id: str):
             "answered_at": to_beijing_iso(a.answered_at),
         })
     return result
+
+
+def _update_assignment_score(db: Session, user_id: str, announcement_id: int) -> None:
+    """作业答题后自动计算并更新作业完成记录的分数。"""
+    # 获取作业配置
+    announcement = db.query(Announcement).filter(Announcement.id == announcement_id).first()
+    if not announcement:
+        return
+
+    question_ids = announcement.question_ids if isinstance(announcement.question_ids, list) else []
+    if not question_ids:
+        return
+
+    # 获取学生最新答题记录
+    latest_attempt_ids = (
+        db.query(sa_func.max(QuizAttempt.id).label("attempt_id"))
+        .filter(
+            QuizAttempt.user_id == user_id,
+            QuizAttempt.announcement_id == announcement_id,
+            QuizAttempt.question_id.in_(question_ids)
+        )
+        .group_by(QuizAttempt.question_id)
+        .subquery()
+    )
+
+    attempts = (
+        db.query(QuizAttempt)
+        .join(latest_attempt_ids, QuizAttempt.id == latest_attempt_ids.c.attempt_id)
+        .all()
+    )
+
+    answered_question_ids = {attempt.question_id for attempt in attempts}
+    if not set(question_ids).issubset(answered_question_ids):
+        return
+
+    # 计算得分
+    correct_count = sum(1 for a in attempts if a.is_correct)
+    total_questions = len(question_ids)
+    max_score = announcement.max_score or 100.0
+    score = round(correct_count / total_questions * max_score, 1) if total_questions > 0 else 0.0
+
+    # 更新或创建 TaskCompletion 记录
+    completion = db.query(TaskCompletion).filter(
+        TaskCompletion.user_id == user_id,
+        TaskCompletion.announcement_id == announcement_id
+    ).first()
+
+    if completion:
+        completion.score = score
+        completion.max_score = max_score
+    else:
+        completion = TaskCompletion(
+            user_id=user_id,
+            announcement_id=announcement_id,
+            score=score,
+            max_score=max_score
+        )
+        try:
+            with db.begin_nested():
+                db.add(completion)
+                db.flush()
+        except IntegrityError:
+            completion = db.query(TaskCompletion).filter(
+                TaskCompletion.user_id == user_id,
+                TaskCompletion.announcement_id == announcement_id,
+            ).one()
+            completion.score = score
+            completion.max_score = max_score
+
+    db.flush()

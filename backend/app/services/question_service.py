@@ -1,21 +1,30 @@
 """题库与课程服务。"""
 from __future__ import annotations
 
+import hashlib
 import re
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.cache import cache_result, invalidate_cache
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Course, Material, Question, StudentClassEnrollment
 from app.services.public_course_sync_service import mirror_public_course_content
 from app.services.question_bank_service import (
     count_all_questions,
     find_duplicate_question,
+    rehome_questions_before_course_delete,
 )
 from app.services.question_contribution_service import (
     record_question_contribution,
 )
+
+
+def _compute_stem_hash(stem: str) -> str:
+    """计算题干哈希（用于防重复）"""
+    normalized = stem.strip().lower()
+    return hashlib.md5(normalized.encode('utf-8')).hexdigest()
 
 
 def list_questions(
@@ -29,7 +38,7 @@ def list_questions(
 ):
     # 全站共享题库：所有课程看到的是同一套题，不再按 course_id 过滤。
     # course_id 入参保留兼容旧调用，但不参与过滤。
-    query = db.query(Question).join(Course, Course.id == Question.course_id)
+    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
     if type_ is not None:
         query = query.filter(Question.type == type_)
     if keyword:
@@ -68,14 +77,14 @@ def _row_value(row: dict, *keys: str):
 
 
 def get_question(db: Session, question_id: int, teacher_id: str | None = None):
-    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.id == question_id)
+    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None)).filter(Question.id == question_id)
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(Question.created_by == teacher_id)
     return query.first()
 
 
 def _get_owned_course(db: Session, course_id: int, teacher_id: str):
-    return db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id).first()
+    return db.query(Course).filter(Course.id == course_id, Course.created_by == teacher_id, Course.deleted_at.is_(None)).first()
 
 
 def _course_access_filter(teacher_id: str):
@@ -87,6 +96,16 @@ def create_question(db: Session, data: dict, teacher_id: str):
     if not course:
         raise BusinessException(404, "课程不存在")
     data["tags"] = _normalize_tags(data.get("tags"))
+
+    # 计算题干哈希用于防重复
+    stem = data.get("stem", "").strip()
+    stem_hash = _compute_stem_hash(stem)
+
+    # 检查题干是否已存在（全站范围）
+    existing = db.query(Question).filter(Question.stem_hash == stem_hash).first()
+    if existing:
+        raise BusinessException(400, f"题库中已存在相同题目（ID: {existing.id}），请勿重复添加")
+
     # 全站共享题库：查重范围为全站所有题目
     duplicate = find_duplicate_question(
         db,
@@ -97,8 +116,16 @@ def create_question(db: Session, data: dict, teacher_id: str):
     )
     if duplicate:
         raise BusinessException(400, "题库中已存在相同题目")
-    # 题目原地保存，course_id 保留为所选课程，靠全站读取实现共享
-    q = Question(**data)
+
+    # 创建题目，添加创建人和哈希
+    # 先从 data 中移除可能冲突的字段，然后显式设置
+    question_data = {k: v for k, v in data.items() if k not in ["created_by", "stem_hash", "star_rating"]}
+    q = Question(
+        **question_data,
+        created_by=teacher_id,
+        stem_hash=stem_hash,
+        star_rating=data.get("star_rating", 3),  # 默认3星
+    )
     db.add(q)
     db.flush()
     if course.is_public:
@@ -113,7 +140,7 @@ def update_question(db: Session, question_id: int, data: dict, teacher_id: str):
     if not q:
         return None
     if "course_id" in data and data["course_id"] is not None:
-        if not _get_owned_course(db, data["course_id"], teacher_id):
+        if data["course_id"] != q.course_id and not _get_owned_course(db, data["course_id"], teacher_id):
             raise BusinessException(404, "课程不存在")
     # 全站共享题库：编辑后的内容在全站范围内查重，排除自身
     merged_data = {
@@ -188,7 +215,7 @@ def can_view_course_questions(db: Session, course_id: int, user_id: str, role: s
 
 
 def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None = None):
-    query = db.query(Course)
+    query = db.query(Course).filter(Course.deleted_at.is_(None))
     if teacher_id is not None:
         query = query.filter(_course_access_filter(teacher_id))
     if keyword:
@@ -197,24 +224,29 @@ def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None
 
 
 def create_course(db: Session, name: str, teacher_id: str, description: str = "", is_public: bool = False):
+    """创建课程"""
     if db.query(Course).filter(Course.name == name, Course.created_by == teacher_id).first():
         raise BusinessException(400, "课程已存在")
     course = Course(name=name, created_by=teacher_id, description=description, is_public=is_public)
     db.add(course)
     db.commit()
     db.refresh(course)
+    # 清除课程列表缓存
+    invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
 
 
 def add_public_course(db: Session, course_id: int, teacher_id: str):
+    """添加公共课程到教师课程"""
     source = db.query(Course).filter(
         Course.id == course_id,
         Course.is_public.is_(True),
+        Course.deleted_at.is_(None),
     ).first()
     if not source:
         raise BusinessException(404, "公共课程不存在")
 
-    existing = db.query(Course).filter(Course.name == source.name, Course.created_by == teacher_id).first()
+    existing = db.query(Course).filter(Course.name == source.name, Course.created_by == teacher_id, Course.deleted_at.is_(None)).first()
     if existing:
         return existing
 
@@ -228,10 +260,13 @@ def add_public_course(db: Session, course_id: int, teacher_id: str):
 
     db.commit()
     db.refresh(course)
+    # 清除教师课程列表缓存
+    invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
 
 
 def update_course(db: Session, course_id: int, name: str, teacher_id: str, description: str | None = None, is_public: bool | None = None):
+    """更新课程"""
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
@@ -249,55 +284,43 @@ def update_course(db: Session, course_id: int, name: str, teacher_id: str, descr
     if is_public is not None:
         course.is_public = is_public
     db.commit()
+    # 清除缓存
+    invalidate_cache(f"course:detail:{course_id}")
+    invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
 
 
 def delete_course(db: Session, course_id: int, teacher_id: str):
+    """删除课程（软删除）"""
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
-    from app.models.entities import Announcement, AnnouncementClass, AnnouncementRead, TaskCompletion
-    announcement_ids = [row.id for row in db.query(Announcement.id).filter(Announcement.course_id == course_id).all()]
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
 
-    if announcement_ids:
-        db.query(AnnouncementClass).filter(AnnouncementClass.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
-        db.query(AnnouncementRead).filter(AnnouncementRead.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
-        db.query(TaskCompletion).filter(TaskCompletion.announcement_id.in_(announcement_ids)).delete(synchronize_session=False)
-        db.query(Announcement).filter(Announcement.id.in_(announcement_ids)).delete(synchronize_session=False)
-    # 全站共享题库：课程名下的题目转挂到其他课程，避免随课程级联删除而误删全站共享题
-    _reattach_questions_to_other_course(db, course)
-    db.delete(course)
+    operator = AuthUser(id=teacher_id, name="", role="teacher")
+    rehome_questions_before_course_delete(db, course)
+    soft_delete(db, course, operator, action="course.delete")
     db.commit()
-    return True
+    # 清除缓存
+    invalidate_cache(f"course:detail:{course_id}")
+    invalidate_cache(f"courses:teacher:{teacher_id}")
+    return course
 
 
-def _reattach_questions_to_other_course(db: Session, course: Course) -> None:
-    """删除课程前，把其名下题目转挂到另一门课程，保住全站共享题。"""
-    questions = db.query(Question).filter(Question.course_id == course.id).all()
-    if not questions:
-        return
-    target = db.query(Course).filter(Course.id != course.id).order_by(
-        Course.is_public.desc(),
-        Course.id.asc(),
-    ).first()
-    if target is None:
-        return
-    for question in questions:
-        question.course_id = target.id
-    db.flush()
-
-
+@cache_result("course:detail:{course_id}", ttl=300)
 def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None):
-    query = db.query(Course).filter(Course.id == course_id)
+    """获取课程详情（缓存5分钟）"""
+    query = db.query(Course).filter(Course.id == course_id, Course.deleted_at.is_(None))
     if teacher_id is not None:
         query = query.filter(_course_access_filter(teacher_id))
     course = query.first()
     if not course:
         return None
-    material_count = db.query(Material).filter(Material.course_id == course_id).count()
+    material_count = db.query(Material).filter(Material.course_id == course_id, Material.deleted_at.is_(None)).count()
     # 全站共享题库：题目数为全站题目总数
     question_count = count_all_questions(db)
-    class_count = db.query(Class).filter(Class.course_id == course_id).count()
+    class_count = db.query(Class).filter(Class.course_id == course_id, Class.deleted_at.is_(None)).count()
     return course, material_count, question_count, class_count
 
 
@@ -343,8 +366,16 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
                 skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
                 continue
             # 题目原地保存，course_id 保留为匹配到的课程
-            q = Question(type=q_type, course_id=course.id, stem=stem,
-                         options=option_list, answer=answer, explanation=explanation, tags=tags)
+            q = Question(
+                type=q_type,
+                course_id=course.id,
+                stem=stem,
+                options=option_list,
+                answer=answer,
+                explanation=explanation,
+                tags=tags,
+                created_by=teacher_id,
+            )
             db.add(q)
             db.flush()
             if course.is_public:

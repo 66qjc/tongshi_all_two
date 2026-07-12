@@ -211,6 +211,10 @@ def test_assignment_requires_all_questions_answered_before_completion(client, db
         json={"question_id": first_question.id, "user_answer": first_question.answer, "announcement_id": announcement_id},
         headers=auth_header(student_token),
     )
+    assert db_session.query(TaskCompletion).filter(
+        TaskCompletion.announcement_id == announcement_id,
+        TaskCompletion.user_id == "2025001",
+    ).count() == 0
     partial_resp = client.post(
         f"/api/announcements/{announcement_id}/complete",
         headers=auth_header(student_token),

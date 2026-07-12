@@ -11,6 +11,7 @@ from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.cache import cache_result, invalidate_cache
 from app.core.exceptions import BusinessException
 from app.core.security import get_password_hash
 from app.core.timezone_utils import to_beijing_iso
@@ -38,16 +39,19 @@ def _now_iso(value: datetime | None) -> str:
 
 
 def _owned_class_query(db: Session, teacher_id: str):
-    return db.query(Class).filter(Class.created_by == teacher_id)
+    return db.query(Class).filter(Class.created_by == teacher_id, Class.deleted_at.is_(None))
 
 
 def _accessible_course_query(db: Session, teacher_id: str):
     return db.query(Course).filter(
+        Course.deleted_at.is_(None),
         or_(Course.created_by == teacher_id, Course.is_public.is_(True))
     )
 
 
+@cache_result("classes:teacher:{teacher_id}:course:{course_id}:keyword:{keyword}", ttl=300)
 def list_classes(db: Session, teacher_id: str, course_id: int | None = None, keyword: str | None = None):
+    """列出班级（缓存5分钟）"""
     query = _owned_class_query(db, teacher_id)
     if course_id:
         query = query.filter(Class.course_id == course_id)
@@ -70,6 +74,7 @@ def list_classes(db: Session, teacher_id: str, course_id: int | None = None, key
 
 
 def create_class(db: Session, name: str, course_id: int, teacher_id: str):
+    """创建班级"""
     course = _accessible_course_query(db, teacher_id).filter(Course.id == course_id).first()
     if not course:
         raise BusinessException(404, "课程不存在")
@@ -83,6 +88,8 @@ def create_class(db: Session, name: str, course_id: int, teacher_id: str):
         db.commit()
         db.refresh(cls)
         logger.info(f"班级创建: id={cls.id}, name={name}, course_id={course_id}")
+        # 清除班级列表缓存（匹配所有课程和关键词组合）
+        invalidate_cache(f"classes:teacher:{teacher_id}:*")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "创建班级失败")
@@ -136,6 +143,7 @@ def remove_students_from_teacher_classes(db: Session, teacher_id: str, student_i
 
 
 def update_class(db: Session, class_id: int, teacher_id: str, name: str | None = None, course_id: int | None = None):
+    """更新班级"""
     cls = _owned_class_query(db, teacher_id).filter(Class.id == class_id).first()
     if not cls:
         return None
@@ -158,6 +166,8 @@ def update_class(db: Session, class_id: int, teacher_id: str, name: str | None =
         db.commit()
         db.refresh(cls)
         logger.info(f"班级更新: id={class_id}, name={cls.name}, course_id={cls.course_id}")
+        # 清除班级列表缓存
+        invalidate_cache(f"classes:teacher:{teacher_id}:*")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "更新班级失败")
@@ -202,6 +212,8 @@ def delete_class(db: Session, class_id: int, teacher_id: str):
         db.delete(cls)
         db.commit()
         logger.info(f"班级删除: class_id={class_id}, name={cls.name}")
+        # 清除班级列表缓存
+        invalidate_cache(f"classes:teacher:{teacher_id}:*")
     except SQLAlchemyError:
         db.rollback()
         raise BusinessException(500, "删除班级失败")

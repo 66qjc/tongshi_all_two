@@ -202,6 +202,8 @@ class QuestionOut(BaseModel):
     tags: List[str] = []
     source_question_id: Optional[int] = None
     is_synced: bool = False
+    created_by: Optional[str] = None
+    star_rating: int = 3
 
 
 class QuestionCreate(BaseModel):
@@ -212,6 +214,7 @@ class QuestionCreate(BaseModel):
     answer: str
     explanation: str = ""
     tags: List[str] = []
+    star_rating: int = Field(default=3, ge=1, le=5)
 
     @field_validator("type")
     @classmethod
@@ -640,3 +643,104 @@ class CourseProgressIn(BaseModel):
 class CourseProgressOut(BaseModel):
     """学习进度输出"""
     last_lesson_id: int | None = None
+
+
+class LessonProgressIn(BaseModel):
+    """上报课时学习进度请求。"""
+    progress_percent: int = Field(0, ge=0, le=100)
+    last_position: int = Field(0, ge=0)
+    duration_seconds: int = Field(0, ge=0, le=3600)
+    visit_started: bool = False
+
+
+class LessonProgressOut(BaseModel):
+    """课时学习进度输出。"""
+    lesson_id: int
+    course_id: int
+    title: str = ""
+    status: str
+    progress_percent: int
+    last_position: int
+    duration_seconds: int
+    view_count: int
+    is_fast_completion: bool = False
+    first_viewed_at: Optional[str] = None
+    last_viewed_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class CourseProgressSummaryOut(BaseModel):
+    """课程学习进度汇总输出。"""
+    last_lesson_id: int | None = None
+    total_lessons: int = 0
+    completed_lessons: int = 0
+    total_duration: int = 0
+    completion_rate: float = 0
+    lessons: List[LessonProgressOut] = Field(default_factory=list)
+
+
+# ── Notification Extension ───────────────────────────────────────────────────
+def validate_internal_action_url(value: str) -> str:
+    """通知跳转地址只允许站内绝对路径。"""
+    value = value.strip()
+    if value and (not value.startswith("/") or value.startswith("//")):
+        raise ValueError("跳转地址必须是站内路径")
+    return value
+
+
+class NotificationSendIn(BaseModel):
+    """发送单条通知请求。"""
+    user_id: str
+    type: str
+    title: str = Field(min_length=1, max_length=128)
+    content: str = ""
+    category: str = "system"
+    priority: Literal["low", "normal", "high"] = "normal"
+    action_url: str = ""
+    extra_data: dict = Field(default_factory=dict)
+    expires_at: Optional[datetime] = None
+
+    @field_validator("action_url")
+    @classmethod
+    def validate_action_url(cls, value: str) -> str:
+        return validate_internal_action_url(value)
+
+
+class NotificationBatchSendIn(BaseModel):
+    """批量发送通知请求。"""
+    user_ids: List[str]
+    type: str
+    title: str = Field(min_length=1, max_length=128)
+    content: str = ""
+    category: str = "system"
+    priority: Literal["low", "normal", "high"] = "normal"
+    action_url: str = ""
+    extra_data: dict = Field(default_factory=dict)
+    expires_at: Optional[datetime] = None
+
+    @field_validator("action_url")
+    @classmethod
+    def validate_action_url(cls, value: str) -> str:
+        return validate_internal_action_url(value)
+
+
+class NotificationPreferenceIn(BaseModel):
+    """通知偏好设置请求。"""
+    enable_assignment_due: Optional[bool] = None
+    enable_grade_published: Optional[bool] = None
+    enable_course_update: Optional[bool] = None
+    enable_project_review: Optional[bool] = None
+
+
+# ── Audit Log ────────────────────────────────────────────────────────────────
+class AuditLogQuery(BaseModel):
+    """审计日志查询条件。"""
+    user_id: Optional[str] = None
+    action: Optional[str] = None
+    resource_type: Optional[str] = None
+    resource_id: Optional[str] = None
+    status: Optional[Literal["success", "failed"]] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    page: int = 1
+    page_size: int = 20

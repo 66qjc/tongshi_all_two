@@ -22,6 +22,7 @@ class TestDeletePublicCourse:
             stem="1+1=?",
             options=["A. 1", "B. 2", "C. 3", "D. 4"],
             answer="B",
+            created_by="admin",
         )
         db_session.add(pub_q)
         db_session.flush()
@@ -54,19 +55,23 @@ class TestDeletePublicCourse:
         db_session.add(attempt)
         db_session.commit()
 
-        return pub_course.id
+        return pub_course.id, pub_q.id
 
     def test_delete_public_course_with_quiz_attempts(self, db_session):
         """有 QuizAttempt 引用的公共课程应能正常删除，不报外键错误。"""
         from app.services.admin_public_course_service import delete_public_course
 
-        course_id = self._seed_public_course_with_quiz(db_session)
+        course_id, question_id = self._seed_public_course_with_quiz(db_session)
         result = delete_public_course(db_session, course_id)
         assert result is True
 
         # 验证课程和关联数据已被清理
         assert db_session.query(Course).filter(Course.id == course_id).first() is None
         assert db_session.query(Question).filter(Question.course_id == course_id).count() == 0
+        surviving_question = db_session.get(Question, question_id)
+        assert surviving_question is not None
+        assert surviving_question.deleted_at is None
+        assert surviving_question.created_by == "admin"
 
     def test_delete_public_course_returns_false_for_nonexistent(self, db_session):
         """删除不存在的公共课程应返回 False。"""

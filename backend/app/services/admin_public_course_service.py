@@ -7,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.core.cache import cache_result, invalidate_cache
 from app.core.exceptions import BusinessException
 from app.models.entities import Course, CourseStage, Material, Question, QuizAttempt, StoredFile
 from app.services.question_contribution_service import (
@@ -16,7 +17,7 @@ from app.services.question_contribution_service import (
 from app.services.question_bank_service import (
     count_all_questions,
     find_duplicate_question,
-    get_shared_question_bank_root_course,
+    rehome_questions_before_course_delete,
 )
 from app.services.public_course_sync_service import (
     delete_synced_materials,
@@ -60,7 +61,9 @@ def _validate_stage_id(db: Session, course_id: int, stage_id: int | None) -> Non
         raise BusinessException(400, "阶段不存在或不属于该课程")
 
 
+@cache_result("course:public:list", ttl=300)
 def list_public_courses(db: Session) -> list[Course]:
+    """获取公共课程列表（缓存5分钟）"""
     return db.query(Course).filter(Course.is_public.is_(True)).order_by(Course.id.desc()).all()
 
 
@@ -101,6 +104,8 @@ def create_public_course(db: Session, name: str, admin_id: str, description: str
         course.question_bank_root_course_id = course.id
         db.commit()
         db.refresh(course)
+    # 清除公共课程列表缓存
+    invalidate_cache("course:public:*")
     return course
 
 
@@ -114,6 +119,8 @@ def update_public_course(db: Session, course_id: int, name: str, description: st
     sync_course_name_to_copies(db, course)
     db.commit()
     db.refresh(course)
+    # 清除公共课程列表缓存
+    invalidate_cache("course:public:*")
     return course
 
 
@@ -132,7 +139,7 @@ def delete_public_course(db: Session, course_id: int) -> bool:
     source_material_ids = [material.id for material in course.materials]
     source_stage_ids = [stage.id for stage in course.stages]
     # 全站共享题库：课程名下的题目需先转挂到共享根，避免随课程级联删除而误删全站共享题
-    _reattach_questions_to_shared_root(db, course)
+    rehome_questions_before_course_delete(db, course)
     for copy in copies:
         copy.source_course_id = None
     if source_stage_ids:
@@ -145,27 +152,9 @@ def delete_public_course(db: Session, course_id: int) -> bool:
         ).update({Material.source_material_id: None}, synchronize_session=False)
     db.delete(course)
     db.commit()
+    # 清除公共课程列表缓存
+    invalidate_cache("course:public:*")
     return True
-
-
-def _reattach_questions_to_shared_root(db: Session, course: Course) -> None:
-    """删除公共课程前，把其名下题目转挂到另一门课程，避免级联删除全站共享题。
-
-    优先转挂到共享根课程；若被删课程恰好是当前选出的根，则退而选择其他任意课程承接。
-    """
-    questions = db.query(Question).filter(Question.course_id == course.id).all()
-    if not questions:
-        return
-    target = db.query(Course).filter(Course.id != course.id).order_by(
-        Course.is_public.desc(),
-        Course.id.asc(),
-    ).first()
-    if target is None:
-        # 全站只剩这一门课，无处转挂，题目随课程一并删除
-        return
-    for question in questions:
-        question.course_id = target.id
-    db.flush()
 
 
 def get_public_material(db: Session, material_id: int) -> Material | None:
@@ -278,7 +267,7 @@ def create_public_question(
     if duplicate:
         raise BusinessException(400, "题库中已存在相同题目")
     # 题目原地保存，course_id 写所选公共课程
-    question = Question(course_id=course.id, **data)
+    question = Question(course_id=course.id, created_by=operator_id, **data)
     db.add(question)
     db.flush()
     if operator_id:
@@ -397,6 +386,7 @@ def import_questions_to_public_course(
             question = Question(
                 type=q_type, course_id=course.id, stem=stem,
                 options=option_list, answer=answer, explanation=explanation, tags=tags,
+                created_by=operator_id,
             )
             db.add(question)
             db.flush()

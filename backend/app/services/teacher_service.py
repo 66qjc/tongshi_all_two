@@ -275,38 +275,64 @@ def list_students(
 
 
 def _latest_task_scores(db: Session, task_ids: list[int], task_question_counts: dict[int, int]) -> dict[tuple[str, int], int]:
-    """按任务上下文计算学生每次作业的最新答题百分制分数。"""
+    """从 task_completions 表读取持久化分数；若无分数记录则实时计算（兼容旧数据）。"""
     if not task_ids:
         return {}
 
-    latest_attempt_ids = (
-        db.query(func.max(QuizAttempt.id).label("attempt_id"))
-        .filter(QuizAttempt.announcement_id.in_(task_ids))
-        .group_by(QuizAttempt.user_id, QuizAttempt.announcement_id, QuizAttempt.question_id)
-        .subquery()
-    )
-    attempts = (
-        db.query(QuizAttempt.user_id, QuizAttempt.announcement_id, QuizAttempt.is_correct)
-        .join(latest_attempt_ids, QuizAttempt.id == latest_attempt_ids.c.attempt_id)
+    # 先读取持久化的分数
+    completions = (
+        db.query(TaskCompletion.user_id, TaskCompletion.announcement_id, TaskCompletion.score)
+        .filter(TaskCompletion.announcement_id.in_(task_ids))
         .all()
     )
 
-    attempted_counts: dict[tuple[str, int], int] = {}
-    correct_counts: dict[tuple[str, int], int] = {}
-    for user_id, task_id, is_correct in attempts:
-        key = (user_id, task_id)
-        attempted_counts[key] = attempted_counts.get(key, 0) + 1
-        if is_correct:
-            correct_counts[key] = correct_counts.get(key, 0) + 1
-
     scores: dict[tuple[str, int], int] = {}
-    for key in attempted_counts:
-        _, task_id = key
-        total_questions = task_question_counts.get(task_id, 0)
-        if total_questions <= 0:
-            scores[key] = 0
+    has_score: set[tuple[str, int]] = set()
+
+    for user_id, task_id, score in completions:
+        key = (user_id, task_id)
+        if score is not None:
+            # 有持久化分数，直接使用（百分制）
+            scores[key] = int(round(score))
+            has_score.add(key)
         else:
-            scores[key] = min(100, round(correct_counts.get(key, 0) / total_questions * 100))
+            # 标记为无分数（稍后实时计算）
+            pass
+
+    # 对于没有持久化分数的记录，实时计算（兼容旧数据）
+    if len(has_score) < len(completions):
+        latest_attempt_ids = (
+            db.query(func.max(QuizAttempt.id).label("attempt_id"))
+            .filter(QuizAttempt.announcement_id.in_(task_ids))
+            .group_by(QuizAttempt.user_id, QuizAttempt.announcement_id, QuizAttempt.question_id)
+            .subquery()
+        )
+        attempts = (
+            db.query(QuizAttempt.user_id, QuizAttempt.announcement_id, QuizAttempt.is_correct)
+            .join(latest_attempt_ids, QuizAttempt.id == latest_attempt_ids.c.attempt_id)
+            .all()
+        )
+
+        attempted_counts: dict[tuple[str, int], int] = {}
+        correct_counts: dict[tuple[str, int], int] = {}
+        for user_id, task_id, is_correct in attempts:
+            key = (user_id, task_id)
+            if key in has_score:
+                continue  # 已有持久化分数，跳过
+            attempted_counts[key] = attempted_counts.get(key, 0) + 1
+            if is_correct:
+                correct_counts[key] = correct_counts.get(key, 0) + 1
+
+        for key in attempted_counts:
+            if key in has_score:
+                continue
+            _, task_id = key
+            total_questions = task_question_counts.get(task_id, 0)
+            if total_questions <= 0:
+                scores[key] = 0
+            else:
+                scores[key] = min(100, round(correct_counts.get(key, 0) / total_questions * 100))
+
     return scores
 
 

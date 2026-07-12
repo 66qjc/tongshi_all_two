@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessException
 from app.core.html_sanitizer import sanitize_lesson_html
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Course, CourseProgress, Lesson
+from app.models.entities import Course, CourseProgress, Lesson, LessonProgress
 from app.schemas.common import AuthUser, LessonCreate, LessonReorderItem, LessonUpdate
 from app.services.access_control_service import student_can_access_course
 
@@ -156,6 +156,7 @@ def delete_lesson(db: Session, lesson_id: int, current_user: AuthUser) -> bool:
         .filter(CourseProgress.last_lesson_id == lesson.id)
         .update({CourseProgress.last_lesson_id: None}, synchronize_session=False)
     )
+    db.query(LessonProgress).filter(LessonProgress.lesson_id == lesson.id).delete(synchronize_session=False)
     db.delete(lesson)
     db.flush()
     return True

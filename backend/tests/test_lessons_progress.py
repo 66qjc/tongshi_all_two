@@ -1,6 +1,6 @@
 """课时阅读和学习进度权限回归测试。"""
 
-from app.models.entities import Course, CourseProgress, Lesson
+from app.models.entities import Course, CourseProgress, Lesson, StudentClassEnrollment
 from tests.conftest import auth_header
 
 
@@ -180,3 +180,192 @@ def test_lesson_content_is_sanitized_on_read_for_legacy_data(client, db_session,
     assert resp["code"] == 0
     assert "onclick" not in resp["data"]["content"].lower()
     assert "<script" not in resp["data"]["content"].lower()
+
+
+
+def test_lesson_progress_report_accumulates_duration_and_completes(client, db_session, student_token):
+    """课时级进度上报应累加学习时长，并在达到完成阈值时标记完成。"""
+    lesson = _create_lesson(db_session, title="进度课时")
+
+    first_resp = client.post(
+        f"/api/courses/1/lessons/{lesson.id}/progress",
+        json={
+            "progress_percent": 45,
+            "last_position": 270,
+            "duration_seconds": 30,
+            "visit_started": True,
+        },
+        headers=auth_header(student_token),
+    ).json()
+    second_resp = client.post(
+        f"/api/courses/1/lessons/{lesson.id}/progress",
+        json={"progress_percent": 95, "last_position": 600, "duration_seconds": 45},
+        headers=auth_header(student_token),
+    ).json()
+    resume_resp = client.post(
+        f"/api/courses/1/lessons/{lesson.id}/progress",
+        json={"progress_percent": 50, "last_position": 320, "duration_seconds": 10},
+        headers=auth_header(student_token),
+    ).json()
+
+    assert first_resp["code"] == 0
+    assert first_resp["data"]["status"] == "in_progress"
+    assert first_resp["data"]["duration_seconds"] == 30
+    assert first_resp["data"]["view_count"] == 1
+    assert second_resp["code"] == 0
+    assert second_resp["data"]["status"] == "completed"
+    assert second_resp["data"]["progress_percent"] == 100
+    assert second_resp["data"]["duration_seconds"] == 75
+    assert second_resp["data"]["last_position"] == 600
+    assert second_resp["data"]["is_fast_completion"] is True
+    assert resume_resp["data"]["status"] == "completed"
+    assert resume_resp["data"]["progress_percent"] == 100
+    assert resume_resp["data"]["last_position"] == 320
+    assert resume_resp["data"]["duration_seconds"] == 85
+    assert resume_resp["data"]["view_count"] == 1
+
+
+def test_lesson_progress_counts_only_explicit_visit_starts(client, db_session, student_token):
+    """普通心跳只累计时长，只有进入课时时才增加访问次数。"""
+    lesson = _create_lesson(db_session, title="访问计数课时")
+    endpoint = f"/api/courses/1/lessons/{lesson.id}/progress"
+    headers = auth_header(student_token)
+
+    first_heartbeat = client.post(
+        endpoint,
+        json={"progress_percent": 10, "duration_seconds": 5},
+        headers=headers,
+    ).json()
+    second_heartbeat = client.post(
+        endpoint,
+        json={"progress_percent": 20, "duration_seconds": 7},
+        headers=headers,
+    ).json()
+    first_visit = client.post(
+        endpoint,
+        json={"progress_percent": 20, "duration_seconds": 0, "visit_started": True},
+        headers=headers,
+    ).json()
+    second_visit = client.post(
+        endpoint,
+        json={"progress_percent": 20, "duration_seconds": 0, "visit_started": True},
+        headers=headers,
+    ).json()
+
+    assert first_heartbeat["data"]["view_count"] == 0
+    assert second_heartbeat["data"]["view_count"] == 0
+    assert second_heartbeat["data"]["duration_seconds"] == 12
+    assert first_visit["data"]["view_count"] == 1
+    assert second_visit["data"]["view_count"] == 2
+
+
+def test_course_progress_summary_returns_each_lesson_state(client, db_session, student_token):
+    """课程进度接口应返回课时明细、完成数量和总学习时长。"""
+    first = _create_lesson(db_session, title="第一课")
+    second = _create_lesson(db_session, title="第二课")
+
+    client.post(
+        f"/api/courses/1/lessons/{first.id}/progress",
+        json={"progress_percent": 100, "last_position": 300, "duration_seconds": 120},
+        headers=auth_header(student_token),
+    )
+    client.post(
+        f"/api/courses/1/lessons/{second.id}/progress",
+        json={"progress_percent": 30, "last_position": 90, "duration_seconds": 60},
+        headers=auth_header(student_token),
+    )
+
+    resp = client.get("/api/courses/1/progress", headers=auth_header(student_token)).json()
+
+    assert resp["code"] == 0
+    assert resp["data"]["total_lessons"] == 2
+    assert resp["data"]["completed_lessons"] == 1
+    assert resp["data"]["total_duration"] == 180
+    assert resp["data"]["completion_rate"] == 50.0
+    assert resp["data"]["last_lesson_id"] == second.id
+    assert [item["title"] for item in resp["data"]["lessons"]] == ["第一课", "第二课"]
+    assert resp["data"]["lessons"][0]["status"] == "completed"
+    assert resp["data"]["lessons"][1]["progress_percent"] == 30
+
+
+def test_teacher_can_view_class_student_progress(client, db_session, student_token, teacher_token, other_teacher_token):
+    """教师只能查看自己班级学生的课程课时进度。"""
+    lesson = _create_lesson(db_session, title="教师查看进度课时")
+    client.post(
+        f"/api/courses/1/lessons/{lesson.id}/progress",
+        json={"progress_percent": 90, "last_position": 200, "duration_seconds": 200},
+        headers=auth_header(student_token),
+    )
+
+    ok_resp = client.get(
+        "/api/classes/1/students/2025001/progress",
+        headers=auth_header(teacher_token),
+    ).json()
+    forbidden_resp = client.get(
+        "/api/classes/1/students/2025001/progress",
+        headers=auth_header(other_teacher_token),
+    ).json()
+
+    assert ok_resp["code"] == 0
+    assert ok_resp["data"]["class_id"] == 1
+    assert ok_resp["data"]["course_id"] == 1
+    assert ok_resp["data"]["student"]["id"] == "2025001"
+    assert ok_resp["data"]["progress"]["completed_lessons"] == 1
+    assert forbidden_resp["code"] == 404
+
+
+def test_teacher_course_analytics_summarizes_lesson_progress(client, db_session, student_token, teacher_token):
+    """课程学习统计应聚合平均完成率、平均学习时长和低完成课时。"""
+    first = _create_lesson(db_session, title="高完成课时")
+    second = _create_lesson(db_session, title="低完成课时")
+    client.post(
+        f"/api/courses/1/lessons/{first.id}/progress",
+        json={"progress_percent": 100, "last_position": 500, "duration_seconds": 100},
+        headers=auth_header(student_token),
+    )
+    client.post(
+        f"/api/courses/1/lessons/{second.id}/progress",
+        json={"progress_percent": 20, "last_position": 80, "duration_seconds": 50},
+        headers=auth_header(student_token),
+    )
+
+    resp = client.get("/api/courses/1/analytics", headers=auth_header(teacher_token)).json()
+
+    assert resp["code"] == 0
+    assert resp["data"]["student_count"] == 1
+    assert resp["data"]["avg_completion_rate"] == 50.0
+    assert resp["data"]["avg_duration"] == 150
+    assert resp["data"]["most_viewed_lessons"][0]["lesson_id"] == first.id
+    assert resp["data"]["low_completion_lessons"][0]["lesson_id"] == second.id
+    progress_page = resp["data"]["student_progress"]
+    assert progress_page["total"] == 1
+    assert progress_page["page"] == 1
+    assert progress_page["page_size"] == 20
+    assert progress_page["items"][0]["student_id"] == "2025001"
+    assert progress_page["items"][0]["completed_lessons"] == 1
+    assert progress_page["items"][0]["completion_rate"] == 50.0
+    assert progress_page["items"][0]["duration_seconds"] == 150
+
+
+def test_teacher_course_analytics_paginates_students(client, db_session, teacher_token):
+    """课程分析学生明细应由后端分页，且相邻页不重复。"""
+    db_session.add(StudentClassEnrollment(user_id="2025002", class_id=1))
+    db_session.commit()
+
+    first_page = client.get(
+        "/api/courses/1/analytics?page=0&page_size=1",
+        headers=auth_header(teacher_token),
+    ).json()["data"]["student_progress"]
+    second_page = client.get(
+        "/api/courses/1/analytics?page=2&page_size=1",
+        headers=auth_header(teacher_token),
+    ).json()["data"]["student_progress"]
+
+    assert first_page["total"] == 2
+    assert first_page["page"] == 1
+    assert first_page["page_size"] == 1
+    assert second_page["total"] == 2
+    assert second_page["page"] == 2
+    assert {item["student_id"] for item in first_page["items"]}.isdisjoint(
+        {item["student_id"] for item in second_page["items"]},
+    )

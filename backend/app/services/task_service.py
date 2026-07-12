@@ -117,14 +117,14 @@ def mark_completed(db: Session, user_id: str, announcement_id: int):
         TaskCompletion.user_id == user_id,
         TaskCompletion.announcement_id == announcement_id,
     ).first()
-    if existing:
-        return existing
 
     question_ids = set(ann.question_ids if isinstance(ann.question_ids, list) else [])
     if question_ids:
         answered_ids = _answered_question_ids_for_assignment(db, user_id, announcement_id)
         if not question_ids.issubset(answered_ids):
             raise BusinessException(400, "请先完成全部题目后再标记完成")
+    if existing:
+        return existing
 
     try:
         completion = TaskCompletion(user_id=user_id, announcement_id=announcement_id)
@@ -207,16 +207,17 @@ def completion_report(
         for user_id, correct_count in score_counts.items():
             student_scores[user_id] = min(100, round(correct_count / total_questions * 100)) if total_questions > 0 else 0
 
-    for class_id in class_ids:
-        class_students = [(student, cid) for student, cid in students if cid == class_id]
+    for current_class_id in class_ids:
+        # 修复：原循环变量 class_id 与函数参数同名，导致函数参数被遮蔽，改用 current_class_id
+        class_students = [(student, cid) for student, cid in students if cid == current_class_id]
         class_completed = 0
         for student, _ in class_students:
             payload = {
-                "id": student.id, 
-                "name": student.name, 
+                "id": student.id,
+                "name": student.name,
                 "major": student.major,
-                "class_id": class_id, 
-                "class_name": class_name_by_id.get(class_id, ""),
+                "class_id": current_class_id,
+                "class_name": class_name_by_id.get(current_class_id, ""),
                 "score": student_scores.get(student.id, 0),
                 "total_questions": total_questions,
             }
@@ -228,8 +229,8 @@ def completion_report(
                 incomplete_students.append(payload)
             seen_student_ids.add(student.id)
         per_class.append({
-            "class_id": class_id,
-            "class_name": class_name_by_id.get(class_id, ""),
+            "class_id": current_class_id,
+            "class_name": class_name_by_id.get(current_class_id, ""),
             "total": len(class_students),
             "completed": class_completed,
         })

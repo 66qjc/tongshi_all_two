@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 from typing import BinaryIO
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -87,12 +88,43 @@ def build_file_url(file_id: int) -> str:
     return f"/api/files/{file_id}"
 
 
+def _can_view_active_course_materials(
+    db: Session,
+    course_id: int,
+    user_id: str,
+    role: str,
+) -> bool:
+    """只基于未删除课程和班级判断资料访问权限。"""
+    if role == "student":
+        return db.query(StudentClassEnrollment.id).join(
+            Class,
+            Class.id == StudentClassEnrollment.class_id,
+        ).join(
+            Course,
+            Course.id == Class.course_id,
+        ).filter(
+            StudentClassEnrollment.user_id == user_id,
+            Class.course_id == course_id,
+            Class.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        ).first() is not None
+
+    query = db.query(Course.id).filter(
+        Course.id == course_id,
+        Course.deleted_at.is_(None),
+    )
+    if role == "teacher":
+        query = query.filter(or_(Course.created_by == user_id, Course.is_public.is_(True)))
+    return query.first() is not None
+
+
 def _teacher_can_review_project(db: Session, teacher_id: str, project: Project) -> bool:
     """判断教师是否拥有该作品的审核范围。"""
     if project.course_id is not None:
         return db.query(Course.id).filter(
             Course.id == project.course_id,
             Course.created_by == teacher_id,
+            Course.deleted_at.is_(None),
         ).first() is not None
 
     return db.query(StudentClassEnrollment.id).join(
@@ -101,21 +133,33 @@ def _teacher_can_review_project(db: Session, teacher_id: str, project: Project) 
     ).filter(
         StudentClassEnrollment.user_id == project.author_id,
         Class.created_by == teacher_id,
+        Class.deleted_at.is_(None),
     ).first() is not None
 
 
 def _can_read_project_file(db: Session, file_id: int, user_id: str, role: str) -> bool:
     projects = db.query(Project).filter(
-        (Project.report_file_id == file_id) | (Project.cover_file_id == file_id)
+        Project.deleted_at.is_(None),
+        (Project.report_file_id == file_id) | (Project.cover_file_id == file_id),
     ).all()
     image_project_ids = [
         row[0]
         for row in db.query(ProjectImage.project_id).filter(ProjectImage.file_id == file_id).all()
     ]
     if image_project_ids:
-        projects.extend(db.query(Project).filter(Project.id.in_(image_project_ids)).all())
+        projects.extend(db.query(Project).filter(
+            Project.id.in_(image_project_ids),
+            Project.deleted_at.is_(None),
+        ).all())
 
     for project in projects:
+        if project.course_id is not None and db.query(Course.id).filter(
+            Course.id == project.course_id,
+            Course.deleted_at.is_(None),
+        ).first() is None:
+            continue
+        if role == "admin":
+            return True
         if project.author_id == user_id:
             return True
         if project.status == "approved":
@@ -152,15 +196,21 @@ def _can_read_showcase_file(db: Session, file_id: int, user_id: str | None = Non
 
 
 def _can_read_material_preview_file(db: Session, file_id: int, user_id: str, role: str) -> bool:
-    from app.services.material_service import can_view_course_materials
-
-    preview = db.query(MaterialPreview).filter(MaterialPreview.cover_file_id == file_id).first()
-    if not preview:
-        return False
-    material = db.query(Material).filter(Material.id == preview.material_id).first()
-    if not material:
-        return False
-    return can_view_course_materials(db, material.course_id, user_id, role)
+    rows = db.query(Material).join(
+        MaterialPreview,
+        MaterialPreview.material_id == Material.id,
+    ).join(
+        Course,
+        Course.id == Material.course_id,
+    ).filter(
+        MaterialPreview.cover_file_id == file_id,
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).all()
+    return any(
+        _can_view_active_course_materials(db, material.course_id, user_id, role)
+        for material in rows
+    )
 
 
 def can_anonymous_read_file(db: Session, record: StoredFile) -> bool:
@@ -176,21 +226,103 @@ def can_anonymous_read_file(db: Session, record: StoredFile) -> bool:
     ).filter(
         MaterialPreview.cover_file_id == record.id,
         Course.is_public.is_(True),
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).first() is not None
+
+
+def _has_any_file_reference(db: Session, file_id: int) -> bool:
+    """判断文件是否已绑定任一业务记录，包括已删除记录。"""
+    checks = (
+        db.query(Material.id).filter(Material.file_id == file_id),
+        db.query(MaterialPreview.id).filter(MaterialPreview.cover_file_id == file_id),
+        db.query(Project.id).filter(
+            (Project.report_file_id == file_id) | (Project.cover_file_id == file_id),
+        ),
+        db.query(ProjectImage.id).filter(ProjectImage.file_id == file_id),
+        db.query(ShowcaseItem.id).filter(ShowcaseItem.cover_file_id == file_id),
+        db.query(ShowcaseItemImage.id).filter(ShowcaseItemImage.file_id == file_id),
+    )
+    return any(query.first() is not None for query in checks)
+
+
+def _has_active_file_reference(db: Session, file_id: int) -> bool:
+    """判断文件是否仍有至少一条未删除的有效业务引用。"""
+    active_material = db.query(Material.id).join(
+        Course,
+        Course.id == Material.course_id,
+    ).filter(
+        Material.file_id == file_id,
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).first()
+    if active_material:
+        return True
+
+    active_preview = db.query(MaterialPreview.id).join(
+        Material,
+        Material.id == MaterialPreview.material_id,
+    ).join(
+        Course,
+        Course.id == Material.course_id,
+    ).filter(
+        MaterialPreview.cover_file_id == file_id,
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).first()
+    if active_preview:
+        return True
+
+    image_project_ids = db.query(ProjectImage.project_id).filter(ProjectImage.file_id == file_id)
+    active_project = db.query(Project.id).outerjoin(
+        Course,
+        Course.id == Project.course_id,
+    ).filter(
+        Project.deleted_at.is_(None),
+        or_(
+            Project.report_file_id == file_id,
+            Project.cover_file_id == file_id,
+            Project.id.in_(image_project_ids),
+        ),
+        or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+    ).first()
+    if active_project:
+        return True
+
+    return db.query(ShowcaseItem.id).outerjoin(
+        ShowcaseItemImage,
+        ShowcaseItemImage.showcase_item_id == ShowcaseItem.id,
+    ).filter(
+        or_(
+            ShowcaseItem.cover_file_id == file_id,
+            ShowcaseItemImage.file_id == file_id,
+        ),
     ).first() is not None
 
 
 def can_current_user_read_file(db: Session, record: StoredFile, current_user) -> bool:
     """按现有业务关系判断当前用户是否可读取 StoredFile。"""
+    has_business_reference = _has_any_file_reference(db, record.id)
     if current_user.role == "admin":
-        return True
-    if record.created_by == current_user.id:
-        return True
+        return not has_business_reference or _has_active_file_reference(db, record.id)
+    if not has_business_reference:
+        return record.created_by == current_user.id
 
-    from app.services.material_service import can_view_course_materials
-
-    materials = db.query(Material).filter(Material.file_id == record.id).all()
+    materials = db.query(Material).join(
+        Course,
+        Course.id == Material.course_id,
+    ).filter(
+        Material.file_id == record.id,
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).all()
     if any(
-        can_view_course_materials(db, material.course_id, current_user.id, current_user.role)
+        _can_view_active_course_materials(
+            db,
+            material.course_id,
+            current_user.id,
+            current_user.role,
+        )
         for material in materials
     ):
         return True
@@ -207,23 +339,51 @@ def can_current_user_read_file(db: Session, record: StoredFile, current_user) ->
     return False
 
 
+def get_authorized_file_record(
+    db: Session,
+    file_id: int,
+    current_user,
+    allow_anonymous: bool,
+) -> StoredFile:
+    """只校验文件记录和业务权限，不访问底层存储。"""
+    record = db.query(StoredFile).filter(
+        StoredFile.id == file_id,
+        StoredFile.status == "active",
+    ).first()
+    if record is None:
+        raise BusinessException(404, "文件不存在")
+
+    if current_user is None:
+        if allow_anonymous and can_anonymous_read_file(db, record):
+            return record
+        raise BusinessException(401, "无效的认证凭据")
+
+    if not can_current_user_read_file(db, record, current_user):
+        raise BusinessException(404, "文件不存在")
+    return record
+
+
 def resolve_file_stream(
     db: Session,
     file_id: int,
     current_user=None,
     enforce_auth: bool = False,
-) -> tuple[StoredFile, BinaryIO]:
+) -> tuple[StoredFile | None, BinaryIO | None]:
     """根据 file_id 获取文件记录和文件流。找不到返回 (None, None)"""
-    record = db.query(StoredFile).filter(StoredFile.id == file_id).first()
-    if record is None:
-        return None, None
-
     if enforce_auth:
-        if current_user is None:
-            if not can_anonymous_read_file(db, record):
-                raise BusinessException(401, "无效的认证凭据")
-        elif not can_current_user_read_file(db, record, current_user):
-            raise BusinessException(404, "文件不存在")
+        record = get_authorized_file_record(
+            db,
+            file_id,
+            current_user,
+            allow_anonymous=True,
+        )
+    else:
+        record = db.query(StoredFile).filter(
+            StoredFile.id == file_id,
+            StoredFile.status == "active",
+        ).first()
+        if record is None:
+            return None, None
 
     if record.storage_provider == "local":
         try:

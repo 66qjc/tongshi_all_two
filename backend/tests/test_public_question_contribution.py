@@ -149,6 +149,7 @@ def test_admin_creating_public_question_writes_log_and_shares_globally(
         Question.stem == "管理员新增公共题",
     ).one()
     assert data["data"]["id"] == source.id
+    assert source.created_by == "admin"
     assert db_session.query(Question).filter(
         Question.source_question_id.isnot(None),
     ).count() == 0
@@ -196,6 +197,10 @@ def test_admin_importing_public_questions_writes_batch_log(
     assert data["data"]["fail_count"] == 0
     # 题目原地写入公共课程，不产生副本
     assert db_session.query(Question).filter(Question.course_id == public_course_id).count() == 2
+    assert db_session.query(Question).filter(
+        Question.course_id == public_course_id,
+        Question.created_by == "admin",
+    ).count() == 2
     assert db_session.query(Question).filter(Question.source_question_id.isnot(None)).count() == 0
 
     log = db_session.query(QuestionContributionLog).one()
@@ -274,6 +279,10 @@ def test_private_course_create_and_import_do_not_write_contribution_logs(
     )
 
     assert db_session.query(QuestionContributionLog).count() == 0
+    assert db_session.query(Question).filter(
+        Question.course_id == private_course_id,
+        Question.created_by == "T001",
+    ).count() == 2
 
 
 def test_contribution_log_snapshot_survives_public_course_delete(

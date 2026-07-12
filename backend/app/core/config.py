@@ -37,7 +37,6 @@ class Settings:
     db_max_overflow: int
     db_pool_recycle: int
     db_pool_timeout: int
-    allow_query_token_for_files: bool = _env("ALLOW_QUERY_TOKEN_FOR_FILES", default="false").lower() == "true"
     storage_backend: str = _env("STORAGE_BACKEND", default="local").lower()
     local_upload_dir: str = _env("LOCAL_UPLOAD_DIR", default=str(BACKEND_ROOT / "uploads"))
     s3_endpoint: str = _env("S3_ENDPOINT", default="")
@@ -47,6 +46,13 @@ class Settings:
     s3_bucket_private: str = _env("S3_BUCKET_PRIVATE", default="tongshi-private")
     s3_region: str = _env("S3_REGION", default="us-east-1")
     s3_force_path_style: bool = _env("S3_FORCE_PATH_STYLE", default="true").lower() == "true"
+    # Redis 配置
+    redis_host: str = _env("REDIS_HOST", default="127.0.0.1")
+    redis_port: int = _env_int("REDIS_PORT", default=6379)
+    redis_password: str = _env("REDIS_PASSWORD", default="")
+    redis_db: int = _env_int("REDIS_DB", default=0)
+    redis_pool_size: int = _env_int("REDIS_POOL_SIZE", default=10)
+    redis_socket_timeout: int = _env_int("REDIS_SOCKET_TIMEOUT", default=5)
 
     def __init__(self):
         self.db_pool_size = _env_int("DB_POOL_SIZE", default=5)

@@ -20,11 +20,25 @@ from app.services.auth_service import (
     get_reset_requests_for_admin,
     approve_reset_request,
     reject_reset_request,
+    rotate_user_tokens,
 )
+from app.services.audit_service import create_audit_log, export_audit_logs, query_audit_logs
+from app.services.soft_delete_service import list_deleted_resources, purge_resource, restore_resource
 
 router = APIRouter()
 
 DEFAULT_PASSWORD = "123456"
+
+
+def _parse_audit_datetime(value: str | None):
+    """解析审计日志日期参数，格式错误时返回业务错误。"""
+    if not value:
+        return None
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise BusinessException(400, "日期格式错误，请使用 ISO 日期时间格式") from exc
 
 
 def _build_teacher_import_template() -> bytes:
@@ -69,7 +83,7 @@ def list_teachers(
 def create_teacher(
     req: CreateTeacherRequest,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
     """手动创建单个教师账号，默认密码 123456，首次登录需改密"""
     existing = db.query(User).filter(User.id == req.id).first()
@@ -84,6 +98,15 @@ def create_teacher(
         needs_password_change=True,
     )
     db.add(new_teacher)
+    create_audit_log(
+        db,
+        user=current_user,
+        action="user.create",
+        resource_type="users",
+        resource_id=new_teacher.id,
+        resource_name=new_teacher.name,
+        details={"role": "teacher", "major": new_teacher.major},
+    )
     db.commit()
     db.refresh(new_teacher)
     return success(_build_teacher_info(new_teacher))
@@ -168,7 +191,7 @@ async def import_teachers(
 def reset_teacher_password(
     teacher_id: str,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
     """重置教师密码为 123456，并标记需要重新修改密码"""
     teacher = db.query(User).filter(User.id == teacher_id,
@@ -177,6 +200,16 @@ def reset_teacher_password(
         raise BusinessException(404, "教师不存在")
     teacher.hashed_password = get_password_hash(DEFAULT_PASSWORD)
     teacher.needs_password_change = True
+    rotate_user_tokens(teacher)
+    create_audit_log(
+        db,
+        user=current_user,
+        action="user.password_reset",
+        resource_type="users",
+        resource_id=teacher.id,
+        resource_name=teacher.name,
+        details={"target_role": "teacher"},
+    )
     db.commit()
     return success({"message": "密码已重置为 123456，教师下次登录需修改密码"})
 
@@ -306,6 +339,20 @@ def delete_teacher(
         db.flush()
 
     # 删除教师账号
+    create_audit_log(
+        db,
+        user=current_user,
+        action="user.delete",
+        resource_type="users",
+        resource_id=teacher.id,
+        resource_name=teacher.name,
+        details={
+            "force": force,
+            "course_count": course_count,
+            "class_count": class_count,
+            "announcement_count": announcement_count,
+        },
+    )
     db.delete(teacher)
     db.commit()
     return success({"message": "删除成功"})
@@ -328,7 +375,24 @@ def admin_approve_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    return success(approve_reset_request(db, request_id, current_user.id))
+    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
+    target_user_id = req.user_id if req else None
+    try:
+        result = approve_reset_request(db, request_id, current_user.id)
+        create_audit_log(
+            db,
+            user=current_user,
+            action="user.password_reset",
+            resource_type="users",
+            resource_id=target_user_id,
+            resource_name=target_user_id,
+            details={"request_id": request_id, "result": "approved"},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return success(result)
 
 
 @router.post("/password-reset-requests/{request_id}/reject", summary="驳回密码重置", description="管理员：驳回任意密码重置申请")
@@ -338,4 +402,154 @@ def admin_reject_request(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    return success(reject_reset_request(db, request_id, current_user.id, data.reason))
+    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
+    target_user_id = req.user_id if req else None
+    try:
+        result = reject_reset_request(db, request_id, current_user.id, data.reason)
+        create_audit_log(
+            db,
+            user=current_user,
+            action="user.password_reset",
+            resource_type="users",
+            resource_id=target_user_id,
+            resource_name=target_user_id,
+            details={"request_id": request_id, "result": "rejected", "reason": data.reason},
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return success(result)
+
+
+# ── 回收站与审计日志 ─────────────────────────────────────────────────────
+
+@router.get("/deleted/{resource_type}", summary="查看已删除数据", description="管理员：查看指定资源类型的回收站数据")
+def get_deleted_resources(
+    resource_type: str,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    return success(list_deleted_resources(db, resource_type, page, page_size))
+
+
+@router.post("/restore/{resource_type}/{resource_id}", summary="恢复已删除数据", description="管理员：恢复回收站中的数据")
+def post_restore_resource(
+    resource_type: str,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("admin")),
+):
+    return success(restore_resource(db, resource_type, resource_id, current_user))
+
+
+@router.delete("/purge/{resource_type}/{resource_id}", summary="彻底删除数据", description="管理员：彻底删除回收站中的数据")
+def delete_purged_resource(
+    resource_type: str,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("admin")),
+):
+    return success(purge_resource(db, resource_type, resource_id, current_user))
+
+
+@router.get("/audit-logs", summary="查询审计日志", description="管理员：按用户、动作、资源类型和时间筛选审计日志")
+def get_audit_logs(
+    user_id: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    return success(query_audit_logs(
+        db,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        status=status,
+        start_date=_parse_audit_datetime(start_date),
+        end_date=_parse_audit_datetime(end_date),
+        page=page,
+        page_size=page_size,
+    ))
+
+
+@router.get("/audit-logs/export", summary="导出审计日志", description="管理员：导出审计日志 Excel")
+def export_audit_logs_excel(
+    user_id: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    status: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_role("admin")),
+):
+    content, export_count = export_audit_logs(
+        db,
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        status=status,
+        start_date=_parse_audit_datetime(start_date),
+        end_date=_parse_audit_datetime(end_date),
+    )
+    create_audit_log(
+        db,
+        user=current_user,
+        action="audit_log.export",
+        resource_type="audit_logs",
+        resource_name="审计日志导出",
+        details={
+            "export_count": export_count,
+            "filters": {
+                "user_id": user_id,
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "status": status,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        },
+    )
+    db.commit()
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="audit-logs.xlsx"'},
+    )
+
+
+@router.get("/users/{user_id}/audit-logs", summary="查询用户操作历史", description="管理员：查看指定用户的审计日志")
+def get_user_audit_logs(
+    user_id: str,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    return success(query_audit_logs(db, user_id=user_id, page=page, page_size=page_size))
+
+
+@router.get("/resources/{resource_type}/{resource_id}/audit-logs", summary="查询资源操作历史", description="管理员：查看指定资源的审计日志")
+def get_resource_audit_logs(
+    resource_type: str,
+    resource_id: str,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    return success(query_audit_logs(db, resource_type=resource_type, resource_id=resource_id, page=page, page_size=page_size))

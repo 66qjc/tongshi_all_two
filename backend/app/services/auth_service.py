@@ -12,24 +12,81 @@ from app.core.security import verify_password, get_password_hash, create_access_
 from app.core.exceptions import BusinessException
 from app.models.entities import User, SecurityQuestion, PasswordResetRequest
 from app.schemas.common import RegisterRequest
+from app.services.audit_service import create_audit_log
 
 logger = logging.getLogger(__name__)
 
 
 def login_user(db: Session, user_id: str, password: str) -> dict:
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None),
+    ).first()
     if not user or not verify_password(password, user.hashed_password):
         logger.warning(f"登录失败: user_id={user_id}")
         raise BusinessException(401, "学号或密码错误")
     logger.info(f"用户登录: user_id={user_id}, role={user.role}")
     token = create_access_token(
-        {"sub": user.id},
+        {"sub": user.id, "token_version": user.token_version or 0},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
     return {
         "access_token": token,
         "token_type": "bearer",
         "user": {"id": user.id, "name": user.name, "role": user.role, "major": user.major, "needs_password_change": user.needs_password_change},
+    }
+
+
+def rotate_user_tokens(user: User) -> int:
+    """递增用户 Token 版本，使已有 JWT 立即失效。"""
+    user.token_version = (user.token_version or 0) + 1
+    return user.token_version
+
+
+def change_user_password(
+    db: Session,
+    user_id: str,
+    old_password: str,
+    new_password: str,
+) -> dict:
+    """修改登录密码并为当前设备签发新 Token。"""
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None),
+    ).first()
+    if not user:
+        raise BusinessException(404, "用户不存在")
+    if not verify_password(old_password, user.hashed_password):
+        raise BusinessException(400, "旧密码不正确")
+
+    try:
+        user.hashed_password = get_password_hash(new_password)
+        user.needs_password_change = False
+        rotate_user_tokens(user)
+        create_audit_log(
+            db,
+            user_id=user.id,
+            user_role=user.role,
+            action="user.password_change",
+            resource_type="users",
+            resource_id=user.id,
+            resource_name=user.name,
+            details={"method": "authenticated"},
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise BusinessException(500, "密码修改失败，请稍后重试")
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "message": "密码修改成功",
+        "access_token": create_access_token({
+            "sub": user.id,
+            "token_version": user.token_version,
+        }),
     }
 
 
@@ -140,16 +197,25 @@ def _clear_failures(user_id: str) -> None:
 
 
 def get_forgot_password_questions(db: Session, user_id: str) -> list[dict]:
-    """获取指定用户的密保问题列表（用于忘记密码页，仅返回问题文本，不验证身份）"""
-    user = db.query(User).filter(User.id == user_id).first()
+    """获取指定用户的密保问题列表（用于忘记密码页，仅返回问题文本，不验证身份）。
+    注意：账号不存在时同样返回空列表，避免暴露账号枚举信息。
+    """
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None),
+    ).first()
     if not user:
-        raise BusinessException(404, "学号不存在")
+        # 安全：不区分账号不存在与未设置密保，统一返回空列表
+        return []
     return get_security_questions(db, user_id)
 
 
 def verify_answers_and_reset_password(db: Session, user_id: str, answers: list[dict], new_password: str) -> dict:
     """验证密保答案并重置密码"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None),
+    ).first()
     if not user:
         raise BusinessException(404, "学号不存在")
 
@@ -171,28 +237,46 @@ def verify_answers_and_reset_password(db: Session, user_id: str, answers: list[d
     if remaining == -1:
         raise BusinessException(429, f"验证次数超限，请等待 {_ATTEMPT_WINDOW_MINUTES} 分钟后重试，或申请人工重置")
 
-    # 验证每个答案
-    errors = []
+    # 验证每个答案（不暴露具体哪道题错误，避免逐一猜测）
+    has_error = False
     for ans in answers:
         qid = ans.get("question_id")
         q = q_map.get(qid)
         if not q:
-            errors.append(f"问题 {qid} 不存在")
+            has_error = True
             continue
         if not verify_password(ans.get("answer", ""), q.answer_hash):
-            errors.append(f"问题「{q.question}」答案错误")
+            has_error = True
 
-    if errors:
-        # 验证失败，剩余次数
+    if has_error:
+        # 统一返回模糊错误，不区分是哪道题答错
         if remaining == 0:
             raise BusinessException(429, f"验证次数超限，请等待 {_ATTEMPT_WINDOW_MINUTES} 分钟后重试，或申请人工重置")
-        raise BusinessException(400, f"{'；'.join(errors)}（剩余 {remaining} 次尝试）")
+        raise BusinessException(400, f"密保验证失败（剩余 {remaining} 次尝试）")
 
-    # 全部通过，清除失败计数，重置密码
+    # 全部通过，重置密码并与审计日志一起提交。
+    try:
+        user.hashed_password = get_password_hash(new_password)
+        user.needs_password_change = False
+        rotate_user_tokens(user)
+        create_audit_log(
+            db,
+            user_id=user.id,
+            user_role=user.role,
+            action="user.password_reset",
+            resource_type="users",
+            resource_id=user.id,
+            resource_name=user.name,
+            details={"method": "security_questions"},
+        )
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise BusinessException(500, "密码重置失败，请稍后重试")
+    except Exception:
+        db.rollback()
+        raise
     _clear_failures(user_id)
-    user.hashed_password = get_password_hash(new_password)
-    user.needs_password_change = False
-    db.commit()
     logger.info(f"密保验证通过，密码已重置: user_id={user_id}")
     return {"message": "密码重置成功"}
 
@@ -274,7 +358,7 @@ def _teacher_can_resolve_reset_request(db: Session, teacher_id: str, request_id:
 
 
 def approve_reset_request(db: Session, request_id: int, resolver_id: str) -> dict:
-    """审批通过密码重置请求"""
+    """审批通过密码重置请求。临时密码只在响应体中一次性返回，不再明文落库。"""
     req = db.query(PasswordResetRequest).filter(
         PasswordResetRequest.id == request_id
     ).first()
@@ -284,17 +368,24 @@ def approve_reset_request(db: Session, request_id: int, resolver_id: str) -> dic
         raise BusinessException(400, "该申请已被处理")
 
     new_pwd = _generate_temp_password()
-    user = db.query(User).filter(User.id == req.user_id).first()
-    if user:
-        user.hashed_password = get_password_hash(new_pwd)
-        user.needs_password_change = True
+    user = db.query(User).filter(
+        User.id == req.user_id,
+        User.deleted_at.is_(None),
+    ).first()
+    if not user:
+        raise BusinessException(404, "用户不存在")
+
+    new_password_hash = get_password_hash(new_pwd)
+    user.hashed_password = new_password_hash
+    user.needs_password_change = True
+    rotate_user_tokens(user)
 
     req.status = "approved"
     req.resolved_by = resolver_id
-    req.new_password_hash = get_password_hash(new_pwd)
-    req.temp_password = new_pwd  # 存储临时密码明文，供后续查看
+    req.new_password_hash = new_password_hash
+    req.temp_password = None  # 不存明文，仅通过响应一次性告知审批者
     req.resolved_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
     logger.info(f"密码重置申请已审批: request_id={request_id}, resolver={resolver_id}")
     return {"message": "密码已重置", "temp_password": new_pwd}
 
@@ -320,7 +411,7 @@ def reject_reset_request(db: Session, request_id: int, resolver_id: str, reason:
     req.status = "rejected"
     req.resolved_by = resolver_id
     req.resolved_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
     logger.info(f"密码重置申请已驳回: request_id={request_id}, resolver={resolver_id}, reason={reason}")
     return {"message": "已驳回"}
 

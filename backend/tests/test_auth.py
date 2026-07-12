@@ -1,9 +1,13 @@
 """认证接口测试"""
 
-import pytest
+from datetime import datetime, timezone
 
-from app.core.config import Settings
-from app.models.entities import Question, User
+import pytest
+from jose import jwt
+
+from app.core.config import Settings, settings
+from app.core.exceptions import BusinessException
+from app.models.entities import AuditLog, Question, User
 from tests.conftest import auth_header
 
 
@@ -118,6 +122,131 @@ class TestAuth:
         assert resp.status_code == 200
         assert data["code"] == 401
 
+    def test_file_access_token_contains_only_required_claims(self):
+        from app.core.security import create_file_access_token
+
+        issued_at = datetime.now(timezone.utc).timestamp()
+        token = create_file_access_token("2025001", 7)
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+
+        assert set(payload) == {"sub", "scope", "file_id", "exp"}
+        assert payload["sub"] == "2025001"
+        assert payload["scope"] == "file_access"
+        assert payload["file_id"] == 7
+        assert 295 <= payload["exp"] - issued_at <= 305
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"scope": "file_access", "file_id": 7, "exp": 4102444800},
+            {"sub": "", "scope": "file_access", "file_id": 7, "exp": 4102444800},
+            {"sub": 2025001, "scope": "file_access", "file_id": 7, "exp": 4102444800},
+            {"sub": "2025001", "file_id": 7, "exp": 4102444800},
+            {"sub": "2025001", "scope": "login", "file_id": 7, "exp": 4102444800},
+            {"sub": "2025001", "scope": "file_access", "exp": 4102444800},
+            {"sub": "2025001", "scope": "file_access", "file_id": "7", "exp": 4102444800},
+            {"sub": "2025001", "scope": "file_access", "file_id": True, "exp": 4102444800},
+            {"sub": "2025001", "scope": "file_access", "file_id": 8, "exp": 4102444800},
+            {"sub": "2025001", "scope": "file_access", "file_id": 7},
+            {"sub": "2025001", "scope": "file_access", "file_id": 7, "exp": "4102444800"},
+            {"sub": "2025001", "scope": "file_access", "file_id": 7, "exp": 1},
+        ],
+        ids=[
+            "missing-sub",
+            "empty-sub",
+            "wrong-sub-type",
+            "missing-scope",
+            "wrong-scope",
+            "missing-file-id",
+            "wrong-file-id-type",
+            "boolean-file-id",
+            "cross-file",
+            "missing-exp",
+            "wrong-exp-type",
+            "expired",
+        ],
+    )
+    def test_decode_file_access_token_rejects_invalid_claims(self, payload):
+        from app.core.security import decode_file_access_token
+
+        token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+        with pytest.raises(BusinessException) as exc_info:
+            decode_file_access_token(token, 7)
+
+        assert exc_info.value.code == 401
+        assert exc_info.value.message == "文件访问凭据无效或已过期"
+
+    def test_decode_file_access_token_rejects_malformed_token(self):
+        from app.core.security import decode_file_access_token
+
+        with pytest.raises(BusinessException) as exc_info:
+            decode_file_access_token("not-a-jwt", 7)
+
+        assert exc_info.value.code == 401
+        assert exc_info.value.message == "文件访问凭据无效或已过期"
+
+    def test_file_access_token_cannot_call_regular_api(self, client):
+        from app.core.security import create_file_access_token
+
+        token = create_file_access_token("2025001", 7)
+        response = client.get("/api/me", headers=auth_header(token)).json()
+
+        assert response["code"] == 401
+
+    def test_change_password_rotates_token_and_returns_replacement(self, client, db_session, student_token):
+        response = client.put(
+            "/api/change-password",
+            json={"old_password": "abc123", "new_password": "NewPass123"},
+            headers=auth_header(student_token),
+        ).json()
+
+        assert response["code"] == 0
+        replacement_token = response["data"]["access_token"]
+        assert replacement_token
+        assert client.get("/api/me", headers=auth_header(student_token)).json()["code"] == 401
+        assert client.get("/api/me", headers=auth_header(replacement_token)).json()["code"] == 0
+        assert db_session.query(AuditLog).filter(
+            AuditLog.user_id == "2025001",
+            AuditLog.action == "user.password_change",
+        ).count() == 1
+
+    def test_security_answer_reset_invalidates_existing_token(self, client, db_session, student_token):
+        configured = client.put(
+            "/api/security-questions",
+            json={"questions": [{"question": "测试问题", "answer": "测试答案"}]},
+            headers=auth_header(student_token),
+        ).json()
+        question_id = configured["data"][0]["id"]
+
+        reset = client.post(
+            "/api/password/forgot/reset",
+            json={
+                "user_id": "2025001",
+                "answers": [{"question_id": question_id, "answer": "测试答案"}],
+                "new_password": "ResetPass123",
+            },
+        ).json()
+
+        assert reset["code"] == 0
+        assert client.get("/api/me", headers=auth_header(student_token)).json()["code"] == 401
+        assert db_session.query(AuditLog).filter(
+            AuditLog.user_id == "2025001",
+            AuditLog.action == "user.password_reset",
+        ).count() == 1
+
+    def test_soft_deleted_user_cannot_login_or_reuse_token(self, client, db_session, student_token):
+        user = db_session.query(User).filter(User.id == "2025001").one()
+        user.deleted_at = datetime.now(timezone.utc)
+        user.deleted_by = "admin"
+        db_session.commit()
+
+        login = client.post("/api/token", json={"id": "2025001", "password": "abc123"}).json()
+        current = client.get("/api/me", headers=auth_header(student_token)).json()
+
+        assert login["code"] == 401
+        assert current["code"] == 401
+
     def test_settings_require_secret_key(self, monkeypatch):
         original_init = Settings.__init__
 
@@ -127,13 +256,19 @@ class TestAuth:
             self.access_token_expire_minutes = 10080
             self.allowed_origins = "*"
             self.database_url = "sqlite://"
-            self.allow_query_token_for_files = False
             original_init(self)
 
         monkeypatch.setattr(Settings, "__init__", init_without_secret)
 
         with pytest.raises(ValueError, match="SECRET_KEY"):
             Settings()
+
+    def test_legacy_query_token_setting_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_QUERY_TOKEN_FOR_FILES", "true")
+
+        runtime_settings = Settings()
+
+        assert not hasattr(runtime_settings, "allow_query_token_for_files")
 
     def test_seed_data_does_not_create_default_admin(self, db_session):
         from seed_data import seed

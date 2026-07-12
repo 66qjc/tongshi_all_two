@@ -22,7 +22,7 @@ def _format_course(
     if class_count is None:
         class_count = (
             db.query(func.count(Class.id))
-            .filter(Class.course_id == course.id, Class.created_by == current_user.id)
+            .filter(Class.course_id == course.id, Class.created_by == current_user.id, Class.deleted_at.is_(None))
             .scalar()
             if current_user.role == "teacher"
             else 0
@@ -30,12 +30,12 @@ def _format_course(
     if material_count is None:
         material_count = (
             db.query(func.count(Material.id))
-            .filter(Material.course_id == course.id)
+            .filter(Material.course_id == course.id, Material.deleted_at.is_(None))
             .scalar()
         ) or 0
     if question_count is None:
         # 全站共享题库：题目数为全站题目总数
-        question_count = db.query(func.count(Question.id)).scalar() or 0
+        question_count = db.query(func.count(Question.id)).filter(Question.deleted_at.is_(None)).scalar() or 0
     return {
         "id": course.id,
         "name": course.name,
@@ -59,7 +59,7 @@ def _format_course_batch(db: Session, courses: list[Course], current_user: AuthU
     """批量格式化课程，预计算资料数、班级数和题目总数，避免逐课程 N+1 查询。"""
     course_ids = [course.id for course in courses]
     # 全站共享题库：题目数为全站题目总数，与单条格式化保持一致
-    question_count = db.query(func.count(Question.id)).scalar() or 0
+    question_count = db.query(func.count(Question.id)).filter(Question.deleted_at.is_(None)).scalar() or 0
     if not course_ids:
         return []
     material_counts = _count_by_course(
@@ -99,7 +99,7 @@ def build_course_page(
     """课程列表数据库分页：在数据库层完成过滤、计数和 limit/offset。"""
     safe_page = max(page or 1, 1)
     safe_page_size = max(min(page_size or 20, 100), 1)
-    query = db.query(Course)
+    query = db.query(Course).filter(Course.deleted_at.is_(None))
 
     if current_user.role == "teacher":
         if scope == "owned":
@@ -112,7 +112,7 @@ def build_course_page(
         enrolled_course_ids = (
             db.query(Class.course_id)
             .join(StudentClassEnrollment, StudentClassEnrollment.class_id == Class.id)
-            .filter(StudentClassEnrollment.user_id == current_user.id, Class.course_id.isnot(None))
+            .filter(StudentClassEnrollment.user_id == current_user.id, Class.course_id.isnot(None), Class.deleted_at.is_(None))
             .distinct()
         )
         query = query.filter(Course.id.in_(enrolled_course_ids))
@@ -150,7 +150,7 @@ def build_course_list(db: Session, current_user: AuthUser, keyword: str | None =
         class_ids = [item.class_id for item in enrollments]
         classes_with_course = (
             db.query(Class)
-            .filter(Class.id.in_(class_ids), Class.course_id.isnot(None))
+            .filter(Class.id.in_(class_ids), Class.course_id.isnot(None), Class.deleted_at.is_(None))
             .all()
         )
         enrolled_course_ids = list({item.course_id for item in classes_with_course})
@@ -161,7 +161,7 @@ def build_course_list(db: Session, current_user: AuthUser, keyword: str | None =
             }
 
         # 学生端课程入口只展示学生已加入班级对应的课程，公共课程模板不直接铺给学生。
-        query = db.query(Course).filter(Course.id.in_(enrolled_course_ids))
+        query = db.query(Course).filter(Course.id.in_(enrolled_course_ids), Course.deleted_at.is_(None))
         if keyword:
             query = query.filter(Course.name.ilike(f"%{keyword.strip()}%"))
         courses = query.order_by(Course.id.desc()).all()
@@ -197,7 +197,7 @@ def _format_material(material):
 def build_course_detail(db: Session, detail: tuple[Course, int, int, int], current_user: AuthUser) -> dict:
     course, material_count, question_count, class_count = detail
     visible_class_count = (
-        db.query(Class).filter(Class.course_id == course.id, Class.created_by == current_user.id).count()
+        db.query(Class).filter(Class.course_id == course.id, Class.created_by == current_user.id, Class.deleted_at.is_(None)).count()
         if current_user.role == "teacher"
         else class_count
     )
