@@ -56,10 +56,12 @@ const currentYear = new Date().getFullYear()
 
 <style scoped>
 .app-footer {
-  background: #1a1a2e;
-  color: rgba(255, 255, 255, 0.55);
+  background: #141428;
+  color: rgba(255, 255, 255, 0.5);
   padding: var(--space-3xl) 0 0;
   margin-top: var(--space-3xl);
+  /* 顶部微亮边，与页面正文分隔 */
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .footer-grid {
@@ -67,13 +69,13 @@ const currentYear = new Date().getFullYear()
   grid-template-columns: 1.5fr 1fr 1fr 1fr;
   gap: var(--space-2xl);
   padding-bottom: var(--space-2xl);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .footer-logo {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 0.6rem;
   margin-bottom: var(--space-md);
 }
 
@@ -81,61 +83,72 @@ const currentYear = new Date().getFullYear()
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  background: rgba(255, 253, 248, 0.9);
-  border: 1px solid rgba(255, 253, 248, 0.28);
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255, 253, 248, 0.92);
+  border: 1px solid rgba(255, 253, 248, 0.2);
   border-radius: var(--radius-md);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.footer-logo-mark:hover {
+  transform: translateY(-1px);
 }
 
 .footer-logo-icon {
   display: block;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
 }
 
 .footer-logo-text {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
   font-weight: 900;
-  color: rgba(255, 255, 255, 0.85);
-  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.82);
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .footer-desc {
-  font-size: 0.82rem;
-  line-height: 1.7;
-  max-width: 280px;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
+  max-width: 260px;
+  text-wrap: pretty;
+  color: rgba(255, 255, 255, 0.44);
 }
 
 .footer-links h4 {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 0.78rem;
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.7rem;
+  font-weight: 800;
   margin-bottom: var(--space-lg);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .footer-links a {
   display: block;
-  font-size: 0.82rem;
-  padding: var(--space-xs) 0;
+  font-size: var(--text-muted);
+  line-height: var(--leading-compact);
+  padding: 0.3rem 0;
+  color: rgba(255, 255, 255, 0.44);
   transition: color var(--duration-fast);
 }
 
 .footer-links a:hover {
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .footer-bottom {
   padding: var(--space-lg) 0;
   text-align: center;
-  font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.3);
-  letter-spacing: 0.03em;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.24);
+  letter-spacing: 0.04em;
 }
 
 @media (max-width: 768px) {

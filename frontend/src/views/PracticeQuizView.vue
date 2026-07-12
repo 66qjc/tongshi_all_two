@@ -228,7 +228,13 @@ function resetState() {
 }
 
 function selectOption(label: string | undefined) {
-  if (!submitted.value && label) selectedOption.value = label
+  if (!submitted.value && label) {
+    selectedOption.value = label
+    // 单选题选择后立即自动提交（优化手机体验）
+    if (currentQuestion.value?.type === 'choice') {
+      submitAnswer()
+    }
+  }
 }
 
 function toggleMultiOption(label: string) {
@@ -557,12 +563,14 @@ async function backToPrevious() {
 }
 
 .quiz-info h2 {
-  font-size: 1.1rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   text-align: right;
+  text-wrap: balance;
 }
 
 .quiz-progress-text {
@@ -593,12 +601,14 @@ async function backToPrevious() {
 }
 
 .summary-card h2 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-lg);
+  text-wrap: balance;
 }
 
 .summary-score {

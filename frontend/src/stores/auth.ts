@@ -10,6 +10,21 @@ export interface User {
   needs_password_change?: boolean
 }
 
+const validRoles: User['role'][] = ['student', 'teacher', 'admin']
+
+type StoredUserRecord = {
+  id?: unknown
+  name?: unknown
+  role?: User['role']
+  major?: unknown
+  needs_password_change?: unknown
+}
+
+function clearStoredAuth() {
+  localStorage.removeItem('auth_user')
+  localStorage.removeItem('auth_token')
+}
+
 function isTokenExpired(token: string): boolean {
   try {
     const parts = token.split('.')
@@ -23,22 +38,56 @@ function isTokenExpired(token: string): boolean {
   }
 }
 
+function parseStoredUser(storedUser: string | null): User | null {
+  if (!storedUser) return null
+
+  try {
+    const parsed = JSON.parse(storedUser) as StoredUserRecord | null
+    if (!parsed || typeof parsed !== 'object') return null
+    if (typeof parsed.id !== 'string' || typeof parsed.name !== 'string') return null
+    if (parsed.role === undefined || !validRoles.includes(parsed.role)) return null
+
+    return {
+      id: parsed.id,
+      name: parsed.name,
+      role: parsed.role,
+      major: typeof parsed.major === 'string' ? parsed.major : undefined,
+      needs_password_change: parsed.needs_password_change === true,
+    }
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const storedUser = localStorage.getItem('auth_user')
   const storedToken = localStorage.getItem('auth_token')
+  let initialUser: User | null = null
+  let initialToken: string | null = storedToken
 
   // 启动时检查 token 是否过期，过期则清除
   if (storedToken && isTokenExpired(storedToken)) {
-    localStorage.removeItem('auth_user')
-    localStorage.removeItem('auth_token')
+    clearStoredAuth()
+    initialToken = null
+  } else if (storedToken) {
+    initialUser = parseStoredUser(storedUser)
+    if (!initialUser) {
+      clearStoredAuth()
+      initialToken = null
+    }
+  } else if (storedUser) {
+    clearStoredAuth()
   }
 
-  const user = ref<User | null>(
-    localStorage.getItem('auth_token') ? (storedUser ? JSON.parse(storedUser) : null) : null,
-  )
-  const token = ref<string | null>(localStorage.getItem('auth_token'))
+  const user = ref<User | null>(initialUser)
+  const token = ref<string | null>(initialToken)
 
   const isLoggedIn = computed(() => !!user.value)
+
+  function replaceAccessToken(accessToken: string) {
+    token.value = accessToken
+    localStorage.setItem('auth_token', accessToken)
+  }
 
   async function login(id: string, password: string): Promise<boolean> {
     try {
@@ -51,9 +100,8 @@ export const useAuthStore = defineStore('auth', () => {
         needs_password_change: result.user.needs_password_change,
       }
       user.value = u
-      token.value = result.access_token
       localStorage.setItem('auth_user', JSON.stringify(u))
-      localStorage.setItem('auth_token', result.access_token)
+      replaceAccessToken(result.access_token)
       return true
     } catch {
       return false
@@ -73,13 +121,13 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     user.value = null
     token.value = null
-    localStorage.removeItem('auth_user')
-    localStorage.removeItem('auth_token')
+    clearStoredAuth()
   }
 
   async function changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
     try {
-      await apiChangePassword({ old_password: oldPassword, new_password: newPassword })
+      const result = await apiChangePassword({ old_password: oldPassword, new_password: newPassword })
+      replaceAccessToken(result.access_token)
       // 修改密码成功后，清除强制改密标记
       if (user.value) {
         user.value.needs_password_change = false
@@ -91,5 +139,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, token, isLoggedIn, login, register, logout, changePassword }
+  return { user, token, isLoggedIn, login, register, logout, replaceAccessToken, changePassword }
 })

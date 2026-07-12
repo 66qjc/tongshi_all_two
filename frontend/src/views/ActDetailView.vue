@@ -205,17 +205,18 @@ onMounted(async () => {
   color: var(--color-act);
   font-size: 0.76rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.03em;
 }
 
 .article-header h1 {
   max-width: 820px;
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 2rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
-  line-height: 1.35;
-  letter-spacing: 0.03em;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .cover-frame {
@@ -244,6 +245,7 @@ onMounted(async () => {
   color: var(--color-text-secondary);
   font-size: 0.96rem;
   line-height: 1.9;
+  text-wrap: pretty;
 }
 
 .full-content {
@@ -264,9 +266,11 @@ onMounted(async () => {
 
 .section-title span {
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  text-wrap: balance;
 }
 
 .section-title small {
@@ -314,9 +318,11 @@ onMounted(async () => {
 .more-section h2 {
   margin-bottom: var(--space-xs);
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.08rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  text-wrap: balance;
 }
 
 .more-section p {

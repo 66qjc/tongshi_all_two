@@ -40,12 +40,19 @@ const form = reactive({
   answer: '',
   explanation: '',
   tags: [] as string[],
+  star_rating: 3,
 })
 
 function hasTag(row: Question, tag: string) {
   const keyword = tag.trim().toLowerCase()
   if (!keyword) return true
   return (row.tags || []).some(item => item.toLowerCase().includes(keyword))
+}
+
+function getQuestionTagType(type: Question['type']) {
+  if (type === 'choice') return 'primary'
+  if (type === 'multi_choice') return 'warning'
+  return 'success'
 }
 
 async function loadCourses() {
@@ -96,6 +103,7 @@ function openNew() {
     answer: '',
     explanation: '',
     tags: [],
+    star_rating: 3,
   })
   dialogVisible.value = true
 }
@@ -110,6 +118,7 @@ function openEdit(row: Question) {
     answer: row.answer,
     explanation: row.explanation,
     tags: [...(row.tags || [])],
+    star_rating: row.star_rating || 3,
   })
   dialogVisible.value = true
 }
@@ -132,6 +141,7 @@ async function handleSave() {
     answer: form.answer.trim(),
     explanation: form.explanation.trim(),
     tags: form.tags.map(item => item.trim()).filter(Boolean),
+    star_rating: form.star_rating || 3,
   }
 
   try {
@@ -258,7 +268,7 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="题型" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.type === 'choice' ? '' : row.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
+          <el-tag :type="getQuestionTagType(row.type)" size="small" effect="plain">
             {{ row.type === 'choice' ? '选择题' : row.type === 'multi_choice' ? '多选题' : '填空题' }}
           </el-tag>
         </template>

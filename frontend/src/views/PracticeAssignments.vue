@@ -215,10 +215,11 @@ function formatDate(dateStr: string | null) {
   object-fit: contain;
 }
 .hero-inner h1 {
-  font-family: var(--font-serif); font-size: 1.8rem; font-weight: 900;
-  color: var(--assignment-ink); margin-bottom: var(--space-sm); letter-spacing: 0;
+  font-family: var(--font-sans); font-size: var(--text-page-title); font-weight: 900;
+  line-height: var(--leading-title); color: var(--assignment-ink); margin-bottom: var(--space-sm); letter-spacing: 0;
+  text-wrap: balance;
 }
-.hero-inner p { font-size: 0.92rem; color: var(--assignment-muted); }
+.hero-inner p { font-size: var(--text-body); color: var(--assignment-muted); line-height: var(--leading-body); }
 
 .content-section { padding: var(--space-2xl) 0 var(--space-3xl); max-width: 1000px; margin: 0 auto; }
 

@@ -10,49 +10,50 @@
   /* 靛青 - 主色，取自传统靛染 */
   --color-primary-light: #4a8fa6;
   --color-primary-dark: #1a3d4d;
-  --color-primary-glow: rgba(45, 90, 110, 0.10);
+  --color-primary-glow: rgba(45, 90, 110, 0.08);
+  --color-primary-glow-hover: rgba(45, 90, 110, 0.14);
 
   /* ── 功能色（传统色谱）── */
   --color-learn: #2d6a7a;
   /* 学 - 靛青 */
   --color-learn-light: #a8d4e0;
-  --color-learn-bg: rgba(45, 106, 122, 0.05);
+  --color-learn-bg: rgba(45, 106, 122, 0.06);
 
   --color-create: #b8860b;
   /* 思 - 琥珀/藤黄 */
   --color-create-light: #f0d68a;
-  --color-create-bg: rgba(184, 134, 11, 0.05);
+  --color-create-bg: rgba(184, 134, 11, 0.06);
 
   --color-practice: #6b4c8a;
   /* 践 - 紫藤 */
   --color-practice-light: #c4aedd;
-  --color-practice-bg: rgba(107, 76, 138, 0.05);
+  --color-practice-bg: rgba(107, 76, 138, 0.06);
 
   --color-act: #3a7d5c;
   /* 悟 - 翠绿 */
   --color-act-light: #a7d4b8;
-  --color-act-bg: rgba(58, 125, 92, 0.05);
+  --color-act-bg: rgba(58, 125, 92, 0.06);
 
   /* ── 中性色（暖调）── */
   --color-bg: #f8f5ef;
   /* 米白暖底 */
-  --color-bg-alt: #f1ece2;
-  /* 暖灰交替背景 */
+  --color-bg-alt: #f2ece1;
+  /* 暖灰交替背景，略加深对比 */
   --color-bg-card: #fffdf8;
   /* 宣纸白 */
-  --color-text: #1a1a2e;
-  /* 浓墨 */
-  --color-text-secondary: #4a4a5a;
+  --color-text: #18182c;
+  /* 浓墨，微调饱和度 */
+  --color-text-secondary: #48485a;
   /* 淡墨 */
-  --color-text-muted: #8a8a96;
+  --color-text-muted: #8c8c9a;
   /* 残墨 */
-  --color-border: #e0d8c8;
-  /* 暖边框 */
+  --color-border: #ddd5c4;
+  /* 暖边框，稍深一档提升层次感 */
   --color-border-light: #ebe4d6;
   /* 淡暖边框 */
 
   /* ── 渐变 ── */
-  --gradient-hero: linear-gradient(135deg, #1a1a2e 0%, #2a2a40 30%, #2d5a6e 70%, #3a7d5c 100%);
+  --gradient-hero: linear-gradient(145deg, #141428 0%, #1e2840 25%, #2d5a6e 65%, #3a7d5c 100%);
   --gradient-card-learn: linear-gradient(135deg, #eef6f8, #ddeef3);
   --gradient-card-create: linear-gradient(135deg, #faf5eb, #f3edd8);
   --gradient-card-practice: linear-gradient(135deg, #f3eff8, #e9e2f0);
@@ -70,31 +71,43 @@
   --space-4xl: 6rem;
 
   /* ── 圆角（偏方正，书卷气）── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* ── 阴影（暖调）── */
-  --shadow-xs: 0 1px 2px rgba(26, 26, 46, 0.03);
-  --shadow-sm: 0 2px 6px rgba(26, 26, 46, 0.05);
-  --shadow-md: 0 4px 14px rgba(26, 26, 46, 0.06);
-  --shadow-lg: 0 8px 28px rgba(26, 26, 46, 0.08);
-  --shadow-xl: 0 16px 40px rgba(26, 26, 46, 0.10);
-  --shadow-glow: 0 0 30px rgba(45, 90, 110, 0.10);
+  /* ── 阴影（暖调，分层更细腻）── */
+  --shadow-xs: 0 1px 3px rgba(24, 24, 44, 0.04), 0 1px 2px rgba(24, 24, 44, 0.02);
+  --shadow-sm: 0 2px 8px rgba(24, 24, 44, 0.06), 0 1px 3px rgba(24, 24, 44, 0.04);
+  --shadow-md: 0 4px 16px rgba(24, 24, 44, 0.07), 0 2px 6px rgba(24, 24, 44, 0.04);
+  --shadow-lg: 0 8px 32px rgba(24, 24, 44, 0.09), 0 3px 10px rgba(24, 24, 44, 0.05);
+  --shadow-xl: 0 16px 48px rgba(24, 24, 44, 0.11), 0 6px 18px rgba(24, 24, 44, 0.06);
+  --shadow-glow: 0 0 36px rgba(45, 90, 110, 0.12);
 
   /* ── 字体（宋体 display + 黑体 body）── */
   --font-sans: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --font-serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
+  /* ── 排版层级（固定字号，适配产品 UI 和中文阅读）── */
+  --text-display-title: 2.3rem;
+  --text-page-title: 1.5rem;
+  --text-section-title: 1.28rem;
+  --text-card-title: 1rem;
+  --text-body: 0.95rem;
+  --text-muted: 0.84rem;
+  --text-caption: 0.75rem;
+  --leading-title: 1.2;
+  --leading-body: 1.78;
+  --leading-compact: 1.5;
+
   /* ── 过渡 ── */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --duration-fast: 200ms;
-  --duration-normal: 350ms;
-  --duration-slow: 600ms;
+  --duration-fast: 180ms;
+  --duration-normal: 320ms;
+  --duration-slow: 560ms;
 }
 
 /* ── 全局 Reset ── */
@@ -166,12 +179,36 @@ a:focus-visible {
   border-radius: var(--radius-sm);
 }
 
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
+
 /* ── 工具类 ── */
 .container {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   padding: 0 var(--space-xl);
+}
+
+.ts-title-balance {
+  text-wrap: balance;
+}
+
+.ts-copy-pretty {
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+
+.ts-tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 768px) {

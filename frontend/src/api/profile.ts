@@ -15,12 +15,13 @@ export interface WrongQuestion {
 
 export interface LikedProject {
     id: number
+    cover_file_id?: number
     title: string
     author_name: string
     major: string
     description: string
     image_url: string
-    images: { image_url: string; sort_order: number }[]
+    images: { file_id?: number; image_url: string; sort_order: number }[]
     likes: number
     date: string
 }

@@ -6,7 +6,6 @@ import { createMaterial, deleteMaterial, getAllMaterials, rebuildMaterialPreview
 import { getCourses, type Course } from '@/api/course'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
 import { useDebounce } from '@/composables/useDebounce'
-import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 
@@ -91,15 +90,6 @@ function resetForm() {
 function openUpload() {
   resetForm()
   dialogVisible.value = true
-}
-
-function openMaterial(row: Material) {
-  const url = resolveFileUrl(row.file_id ? `/api/files/${row.file_id}` : row.url)
-  if (!url) {
-    ElMessage.warning('该资料暂无可访问文件')
-    return
-  }
-  window.open(url, '_blank', 'noopener')
 }
 
 const previewVisible = ref(false)
@@ -332,5 +322,30 @@ watch(filterCourse, () => {
 .file-name {
   color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+@media (max-width: 640px) {
+  .page-header,
+  .filter-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-header h1 {
+    font-size: 1.25rem;
+  }
+
+  .filter-bar :deep(.el-input),
+  .filter-bar :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .materials-rich-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .upload-zone {
+    padding: var(--space-lg);
+  }
 }
 </style>

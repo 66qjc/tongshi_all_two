@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { resolveFileUrl } from '@/utils/url'
+import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
 
 const props = defineProps<{
   visible: boolean
@@ -16,14 +16,12 @@ const dialogVisible = computed({
   set: (val) => emit('update:visible', val),
 })
 
-const previewUrl = computed(() => {
-  if (props.fileId) return resolveFileUrl(`/api/files/${props.fileId}`)
-  if (props.url) return resolveFileUrl(props.url)
-  return ''
-})
+const sourceUrl = computed(() => props.fileId ? `/api/files/${props.fileId}` : props.url || '')
+const enabled = computed(() => props.visible && Boolean(sourceUrl.value))
+const { resolvedUrl, loading, error } = useAuthenticatedFileUrl(sourceUrl, { enabled })
 
 function openInNewWindow() {
-  if (previewUrl.value) window.open(previewUrl.value, '_blank')
+  if (resolvedUrl.value) window.open(resolvedUrl.value, '_blank', 'noopener')
 }
 </script>
 
@@ -34,10 +32,12 @@ function openInNewWindow() {
     width="520px"
     destroy-on-close
   >
-    <div v-if="previewUrl" class="preview-card">
+    <div v-if="sourceUrl" class="preview-card">
       <p class="preview-title">文件已准备好</p>
-      <p class="preview-desc">请在新窗口打开资料。若浏览器无法直接预览，可在新窗口中下载后查看。</p>
-      <el-button type="primary" @click="openInNewWindow">在新窗口打开</el-button>
+      <p v-if="loading && !resolvedUrl" class="preview-desc">正在获取文件访问地址，请稍候。</p>
+      <p v-else-if="error && !resolvedUrl" class="preview-desc">{{ error }}</p>
+      <p v-else class="preview-desc">请在新窗口打开资料。若浏览器无法直接预览，可在新窗口中下载后查看。</p>
+      <el-button type="primary" :disabled="!resolvedUrl" @click="openInNewWindow">在新窗口打开</el-button>
     </div>
     <div v-else class="preview-empty">暂无可预览文件。</div>
     <template #footer>

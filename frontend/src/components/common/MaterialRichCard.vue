@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Material } from '@/api/material'
-import { resolveFileUrl } from '@/utils/url'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const props = defineProps<{
   material: Material
@@ -14,11 +14,6 @@ const emit = defineEmits<{
   (e: 'delete', material: Material): void
   (e: 'rebuild', material: Material): void
 }>()
-
-const coverUrl = computed(() => {
-  const fileId = props.material.preview?.cover_file_id
-  return fileId ? resolveFileUrl(`/api/files/${fileId}`) : ''
-})
 
 const typeLabel = computed(() => {
   if (props.material.type === 'video') return '视频'
@@ -56,7 +51,11 @@ const statusText = computed(() => {
 <template>
   <article class="material-rich-card">
     <div class="cover">
-      <img v-if="coverUrl" :src="coverUrl" :alt="material.title" />
+      <AuthenticatedFileImage
+        v-if="material.preview?.cover_file_id"
+        :file-id="material.preview?.cover_file_id"
+        :alt="material.title"
+      />
       <span v-else>{{ typeLabel }}</span>
     </div>
     <div class="body">

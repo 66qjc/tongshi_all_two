@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import { createProject, getProject, updateProject, type Project, type ProjectPayload } from '@/api/project'
 import { getCourseList, type Course } from '@/api/course'
 import { uploadFile } from '@/api/upload'
-import { resolveFileUrl } from '@/utils/url'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -327,7 +327,12 @@ onMounted(() => {
 
           <div v-if="displayedImageNames.length > 0" class="image-list">
             <div v-for="(img, index) in existingImageUrls" :key="`existing-${index}`" class="image-item">
-              <img :src="resolveFileUrl(img.file_id ? `/api/files/${img.file_id}` : img.url)" :alt="`已上传图片 ${index + 1}`" class="image-thumb" />
+              <AuthenticatedFileImage
+                :file-id="img.file_id"
+                :fallback-url="img.url"
+                :alt="`已上传图片 ${index + 1}`"
+                class="image-thumb"
+              />
               <span>已上传图片 {{ index + 1 }}</span>
               <button class="tag-remove" @click="removeExistingImage(index)">&times;</button>
             </div>
@@ -380,18 +385,23 @@ onMounted(() => {
 }
 
 .upload-card h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  text-wrap: balance;
 }
 
 .subtitle {
-  font-size: 0.9rem;
+  max-width: 72ch;
+  font-size: var(--text-muted);
   color: var(--color-text-secondary);
+  line-height: var(--leading-compact);
   margin-bottom: var(--space-xl);
+  text-wrap: pretty;
 }
 
 .reject-alert {

@@ -47,6 +47,7 @@ const materialRichCard = read('src/components/common/MaterialRichCard.vue')
 const materialPreviewDialog = read('src/components/common/MaterialPreviewDialog.vue')
 const pdfPreviewDialog = read('src/components/common/PdfPreviewDialog.vue')
 const httpApi = read('src/api/http.ts')
+const router = read('src/router/index.ts')
 
 test('教师端统计与作业术语应匹配实际业务口径', () => {
   assert.doesNotMatch(teacherDashboard, /本周练习/, '教师工作台不能把累计练习次数写成“本周练习”')
@@ -115,6 +116,8 @@ test('公开端长文案不应暴露内部迁移说明或错误登录边界', ()
   assert.doesNotMatch(statsSection, /旧模块|过期|真实数据/, '首页统计区不应暴露开发迁移说明')
   assert.doesNotMatch(appFooter, /课程大纲/, '页脚不应把公开学习馆称为课程大纲')
   assert.match(appFooter, /公开学习馆/, '页脚应使用公开学习馆术语')
+  const createRoute = router.match(/path:\s*['"]\/create['"][\s\S]*?\n\s*\},/u)?.[0] || ''
+  assert.doesNotMatch(createRoute, /public:\s*true/, '作品入口必须要求登录，不能标记为公开路由')
 })
 
 test('学生端应统一公开学习馆、学习资料和作业术语', () => {

@@ -33,22 +33,25 @@ function mediaBlock(source, query) {
 
 const courseDetail = read('src/views/CourseDetailView.vue')
 
-assert.match(courseDetail, /class="course-shell"/, '课程详情页应使用包含侧栏和主内容的整体布局容器。')
-assert.match(courseDetail, /class="course-main-panel"/, '课程 Hero 和正文应放在同一个右侧内容面板内，避免侧栏覆盖。')
+assert.match(courseDetail, /class="booksite-layout"/, '课程阅读区应使用稳定的书站网格容器。')
+assert.match(courseDetail, /class="reader-sidebar"/, '课程阅读区应包含目录侧栏。')
+assert.match(courseDetail, /class="reader-main"/, '课程阅读区应包含主阅读内容。')
 
 const pageStyle = styleBlock(courseDetail, '.course-detail-page')
 assert.match(pageStyle, /--app-header-height:\s*60px;/, '课程详情页应统一声明固定顶栏高度。')
 assert.match(pageStyle, /padding-top:\s*var\(--app-header-height\);/, '课程详情页应为固定顶栏预留顶部空间。')
 
-const desktopSidebar = styleBlock(courseDetail, '.sidebar')
-assert.match(desktopSidebar, /position:\s*sticky;/, '桌面端课程目录应参与布局并使用 sticky 固定。')
-assert.doesNotMatch(desktopSidebar, /position:\s*fixed;/, '桌面端课程目录不应 fixed 覆盖 Hero 或正文。')
+const desktopLayout = styleBlock(courseDetail, '.booksite-layout')
+assert.match(desktopLayout, /display:\s*grid;/, '桌面端课程阅读区应使用网格布局。')
+assert.match(desktopLayout, /grid-template-columns:\s*260px\s+minmax\(0,\s*1fr\)\s+300px;/, '桌面端应稳定保留目录、正文和资料栏三列。')
 
-const desktopMainContent = styleBlock(courseDetail, '.main-content')
+assert.match(courseDetail, /\.reader-sidebar,\s*\.resource-rail\s*\{[\s\S]*?position:\s*sticky;/, '桌面端课程目录应参与布局并使用 sticky 固定。')
+
+const desktopMainContent = styleBlock(courseDetail, '.reader-main')
 assert.doesNotMatch(desktopMainContent, /margin-left:\s*260px;/, '主内容不应依赖固定 margin-left 避让脱流侧栏。')
 
 const mobileStyles = mediaBlock(courseDetail, '@media (max-width: 900px)')
-const mobileSidebar = styleBlock(mobileStyles, '.sidebar')
+const mobileSidebar = styleBlock(mobileStyles, '.reader-sidebar')
 assert.match(mobileSidebar, /position:\s*fixed;/, '移动端课程目录仍应作为抽屉 fixed 覆盖显示。')
 assert.match(mobileSidebar, /transform:\s*translateX\(-100%\);/, '移动端课程目录默认应收起在屏幕外。')
 

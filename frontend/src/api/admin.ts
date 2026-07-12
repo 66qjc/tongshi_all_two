@@ -19,7 +19,7 @@ export function getTeachers() {
     return http.get<any, TeacherItem[]>('/admin/teachers')
 }
 
-// 手动创建教师
+// 创建教师账号
 export function createTeacher(data: { id: string; name: string; major?: string }) {
     return http.post<any, any>('/admin/teachers', data)
 }
@@ -60,17 +60,17 @@ export async function downloadTeacherImportTemplate() {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
     if (!response.ok) {
-        throw new Error('模板下载失败')
+        throw new Error('下载模板失败')
     }
     return await response.blob()
 }
 
-// 修改密码（任何登录用户可用）
+// 修改密码（登录用户通用）
 export function changePassword(data: { old_password: string; new_password: string }) {
-    return http.put<any, any>('/change-password', data)
+    return http.put<any, { message: string; access_token: string }>('/change-password', data)
 }
 
-// ── 密码重置申请管理 ──────────────────────────────────────────────────
+// —— 密码重置申请 ——
 
 export interface PasswordResetRequest {
     id: number
@@ -96,4 +96,85 @@ export function adminApprovePasswordResetRequest(requestId: number) {
 
 export function adminRejectPasswordResetRequest(requestId: number, reason?: string) {
     return http.post<any, { message: string }>(`/admin/password-reset-requests/${requestId}/reject`, { reason: reason || '' })
+}
+
+
+// —— 回收站与审计日志 ——
+export interface DeletedResourceItem {
+    id: number | string
+    name: string
+    deleted_at: string
+    deleted_by: string | null
+}
+
+export interface DeletedResourcePage {
+    items: DeletedResourceItem[]
+    total: number
+    page: number
+    page_size: number
+}
+
+export interface AuditLogItem {
+    id: number
+    user_id: string | null
+    user_role: string | null
+    action: string
+    resource_type: string | null
+    resource_id: string | null
+    resource_name: string | null
+    details: Record<string, unknown>
+    ip_address: string | null
+    user_agent: string | null
+    status: string
+    error_message: string | null
+    created_at: string
+}
+
+export interface AuditLogPage {
+    items: AuditLogItem[]
+    total: number
+    page: number
+    page_size: number
+}
+
+export function getDeletedResources(resourceType: string, page = 1, pageSize = 20) {
+    return http.get<any, DeletedResourcePage>(`/admin/deleted/${resourceType}`, { params: { page, page_size: pageSize } })
+}
+
+export function restoreDeletedResource(resourceType: string, id: number | string) {
+    return http.post<any, DeletedResourceItem>(`/admin/restore/${resourceType}/${id}`)
+}
+
+export function purgeDeletedResource(resourceType: string, id: number | string) {
+    return http.delete<any, { id: number | string }>(`/admin/purge/${resourceType}/${id}`)
+}
+
+export interface AuditLogQueryParams {
+    user_id?: string
+    action?: string
+    resource_type?: string
+    resource_id?: string
+    status?: string
+    start_date?: string
+    end_date?: string
+    page?: number
+    page_size?: number
+}
+
+export function getAuditLogs(params: AuditLogQueryParams) {
+    return http.get<any, AuditLogPage>('/admin/audit-logs', { params })
+}
+
+export async function downloadAuditLogs(params?: AuditLogQueryParams) {
+    const token = localStorage.getItem('auth_token')
+    const query = new URLSearchParams()
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') query.append(key, String(value))
+    })
+    const suffix = query.toString() ? `?${query.toString()}` : ''
+    const response = await fetch(`/api/admin/audit-logs/export${suffix}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!response.ok) throw new Error('审计日志导出失败')
+    return await response.blob()
 }

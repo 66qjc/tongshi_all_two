@@ -20,8 +20,8 @@ assert.match(
 
 assert.match(
   hero,
-  /hero-badge-mark/,
-  '首页首屏徽标应带有校名相关的视觉标记。',
+  /src="\/cjlu-logo\.svg"\s+alt="中国计量大学校徽"\s+class="hero-badge-logo"/,
+  '首页首屏徽标应使用学校徽标图片并提供中文可访问名称。',
 )
 
 assert.match(
@@ -44,6 +44,6 @@ assert.doesNotMatch(
 
 assert.match(
   header,
-  /logo-emblem-book/,
-  '顶部图标应换成与学校和课程语境相关的书本图形。',
+  /src="\/cjlu-xuesijianxing-favicon-sharp-20260606-190113\.png"[\s\S]*class="logo-emblem"/,
+  '顶部图标应使用当前网站标识图片。',
 )

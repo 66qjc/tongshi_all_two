@@ -80,7 +80,7 @@ const materialForm = ref({
   url: '',
   size: '0 MB',
   file_id: undefined as number | undefined,
-  stage_id: null as number | null,
+  stage_id: '' as number | '',
   file: null as File | null,
 })
 
@@ -259,7 +259,7 @@ function openCreateMaterial(stageId: number | null = null) {
   if (!selectedCourse.value) return
   editingMaterialId.value = null
   defaultStageId.value = stageId
-  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined, stage_id: stageId, file: null }
+  materialForm.value = { type: 'pdf', title: '', url: '', size: '0 MB', file_id: undefined, stage_id: stageId ?? '', file: null }
   if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
 }
@@ -277,7 +277,7 @@ function openEditMaterial(material: Material) {
     url: material.url || '',
     size: material.size || '0 MB',
     file_id: material.file_id,
-    stage_id: material.stage_id ?? null,
+    stage_id: material.stage_id ?? '',
     file: null,
   }
   if (uploadInput.value) uploadInput.value.value = ''
@@ -316,7 +316,7 @@ async function saveMaterial() {
       url: materialForm.value.url.trim(),
       size: materialForm.value.size || '0 MB',
       file_id: materialForm.value.file_id,
-      stage_id: materialForm.value.stage_id,
+      stage_id: typeof materialForm.value.stage_id === 'number' ? materialForm.value.stage_id : null,
 
     }
     if (editingMaterialId.value) {
@@ -739,7 +739,7 @@ onMounted(() => fetchCourses())
               <el-table :data="questions" v-loading="contentLoading" border stripe style="width: 100%">
                 <el-table-column label="题型" width="100">
                   <template #default="{ row }">
-                    <el-tag size="small" :type="row.type === 'choice' ? '' : row.type === 'multi_choice' ? 'warning' : 'info'">
+                    <el-tag size="small" :type="row.type === 'choice' ? 'primary' : row.type === 'multi_choice' ? 'warning' : 'info'">
                       {{ row.type === 'choice' ? '选择题' : row.type === 'multi_choice' ? '多选题' : '填空题' }}
                     </el-tag>
                   </template>
@@ -833,7 +833,7 @@ onMounted(() => fetchCourses())
         </el-form-item>
         <el-form-item label="所属阶段">
           <el-select v-model="materialForm.stage_id" placeholder="未分类" clearable style="width: 100%">
-            <el-option label="未分类" :value="null" />
+            <el-option label="未分类" value="" />
             <el-option v-for="stage in sortedStages" :key="stage.id" :label="stage.name" :value="stage.id" />
           </el-select>
         </el-form-item>
@@ -954,6 +954,7 @@ onMounted(() => fetchCourses())
 <style scoped>
 .public-courses-page {
   max-width: 1180px;
+  min-width: 0;
 }
 
 .page-header {
@@ -990,6 +991,7 @@ onMounted(() => fetchCourses())
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 16px;
+  min-width: 0;
 }
 
 .selected-header {
@@ -1203,5 +1205,67 @@ onMounted(() => fetchCourses())
 .card-actions {
   display: flex;
   gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .public-courses-page {
+    max-width: 100%;
+  }
+
+  .page-header,
+  .selected-header,
+  .tab-toolbar,
+  .stage-add-row,
+  .stage-header,
+  .import-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-header {
+    gap: 12px;
+  }
+
+  .page-title {
+    font-size: 1.1rem;
+  }
+
+  .page-subtitle {
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .course-panel,
+  .content-panel {
+    overflow-x: auto;
+    padding: 12px;
+  }
+
+  .toolbar-tip,
+  .stage-meta,
+  .stage-title-other {
+    margin-right: 0;
+  }
+
+  .stage-add-row :deep(.el-input),
+  .stage-add-row :deep(.el-input-number),
+  .stage-header :deep(.el-input),
+  .stage-header :deep(.el-input-number),
+  .template-block :deep(.el-select) {
+    width: 100% !important;
+  }
+
+  .material-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .pagination-wrap {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
 }
 </style>

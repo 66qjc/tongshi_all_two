@@ -11,6 +11,8 @@ const navItems = [
   { name: '公共课程', path: '/admin/public-courses', icon: '&#9670;' },
   { name: '内容管理', path: '/admin/showcase', icon: '&#128196;' },
   { name: '密码重置', path: '/admin/password-reset', icon: '&#128273;' },
+  { name: '数据回收站', path: '/admin/recycle-bin', icon: '&#9851;' },
+  { name: '审计日志', path: '/admin/audit-logs', icon: '&#128220;' },
 ]
 
 function isActive(path: string) {
@@ -208,6 +210,7 @@ const handleLogout = () => {
   flex: 1;
   margin-left: 200px;
   padding: var(--space-xl);
+  min-width: 0;
 }
 
 @media (max-width: 768px) {
@@ -231,6 +234,39 @@ const handleLogout = () => {
 
   .admin-name {
     display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-header {
+    padding: 0 var(--space-sm);
+  }
+
+  .admin-sidebar {
+    width: 48px;
+  }
+
+  .sidebar-nav {
+    padding: 0 4px;
+  }
+
+  .sidebar-link {
+    padding: 8px 4px;
+  }
+
+  .admin-main {
+    margin-left: 48px;
+    padding: var(--space-sm);
+    min-width: 0;
+  }
+
+  .logo-text {
+    font-size: 0.9rem;
+  }
+
+  .btn-logout {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.76rem;
   }
 }
 </style>

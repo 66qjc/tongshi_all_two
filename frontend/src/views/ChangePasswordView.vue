@@ -80,7 +80,6 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { changePassword } from '../api/admin'
 import { updateSecurityQuestions } from '@/api/auth'
 import { useAuthStore } from '../stores/auth'
 
@@ -147,14 +146,13 @@ const handleSubmit = async () => {
   }
   loading.value = true
   try {
-    await changePassword({
-      old_password: form.value.old_password,
-      new_password: form.value.new_password,
-    })
-    // 更新 store 中的 needs_password_change 状态
-    if (authStore.user) {
-      authStore.user.needs_password_change = false
-      localStorage.setItem('auth_user', JSON.stringify(authStore.user))
+    const changed = await authStore.changePassword(
+      form.value.old_password,
+      form.value.new_password,
+    )
+    if (!changed) {
+      ElMessage.error('修改失败，请检查旧密码是否正确')
+      return
     }
     // 弹出密保问题设置弹窗
     showSecurityDialog.value = true
@@ -180,11 +178,13 @@ const handleSubmit = async () => {
 }
 
 .card-header {
-  font-size: 1rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text, #303133);
+  text-wrap: balance;
 }
 
 .form-group {

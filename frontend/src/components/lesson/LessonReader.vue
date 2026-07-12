@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import type { Material } from '@/api/material'
 import type { Lesson } from '@/api/lesson'
-import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
+import AuthenticatedLessonVideo from '@/components/lesson/AuthenticatedLessonVideo.vue'
 
 const props = defineProps<{
   lesson: Lesson | null
   materials: Material[]
   fileUrlResolver?: (material: Material) => string
+  resumePosition?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'preview', material: Material): void
+  (e: 'video-progress', payload: { currentTime: number; duration: number; ended: boolean }): void
+  (e: 'content-kind', hasVideo: boolean): void
 }>()
 
 type Segment =
@@ -49,10 +52,22 @@ const segments = computed<Segment[]>(() => {
   return result
 })
 
+const hasVideoMaterial = computed(() =>
+  segments.value.some(
+    segment => segment.type === 'material' && segment.materialType === 'video',
+  ),
+)
+
+watch(
+  hasVideoMaterial,
+  hasVideo => emit('content-kind', hasVideo),
+  { immediate: true },
+)
+
 function materialFileUrl(material: Material): string {
-  if (props.fileUrlResolver) return resolveFileUrl(props.fileUrlResolver(material))
-  if (material.file_id) return resolveFileUrl(`/api/files/${material.file_id}`)
-  return resolveFileUrl(material.url)
+  if (props.fileUrlResolver) return props.fileUrlResolver(material)
+  if (material.file_id) return `/api/files/${material.file_id}`
+  return material.url
 }
 </script>
 
@@ -74,11 +89,10 @@ function materialFileUrl(material: Material): string {
         <div v-else-if="segment.type === 'material'" class="lesson-material-embed">
           <template v-if="segment.material">
             <div v-if="segment.materialType === 'video'" class="video-wrapper">
-              <video
-                class="lesson-video"
-                :src="materialFileUrl(segment.material)"
-                controls
-                preload="metadata"
+              <AuthenticatedLessonVideo
+                :source-url="materialFileUrl(segment.material)"
+                :resume-position="resumePosition"
+                @video-progress="emit('video-progress', $event)"
               />
             </div>
             <MaterialRichCard

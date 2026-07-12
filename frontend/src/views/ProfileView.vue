@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { getWrongQuestions, getLikedProjects, type WrongQuestion, type LikedProject } from '@/api/profile'
 import { getSecurityQuestions, updateSecurityQuestions, type SecurityQuestionItem } from '@/api/auth'
-import { resolveFileUrl } from '@/utils/url'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 import { useRouter } from 'vue-router'
 
 const authStore = useAuthStore()
@@ -403,9 +403,10 @@ function handleTabChange(name: string) {
               @click="router.push(`/create/project/${project.id}`)"
             >
               <div class="card-cover">
-                <img
-                  v-if="project.image_url || (project.images && project.images.length)"
-                  :src="resolveFileUrl(project.image_url || project.images[0]?.image_url)"
+                <AuthenticatedFileImage
+                  v-if="project.cover_file_id || project.images?.[0]?.file_id || project.images?.[0]?.image_url || project.image_url"
+                  :file-id="project.cover_file_id || project.images?.[0]?.file_id"
+                  :fallback-url="project.images?.[0]?.image_url || project.image_url"
                   :alt="project.title"
                 />
                 <div v-else class="cover-placeholder">暂无封面</div>
@@ -437,18 +438,23 @@ function handleTabChange(name: string) {
 }
 
 .page-header h1 {
-  font-size: 1.6rem;
-  font-weight: 600;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text-primary, #1a1a1a);
   margin: 0 0 4px;
+  text-wrap: balance;
 }
 
 .subtitle {
   color: var(--color-text-muted, #888);
-  font-size: 0.9rem;
+  max-width: 72ch;
+  font-size: var(--text-muted);
+  line-height: var(--leading-compact);
   margin: 0;
+  text-wrap: pretty;
 }
 
 .portfolio-section {
@@ -472,24 +478,27 @@ function handleTabChange(name: string) {
   color: var(--color-act);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.03em;
 }
 
 .portfolio-content h3 {
-  font-family: var(--font-serif);
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .portfolio-content p {
   max-width: 640px;
-  font-size: 0.85rem;
+  font-size: var(--text-muted);
   color: var(--color-text-secondary);
-  line-height: 1.7;
+  line-height: var(--leading-body);
   margin-bottom: var(--space-md);
+  text-wrap: pretty;
 }
 
 .portfolio-features {

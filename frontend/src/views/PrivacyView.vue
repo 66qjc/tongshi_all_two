@@ -68,17 +68,23 @@
 }
 
 .hero-inner h1 {
-  font-size: 2rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  font-size: 1rem;
+  max-width: 65ch;
+  margin: 0 auto;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
+  text-wrap: pretty;
 }
 
 .content-section {
@@ -91,19 +97,22 @@
 }
 
 .content-block h2 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-md);
+  text-wrap: balance;
 }
 
 .content-block p {
-  font-size: 0.95rem;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: var(--leading-body);
   margin-bottom: var(--space-sm);
+  text-wrap: pretty;
 }
 
 .content-block ul {
@@ -112,9 +121,10 @@
 }
 
 .content-block li {
-  font-size: 0.95rem;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: var(--leading-body);
   list-style: disc;
+  text-wrap: pretty;
 }
 </style>

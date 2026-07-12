@@ -70,6 +70,9 @@ http.interceptors.response.use(
     return response.data.data
   },
   (error) => {
+    if (axios.isCancel(error) || error?.code === 'ERR_CANCELED') {
+      return Promise.reject(error)
+    }
     // HTTP 401（FastAPI/Starlette 层面返回的，非 BusinessException）
     if (error.response?.status === 401) {
       if (isLoginRequest(error.config?.url)) {

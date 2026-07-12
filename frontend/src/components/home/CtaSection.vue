@@ -43,8 +43,9 @@ const router = useRouter()
   position: relative;
   padding: var(--space-xl) var(--space-2xl);
   background: var(--gradient-hero);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
+  box-shadow: var(--shadow-xl);
 }
 
 .cta-bg {
@@ -110,18 +111,22 @@ const router = useRouter()
 }
 
 .cta-title {
-  font-family: var(--font-serif);
-  font-size: clamp(1.2rem, 3vw, 1.5rem);
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
   font-weight: 900;
   color: white;
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.06em;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .cta-desc {
-  font-size: 0.88rem;
+  max-width: 65ch;
+  font-size: var(--text-muted);
   color: rgba(255, 255, 255, 0.55);
-  line-height: 1.7;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .cta-actions {

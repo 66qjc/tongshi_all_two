@@ -153,18 +153,19 @@ function goToFreePractice(courseId: number) {
   object-fit: contain;
 }
 .hero-inner h1 {
-  font-family: var(--font-serif); font-size: 1.8rem; font-weight: 900;
-  color: var(--color-text); margin-bottom: var(--space-sm); letter-spacing: 0.05em;
+  font-family: var(--font-sans); font-size: var(--text-page-title); font-weight: 900;
+  line-height: var(--leading-title); color: var(--color-text); margin-bottom: var(--space-sm); letter-spacing: 0;
+  text-wrap: balance;
 }
-.hero-inner p { font-size: 0.92rem; color: var(--color-text-secondary); }
+.hero-inner p { font-size: var(--text-body); color: var(--color-text-secondary); line-height: var(--leading-body); }
 
 .section-block { padding: var(--space-2xl) 0; }
 .section-block + .section-block { border-top: 1px solid var(--color-border-light); }
 .free-section { background: var(--color-bg-alt); }
 
 .section-title {
-  font-family: var(--font-serif); font-size: 1.15rem; font-weight: 700;
-  color: var(--color-text); margin-bottom: var(--space-lg); letter-spacing: 0.03em;
+  font-family: var(--font-sans); font-size: var(--text-section-title); font-weight: 900;
+  line-height: var(--leading-title); color: var(--color-text); margin-bottom: var(--space-lg); letter-spacing: 0;
 }
 
 .card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
@@ -174,8 +175,8 @@ function goToFreePractice(courseId: number) {
   border: 1px solid var(--color-border); border-radius: var(--radius-md);
 }
 .hw-card h3, .free-card h3 {
-  font-family: var(--font-serif); font-size: 1rem; font-weight: 700;
-  color: var(--color-text); margin-bottom: var(--space-md); letter-spacing: 0.03em;
+  font-family: var(--font-sans); font-size: var(--text-card-title); font-weight: 800;
+  line-height: var(--leading-compact); color: var(--color-text); margin-bottom: var(--space-md); letter-spacing: 0;
 }
 
 .hw-stats { display: flex; gap: var(--space-sm); }
@@ -187,7 +188,7 @@ function goToFreePractice(courseId: number) {
 .hw-stat.done:hover { background: rgba(16,185,129,0.15); }
 .hw-stat.pending { background: rgba(245,158,11,0.08); }
 .hw-stat.pending:hover { background: rgba(245,158,11,0.15); }
-.hw-num { display: block; font-size: 1.5rem; font-weight: 800; }
+.hw-num { display: block; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .hw-stat.done .hw-num { color: #10b981; }
 .hw-stat.pending .hw-num { color: #f59e0b; }
 .hw-label { font-size: 0.75rem; color: var(--color-text-muted); }

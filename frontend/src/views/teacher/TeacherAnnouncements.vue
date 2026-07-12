@@ -101,6 +101,12 @@ function getQuestionTypeLabel(type: Question['type']) {
   return '填空题'
 }
 
+function getQuestionTagType(type: Question['type']) {
+  if (type === 'choice') return 'primary'
+  if (type === 'multi_choice') return 'warning'
+  return 'success'
+}
+
 function getQuestionPreview(stem: string, length = 52) {
   return stem.length > length ? `${stem.slice(0, length)}...` : stem
 }
@@ -432,7 +438,7 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="题型" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.type === 'choice' ? '' : row.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
+                <el-tag :type="getQuestionTagType(row.type)" size="small" effect="plain">
                   {{ getQuestionTypeLabel(row.type) }}
                 </el-tag>
               </template>
@@ -460,7 +466,7 @@ onMounted(async () => {
             <div v-for="item in selectedQuestions" :key="item.id" class="selected-question-item">
               <div class="selected-question-main">
                 <div class="selected-question-tags">
-                  <el-tag :type="item.type === 'choice' ? '' : item.type === 'multi_choice' ? 'warning' : 'success'" size="small" effect="plain">
+                  <el-tag :type="getQuestionTagType(item.type)" size="small" effect="plain">
                     {{ getQuestionTypeLabel(item.type) }}
                   </el-tag>
                   <el-tag v-for="tag in item.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>

@@ -33,7 +33,7 @@ export function getMe() {
 
 // 修改密码（需登录态，旧密码 + 新密码）
 export function changePassword(data: { old_password: string; new_password: string }) {
-  return http.put<any, { message: string }>('/change-password', data)
+  return http.put<any, { message: string; access_token: string }>('/change-password', data)
 }
 
 // ── 密保问题管理（需登录）─────────────────────────────────────────────

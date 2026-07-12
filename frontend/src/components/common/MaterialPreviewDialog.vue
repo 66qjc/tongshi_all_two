@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Material } from '@/api/material'
-import { getMaterialFileUrl } from '@/api/material'
-import { resolveFileUrl } from '@/utils/url'
+import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
 
 const props = defineProps<{
   visible: boolean
@@ -18,25 +17,52 @@ const dialogVisible = computed({
   set: (val) => emit('update:visible', val),
 })
 
-const resolvedPreviewUrl = computed(() => {
-  if (props.previewUrl) return resolveFileUrl(props.previewUrl)
+function resolvePreviewSource() {
   if (!props.material) return ''
-  return resolveFileUrl(getMaterialFileUrl(props.material.id))
-})
+  if (props.previewUrl) return props.previewUrl
+  if (props.material.file_id) return `/api/files/${props.material.file_id}`
+  if (props.material.url) return props.material.url
+  return ''
+}
+
+const previewSourceUrl = computed(resolvePreviewSource)
+
+const previewEnabled = computed(() => Boolean(props.visible && props.material && previewSourceUrl.value))
+const {
+  resolvedUrl,
+  loading: previewLoading,
+  error: previewError,
+  retryOnce,
+} = useAuthenticatedFileUrl(
+  previewSourceUrl,
+  { enabled: previewEnabled },
+)
 
 const isVideo = computed(() => props.material?.type === 'video')
 const isPdf = computed(() => props.material?.type === 'pdf')
 
+function handlePreviewError(event: Event) {
+  const target = event.currentTarget
+  const failedUrl = target instanceof HTMLVideoElement
+    ? target.getAttribute('src') || ''
+    : target instanceof HTMLObjectElement
+      ? target.getAttribute('data') || ''
+      : ''
+  void retryOnce(failedUrl)
+}
+
 function openInNewWindow() {
-  if (resolvedPreviewUrl.value) window.open(resolvedPreviewUrl.value, '_blank', 'noopener')
+  if (resolvedUrl.value) window.open(resolvedUrl.value, '_blank', 'noopener')
 }
 </script>
 
 <template>
   <el-dialog v-model="dialogVisible" title="资料预览" width="80%" destroy-on-close>
-    <div v-if="material && resolvedPreviewUrl" class="material-preview-dialog">
-      <video v-if="isVideo" class="preview-video" :src="resolvedPreviewUrl" controls preload="metadata" />
-      <object v-else-if="isPdf" class="preview-pdf" :data="resolvedPreviewUrl" type="application/pdf">
+    <div v-if="material && previewSourceUrl" class="material-preview-dialog">
+      <div v-if="previewLoading" class="preview-fallback">文件加载中，请稍候。</div>
+      <div v-else-if="previewError" class="preview-fallback">{{ previewError }}</div>
+      <video v-else-if="isVideo && resolvedUrl" :key="resolvedUrl" class="preview-video" :src="resolvedUrl" controls preload="metadata" @error="handlePreviewError" />
+      <object v-else-if="isPdf && resolvedUrl" :key="resolvedUrl" class="preview-pdf" :data="resolvedUrl" type="application/pdf" @error="handlePreviewError">
         <div class="preview-fallback">浏览器无法直接预览 PDF，请在新窗口打开。</div>
       </object>
       <div v-else class="preview-fallback">该资料类型暂不支持站内预览。</div>
@@ -44,7 +70,7 @@ function openInNewWindow() {
     <div v-else class="preview-fallback">暂无可预览文件。</div>
     <template #footer>
       <el-button @click="dialogVisible = false">关闭</el-button>
-      <el-button type="primary" :disabled="!resolvedPreviewUrl" @click="openInNewWindow">在新窗口打开</el-button>
+      <el-button type="primary" :disabled="!resolvedUrl" @click="openInNewWindow">在新窗口打开</el-button>
     </template>
   </el-dialog>
 </template>

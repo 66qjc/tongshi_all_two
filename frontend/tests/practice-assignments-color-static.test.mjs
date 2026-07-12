@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const root = resolve(process.cwd(), 'src')
-const assignments = readFileSync(resolve(root, 'views/PracticeAssignments.vue'), 'utf8')
+const root = resolve(import.meta.dirname, '..')
+const assignments = readFileSync(resolve(root, 'src/views/PracticeAssignments.vue'), 'utf8')
 
 assertPracticeAssignmentColorSystem()
 

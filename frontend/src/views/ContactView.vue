@@ -115,17 +115,23 @@ async function handleSubmit() {
 }
 
 .hero-inner h1 {
-  font-size: 2rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  font-size: 1rem;
+  max-width: 65ch;
+  margin: 0 auto;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
+  text-wrap: pretty;
 }
 
 .content-section {
@@ -146,12 +152,14 @@ async function handleSubmit() {
 }
 
 .contact-form-card h2 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-xl);
+  text-wrap: balance;
 }
 
 .contact-info-card {
@@ -162,12 +170,14 @@ async function handleSubmit() {
 }
 
 .contact-info-card h2 {
-  font-size: 1.2rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-xl);
+  text-wrap: balance;
 }
 
 .info-item {

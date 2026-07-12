@@ -415,11 +415,13 @@ async function handleFirstLoginChange() {
 }
 
 .brand-content h1 {
-  font-family: var(--font-serif);
-  font-size: 1.7rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   margin-bottom: var(--space-sm);
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .brand-content p {
@@ -440,7 +442,7 @@ async function handleFirstLoginChange() {
   background: rgba(255, 255, 255, 0.1);
   padding: 0.25rem 0.7rem;
   border-radius: var(--radius-sm);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.02em;
 }
 
 .form-side {
@@ -457,12 +459,14 @@ async function handleFirstLoginChange() {
 }
 
 .form-content h2 {
-  font-family: var(--font-serif);
-  font-size: 1.4rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .form-subtitle {

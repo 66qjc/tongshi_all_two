@@ -88,7 +88,7 @@ const modules = [
 
 <style scoped>
 .module-showcase {
-  padding: var(--space-3xl) 0;
+  padding: var(--space-3xl) 0 var(--space-3xl);
   background: var(--color-bg);
 }
 
@@ -99,54 +99,61 @@ const modules = [
 
 .section-tag {
   display: inline-block;
-  padding: 0.25rem 0.72rem;
+  padding: 0.22rem 0.68rem;
   color: var(--color-primary);
   background: var(--color-primary-glow);
-  border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  border: 1px solid rgba(45, 90, 110, 0.12);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   margin-bottom: var(--space-md);
 }
 
 .section-title {
   margin-bottom: var(--space-sm);
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.65rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
   font-weight: 900;
-  letter-spacing: 0.03em;
+  line-height: var(--leading-title);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .section-desc {
-  max-width: 620px;
+  max-width: 65ch;
   color: var(--color-text-secondary);
-  font-size: 0.95rem;
-  line-height: 1.75;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .modules-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-md);
+  gap: 0.9rem;
 }
 
 .module-card {
   display: flex;
   flex-direction: column;
-  min-height: 240px;
+  min-height: 244px;
   padding: var(--space-lg);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   text-align: left;
-  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out), border-color 150ms var(--ease-out);
+  transition:
+    transform 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
 }
 
 .module-card:hover {
   border-color: var(--card-color);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
 }
 
 .module-card:active {
@@ -158,13 +165,14 @@ const modules = [
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   margin-bottom: var(--space-lg);
-  color: var(--color-bg-card);
+  color: #fffdf8;
   background: var(--card-color);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-serif);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
   font-weight: 900;
 }
 
@@ -179,49 +187,55 @@ const modules = [
   align-items: center;
   justify-content: space-between;
   gap: var(--space-md);
-  margin-bottom: var(--space-sm);
+  margin-bottom: 0.45rem;
 }
 
 .module-topline strong {
   color: var(--color-text);
-  font-size: 1rem;
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  text-wrap: balance;
 }
 
 .module-topline span {
   color: var(--card-color);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
+  white-space: nowrap;
+  opacity: 0.85;
 }
 
 .module-desc {
   color: var(--color-text-secondary);
-  font-size: 0.86rem;
-  line-height: 1.7;
+  font-size: 0.85rem;
+  line-height: 1.72;
 }
 
 .module-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-xs);
-  margin-top: var(--space-md);
+  gap: 5px;
+  margin-top: 0.9rem;
 }
 
 .module-actions span {
-  padding: 0.22rem 0.5rem;
+  padding: 0.2rem 0.52rem;
   color: var(--card-color);
-  background: var(--color-bg-alt);
-  border: 1px solid var(--color-border-light);
+  background: transparent;
+  border: 1px solid;
+  border-color: color-mix(in srgb, var(--card-color) 30%, transparent);
   border-radius: var(--radius-sm);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
 .module-status {
   margin-top: auto;
-  padding-top: var(--space-lg);
+  padding-top: var(--space-md);
   color: var(--color-text-muted);
-  font-size: 0.78rem;
-  line-height: 1.5;
+  font-size: 0.76rem;
+  line-height: 1.55;
 }
 
 @media (max-width: 1024px) {

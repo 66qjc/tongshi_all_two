@@ -6,6 +6,7 @@ import {
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
   ElCollapse,
   ElCollapseItem,
   ElDatePicker,
@@ -25,6 +26,7 @@ import {
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSegmented,
   ElSkeleton,
   ElSwitch,
   ElTable,
@@ -48,6 +50,7 @@ const elementPlusComponents = [
   ElAlert,
   ElButton,
   ElCard,
+  ElCheckbox,
   ElCollapse,
   ElCollapseItem,
   ElDatePicker,
@@ -66,6 +69,7 @@ const elementPlusComponents = [
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSegmented,
   ElSkeleton,
   ElSwitch,
   ElTable,
@@ -81,6 +85,8 @@ app.use(router)
 elementPlusComponents.forEach(component => {
   app.use(component)
 })
+app.component('el-radio-group', ElRadioGroup)
+app.component('el-radio-button', ElRadioButton)
 app.use(ElLoading)
 provideGlobalConfig({ locale: zhCn }, app, true)
 app.component('Loading', Loading)

@@ -8,11 +8,12 @@ const route = useRoute()
 const router = useRouter()
 
 const taskId = computed(() => Number(route.params.taskId))
+const ALL_CLASSES_VALUE = 'all'
 
 // ── 状态 ──
 const report = ref<CompletionReport | null>(null)
 const loading = ref(true)
-const selectedClassId = ref<number | null>(null)
+const selectedClassId = ref<number | typeof ALL_CLASSES_VALUE>(ALL_CLASSES_VALUE)
 const activeTab = ref<'completed' | 'incomplete'>('completed')
 const completedPage = ref(1)
 const incompletePage = ref(1)
@@ -56,7 +57,7 @@ function getNormalizedScore(score: number, totalQuestions: number): number {
 const classOptions = computed(() => {
   if (!report.value?.per_class) return []
   return [
-    { label: '全部班级', value: null },
+    { label: '全部班级', value: ALL_CLASSES_VALUE },
     ...report.value.per_class.map(item => ({
       label: item.class_name,
       value: item.class_id,
@@ -90,7 +91,7 @@ async function loadReport() {
   loading.value = true
   try {
     report.value = await getCompletionReport(taskId.value, {
-      class_id: selectedClassId.value || undefined,
+      class_id: selectedClassId.value === ALL_CLASSES_VALUE ? undefined : selectedClassId.value,
       completed_page: completedPage.value,
       completed_page_size: pageSize.value,
       incomplete_page: incompletePage.value,
@@ -124,7 +125,7 @@ async function exportTab(tab: 'completed' | 'incomplete') {
   if (!Number.isFinite(taskId.value)) return
   try {
     const full = await getCompletionReport(taskId.value, {
-      class_id: selectedClassId.value || undefined,
+      class_id: selectedClassId.value === ALL_CLASSES_VALUE ? undefined : selectedClassId.value,
       completed_page: 1,
       completed_page_size: 9999,
       incomplete_page: 1,
@@ -196,7 +197,7 @@ onMounted(() => {
         >
           <el-option
             v-for="opt in classOptions"
-            :key="opt.value ?? 'all'"
+            :key="opt.value"
             :label="opt.label"
             :value="opt.value"
           />

@@ -14,7 +14,6 @@ import {
 import type { Material } from '@/api/material'
 import { createMaterial, deleteMaterial, getCourseContents, updateMaterial, rebuildMaterialPreview } from '@/api/material'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
-import { resolveFileUrl } from '@/utils/url'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 import {
@@ -27,6 +26,7 @@ import {
   type LessonCreatePayload,
   type LessonUpdatePayload,
 } from '@/api/lesson'
+import { getCourseAnalytics, type CourseAnalytics } from '@/api/progress'
 
 const LessonEditor = defineAsyncComponent(() => import('@/components/lesson/LessonEditor.vue'))
 
@@ -58,20 +58,21 @@ const materialDialogVisible = ref(false)
 const isEditMaterial = ref(false)
 const editingMaterialId = ref<number | null>(null)
 const defaultStageId = ref<number | null>(null)
+const UNCATEGORIZED_STAGE_VALUE = 'uncategorized'
 const materialForm = reactive<{
   title: string
   type: 'video' | 'pdf'
-  stage_id: number | null
+  stage_id: number | typeof UNCATEGORIZED_STAGE_VALUE
   file: File | null
 }>({
   title: '',
   type: 'video',
-  stage_id: null,
+  stage_id: UNCATEGORIZED_STAGE_VALUE,
   file: null,
 })
 
 // 标签页
-const activeTab = ref<'materials' | 'lessons'>('materials')
+const activeTab = ref<'materials' | 'lessons' | 'analytics'>('materials')
 
 // 课时管理
 const lessons = ref<Lesson[]>([])
@@ -92,6 +93,12 @@ const lessonForm = reactive<{
 })
 const savingLesson = ref(false)
 const lessonEditorRef = ref<LessonEditorExpose | null>(null)
+
+// 学习分析
+const analytics = ref<CourseAnalytics | null>(null)
+const analyticsLoading = ref(false)
+const analyticsPage = ref(1)
+const analyticsPageSize = ref(20)
 
 // 资料选择器
 const materialSelectorVisible = ref(false)
@@ -239,19 +246,6 @@ async function handleDeleteStage(stage: CourseStage) {
   }
 }
 
-function materialUrl(material: Material) {
-  return resolveFileUrl(material.file_id ? `/api/files/${material.file_id}` : material.url)
-}
-
-function openMaterial(material: Material) {
-  const url = materialUrl(material)
-  if (!url) {
-    ElMessage.warning('该资料暂无可访问文件')
-    return
-  }
-  window.open(url, '_blank', 'noopener')
-}
-
 const previewVisible = ref(false)
 const selectedMaterial = ref<Material | null>(null)
 
@@ -273,7 +267,7 @@ async function handleRebuildPreview(material: Material) {
 function resetMaterialForm() {
   materialForm.title = ''
   materialForm.type = 'video'
-  materialForm.stage_id = defaultStageId.value
+  materialForm.stage_id = defaultStageId.value ?? UNCATEGORIZED_STAGE_VALUE
   materialForm.file = null
   if (uploadInput.value) uploadInput.value.value = ''
 }
@@ -291,7 +285,7 @@ function openEditMaterial(material: Material) {
   editingMaterialId.value = material.id
   materialForm.title = material.title
   materialForm.type = material.type as 'video' | 'pdf'
-  materialForm.stage_id = material.stage_id ?? null
+  materialForm.stage_id = material.stage_id ?? UNCATEGORIZED_STAGE_VALUE
   materialForm.file = null
   materialDialogVisible.value = true
 }
@@ -311,7 +305,7 @@ async function handleSaveMaterial() {
     try {
       await updateMaterial(editingMaterialId.value, {
         title,
-        stage_id: materialForm.stage_id,
+        stage_id: materialForm.stage_id === UNCATEGORIZED_STAGE_VALUE ? null : materialForm.stage_id,
       })
       ElMessage.success('资料更新成功')
       materialDialogVisible.value = false
@@ -341,7 +335,7 @@ async function handleSaveMaterial() {
         url: uploaded.url,
         size: formatFileSize(uploaded.size),
         file_id: uploaded.file_id,
-        stage_id: materialForm.stage_id,
+        stage_id: materialForm.stage_id === UNCATEGORIZED_STAGE_VALUE ? null : materialForm.stage_id,
       })
     } catch {
       ElMessage.error('资料记录创建失败，文件已上传但资料未保存，请重试')
@@ -480,9 +474,48 @@ function handleInsertMaterial(material: Material) {
   materialSelectorVisible.value = false
 }
 
+function formatDuration(seconds: number) {
+  if (!seconds) return '0 分钟'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest ? `${hours} 小时 ${rest} 分钟` : `${hours} 小时`
+}
+
+async function loadAnalytics() {
+  analyticsLoading.value = true
+  try {
+    const result = await getCourseAnalytics(
+      courseId.value,
+      analyticsPage.value,
+      analyticsPageSize.value,
+    )
+    analytics.value = result
+    analyticsPage.value = result.student_progress.page
+    analyticsPageSize.value = result.student_progress.page_size
+  } catch {
+    ElMessage.error('学习分析加载失败，请稍后重试')
+  } finally {
+    analyticsLoading.value = false
+  }
+}
+
+function handleAnalyticsPageChange(page: number) {
+  analyticsPage.value = page
+  void loadAnalytics()
+}
+
+function handleAnalyticsPageSizeChange(pageSize: number) {
+  analyticsPageSize.value = pageSize
+  analyticsPage.value = 1
+  void loadAnalytics()
+}
+
 onMounted(() => {
   loadCourse()
   loadLessons()
+  loadAnalytics()
 })
 </script>
 
@@ -606,6 +639,104 @@ onMounted(() => {
           <el-empty v-if="!sortedLessons.length && !lessonLoading" description="暂无课时，可点击右上角新增" />
         </div>
       </el-tab-pane>
+
+
+      <el-tab-pane label="学习分析" name="analytics">
+        <div class="section-card analytics-section" v-loading="analyticsLoading">
+          <div class="section-header">
+            <h2>课程学习分析</h2>
+            <el-button size="small" @click="loadAnalytics">刷新数据</el-button>
+          </div>
+
+          <div v-if="analytics" class="analytics-overview">
+            <div class="analytics-card">
+              <span class="analytics-label">班级学生数</span>
+              <strong>{{ analytics.student_count }}</strong>
+            </div>
+            <div class="analytics-card">
+              <span class="analytics-label">课时数</span>
+              <strong>{{ analytics.lesson_count }}</strong>
+            </div>
+            <div class="analytics-card">
+              <span class="analytics-label">整体完成率</span>
+              <strong>{{ analytics.avg_completion_rate }}%</strong>
+            </div>
+            <div class="analytics-card">
+              <span class="analytics-label">平均学习时长</span>
+              <strong>{{ formatDuration(analytics.avg_duration) }}</strong>
+            </div>
+          </div>
+
+          <el-table
+            v-if="analytics"
+            :data="analytics.student_progress.items"
+            stripe
+            size="small"
+            class="student-progress-table"
+            empty-text="暂无学生学习进度"
+          >
+            <el-table-column prop="student_name" label="学生" min-width="140" />
+            <el-table-column prop="student_id" label="学号" min-width="120" />
+            <el-table-column label="完成课时" min-width="120">
+              <template #default="{ row }">
+                {{ row.completed_lessons }} / {{ row.total_lessons }}
+              </template>
+            </el-table-column>
+            <el-table-column label="完成率" min-width="140">
+              <template #default="{ row }">
+                <el-progress :percentage="row.completion_rate" :stroke-width="8" />
+              </template>
+            </el-table-column>
+            <el-table-column label="学习时长" min-width="120">
+              <template #default="{ row }">{{ formatDuration(row.duration_seconds) }}</template>
+            </el-table-column>
+            <el-table-column label="疑似刷课" min-width="110" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.fast_completion_count > 0 ? 'danger' : 'success'" size="small">
+                  {{ row.fast_completion_count > 0 ? `${row.fast_completion_count} 次` : '无' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <div
+            v-if="analytics && analytics.student_progress.total > 0"
+            class="analytics-pagination"
+          >
+            <el-pagination
+              v-model:current-page="analyticsPage"
+              v-model:page-size="analyticsPageSize"
+              :page-sizes="[20, 50, 100]"
+              :total="analytics.student_progress.total"
+              :disabled="analyticsLoading"
+              layout="total, sizes, prev, pager, next, jumper"
+              @current-change="handleAnalyticsPageChange"
+              @size-change="handleAnalyticsPageSizeChange"
+            />
+          </div>
+
+          <div v-if="analytics" class="analytics-columns">
+            <div class="analytics-list">
+              <h3>热门课时</h3>
+              <el-empty v-if="analytics.most_viewed_lessons.length === 0" description="暂无课时浏览数据" :image-size="80" />
+              <div v-for="item in analytics.most_viewed_lessons" :key="`hot-${item.lesson_id}`" class="analytics-list-item">
+                <span>{{ item.title }}</span>
+                <small>浏览 {{ item.view_count }} 次，平均进度 {{ item.avg_progress_percent }}%</small>
+              </div>
+            </div>
+            <div class="analytics-list">
+              <h3>低完成课时</h3>
+              <el-empty v-if="analytics.low_completion_lessons.length === 0" description="暂无低完成课时" :image-size="80" />
+              <div v-for="item in analytics.low_completion_lessons" :key="`low-${item.lesson_id}`" class="analytics-list-item warning">
+                <span>{{ item.title }}</span>
+                <small>完成率 {{ item.completion_rate }}%，疑似刷课 {{ item.fast_completion_count }} 次</small>
+              </div>
+            </div>
+          </div>
+
+          <el-empty v-if="!analytics && !analyticsLoading" description="暂无学习分析数据" />
+        </div>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 编辑课程信息 -->
@@ -640,7 +771,7 @@ onMounted(() => {
       <div class="form-group">
         <label>所属阶段</label>
         <el-select v-model="materialForm.stage_id" placeholder="未分类" clearable style="width: 100%">
-          <el-option label="未分类" :value="null" />
+          <el-option label="未分类" :value="UNCATEGORIZED_STAGE_VALUE" />
           <el-option v-for="stage in sortedStages" :key="stage.id" :label="stage.name" :value="stage.id" />
         </el-select>
       </div>
@@ -749,6 +880,21 @@ onMounted(() => {
 .detail-tabs { margin-bottom: var(--space-lg); }
 .lessons-section { min-height: 200px; }
 .lesson-actions { display: flex; justify-content: flex-end; margin-top: var(--space-md); }
+.analytics-section { min-height: 260px; }
+.analytics-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-md); margin-bottom: var(--space-lg); }
+.analytics-card { padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-alt); }
+.analytics-label { display: block; color: var(--color-text-muted); font-size: 0.82rem; margin-bottom: var(--space-xs); }
+.analytics-card strong { font-size: 1.35rem; color: var(--color-primary); }
+.student-progress-table { margin-bottom: var(--space-md); }
+.analytics-pagination { display: flex; justify-content: flex-end; overflow-x: auto; padding-bottom: 2px; margin-bottom: var(--space-lg); }
+.analytics-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-md); }
+.analytics-list { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); background: var(--color-bg-card); }
+.analytics-list h3 { margin: 0 0 var(--space-md); font-size: 1rem; color: var(--color-text); }
+.analytics-list-item { display: flex; flex-direction: column; gap: 4px; padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border-light); }
+.analytics-list-item:last-child { border-bottom: none; }
+.analytics-list-item span { font-weight: 700; color: var(--color-text); }
+.analytics-list-item small { color: var(--color-text-muted); }
+.analytics-list-item.warning span { color: #b88230; }
 .editor-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-sm); }
 .editor-label-row label { margin-bottom: 0; }
 .material-selector-list { display: flex; flex-direction: column; gap: var(--space-sm); max-height: 420px; overflow-y: auto; }

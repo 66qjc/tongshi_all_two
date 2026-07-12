@@ -4,6 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { getProject, toggleLike as apiToggleLike, type Project } from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
 import { resolveFileUrl } from '@/utils/url'
+import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
+
+interface ProtectedImageSource {
+  fileId?: number
+  url: string
+  key: string
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -13,22 +21,50 @@ const project = ref<Project | null>(null)
 const loading = ref(true)
 const liked = ref(false)
 const relatedProjects = ref<{ id: number; title: string; author: string }[]>([])
-const previewImage = ref('')
+const previewImage = ref<ProtectedImageSource | null>(null)
 const imagePreviewVisible = ref(false)
 
 const projectId = computed(() => Number(route.params.id))
-const imageList = computed(() => {
+const imageList = computed<ProtectedImageSource[]>(() => {
   if (!project.value) return []
   if (project.value.images && project.value.images.length > 0) {
-    return project.value.images.map(item => resolveFileUrl(item.image_url))
+    return project.value.images.map((item, index) => ({
+      fileId: item.file_id,
+      url: item.image_url,
+      key: String(item.id || item.file_id || `${project.value?.id}-${index}`),
+    }))
   }
-  return project.value.image_url ? [resolveFileUrl(project.value.image_url)] : []
+  if (!project.value.image_url && !project.value.cover_file_id) return []
+  return [{
+    fileId: project.value.cover_file_id,
+    url: project.value.image_url,
+    key: `legacy-${project.value.id}`,
+  }]
+})
+const projectCover = computed<ProtectedImageSource | null>(() => {
+  if (!project.value) return null
+  const firstImage = imageList.value[0]
+  const fileId = project.value.cover_file_id || firstImage?.fileId
+  const url = firstImage?.url || project.value.image_url
+  return fileId || url ? { fileId, url, key: `cover-${project.value.id}` } : null
 })
 const canResubmit = computed(() => {
   if (!project.value) return false
   return project.value.status === 'rejected' && project.value.author_id === authStore.user?.id
 })
 const projectLink = computed(() => project.value?.link_url || project.value?.video_url || '')
+const reportSource = computed(() => {
+  const currentProject = project.value
+  if (!currentProject) return ''
+  if (currentProject.report_file_id) return `/api/files/${currentProject.report_file_id}`
+  return currentProject.report_url || ''
+})
+const reportEnabled = computed(() => Boolean(reportSource.value))
+const {
+  resolvedUrl: reportResolvedUrl,
+  loading: reportLoading,
+  error: reportError,
+} = useAuthenticatedFileUrl(reportSource, { enabled: reportEnabled })
 
 onMounted(async () => {
   try {
@@ -52,7 +88,7 @@ function goResubmit() {
   router.push(`/create/upload?projectId=${project.value.id}`)
 }
 
-function openPreview(image: string) {
+function openPreview(image: ProtectedImageSource) {
   previewImage.value = image
   imagePreviewVisible.value = true
 }
@@ -70,7 +106,13 @@ function openPreview(image: string) {
 
       <div v-if="project" class="detail-content">
         <div class="project-image">
-          <img v-if="imageList.length > 0" :src="imageList[0]" alt="作品图片" class="hero-image" />
+          <AuthenticatedFileImage
+            v-if="projectCover"
+            :file-id="projectCover.fileId"
+            :fallback-url="projectCover.url"
+            alt="作品图片"
+            class="hero-image"
+          />
           <div v-else class="image-placeholder">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
               <path d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"
@@ -119,20 +161,26 @@ function openPreview(image: string) {
           <div class="gallery-grid">
             <button
               v-for="(image, index) in imageList"
-              :key="`${image}-${index}`"
+              :key="image.key"
               class="gallery-item"
               @click="openPreview(image)"
             >
-              <img :src="image" :alt="`作品图片 ${index + 1}`" />
+              <AuthenticatedFileImage
+                :file-id="image.fileId"
+                :fallback-url="image.url"
+                :alt="`作品图片 ${index + 1}`"
+              />
             </button>
           </div>
         </section>
 
-        <section v-if="project.report_url" class="detail-section">
+        <section v-if="reportSource" class="detail-section">
           <h3>课程报告</h3>
-          <a :href="resolveFileUrl(project.report_url)" target="_blank" rel="noopener" class="video-link">
+          <a v-if="reportResolvedUrl" :href="reportResolvedUrl" target="_blank" rel="noopener" class="video-link">
             在新窗口打开 PDF 报告
           </a>
+          <p v-else-if="reportLoading">正在获取报告访问地址，请稍候。</p>
+          <p v-else-if="reportError">{{ reportError }}</p>
         </section>
 
         <section v-if="projectLink" class="detail-section">
@@ -173,8 +221,14 @@ function openPreview(image: string) {
       </div>
     </div>
 
-    <el-dialog v-model="imagePreviewVisible" width="720px" append-to-body @close="previewImage = ''">
-      <img v-if="previewImage" :src="previewImage" alt="作品大图" class="preview-image" />
+    <el-dialog v-model="imagePreviewVisible" width="720px" append-to-body @close="previewImage = null">
+      <AuthenticatedFileImage
+        v-if="previewImage"
+        :file-id="previewImage.fileId"
+        :fallback-url="previewImage.url"
+        alt="作品大图"
+        class="preview-image"
+      />
     </el-dialog>
   </div>
 </template>
@@ -244,12 +298,14 @@ function openPreview(image: string) {
 }
 
 .project-header h1 {
-  font-size: 1.8rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
+  text-wrap: balance;
 }
 
 .project-author {
@@ -291,18 +347,22 @@ function openPreview(image: string) {
 }
 
 .detail-section h3 {
-  font-size: 1rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-md);
+  text-wrap: balance;
 }
 
 .detail-section p {
-  font-size: 0.95rem;
+  max-width: 72ch;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .tags {
@@ -435,12 +495,14 @@ function openPreview(image: string) {
 }
 
 .not-found h2 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .not-found p {

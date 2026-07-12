@@ -11,6 +11,8 @@ interface CourseProgressView {
   lastLessonId: number | null
   percent: number
   lessonCount: number
+  completedLessons: number
+  totalDuration: number
 }
 
 const router = useRouter()
@@ -41,14 +43,21 @@ async function loadProgressForCourses(courseList: Course[]) {
           getLessons(course.id),
         ])
         const lastLessonId = progress.last_lesson_id
-        let percent = 0
-        if (lastLessonId && lessons.length > 0) {
+        const lessonCount = progress.total_lessons || lessons.length
+        let percent = Math.round(progress.completion_rate || 0)
+        if (!percent && lastLessonId && lessons.length > 0) {
           const index = lessons.findIndex((lesson) => lesson.id === lastLessonId)
           percent = Math.round(((index >= 0 ? index + 1 : 1) / lessons.length) * 100)
         }
-        progressMap.value[course.id] = { lastLessonId, percent, lessonCount: lessons.length }
+        progressMap.value[course.id] = {
+          lastLessonId,
+          percent,
+          lessonCount,
+          completedLessons: progress.completed_lessons || 0,
+          totalDuration: progress.total_duration || 0,
+        }
       } catch {
-        progressMap.value[course.id] = { lastLessonId: null, percent: 0, lessonCount: 0 }
+        progressMap.value[course.id] = { lastLessonId: null, percent: 0, lessonCount: 0, completedLessons: 0, totalDuration: 0 }
       }
     }),
   )
@@ -99,7 +108,7 @@ async function loadCourses() {
 }
 
 function getProgress(courseId: number): CourseProgressView {
-  return progressMap.value[courseId] ?? { lastLessonId: null, percent: 0, lessonCount: 0 }
+  return progressMap.value[courseId] ?? { lastLessonId: null, percent: 0, lessonCount: 0, completedLessons: 0, totalDuration: 0 }
 }
 
 function isPublicCourse(courseId: number) {
@@ -369,14 +378,16 @@ const emptyText = computed(() => courseHint.value || '暂无公开课程内容')
   line-height: 1.18;
   font-weight: 900;
   letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .library-copy p:last-child {
-  max-width: 680px;
+  max-width: 72ch;
   margin: 18px 0 0;
   color: var(--library-muted);
   font-size: 1rem;
   line-height: 1.85;
+  text-wrap: pretty;
 }
 
 .library-facts {

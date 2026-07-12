@@ -10,6 +10,7 @@ import {
   type ShowcaseItemOut,
   type ContentBlock,
 } from '../../api/showcase'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const authStore = useAuthStore()
 
@@ -289,7 +290,11 @@ onMounted(fetchItems)
               <div v-for="item in welfareItems" :key="item.id" class="item-card">
                 <!-- 封面缩略图 -->
                 <div class="item-cover">
-                  <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                  <AuthenticatedFileImage
+                    v-if="item.cover_url"
+                    :fallback-url="item.cover_url"
+                    :alt="item.title"
+                  />
                   <div v-else class="cover-placeholder">
                     <span>无图</span>
                   </div>
@@ -344,7 +349,11 @@ onMounted(fetchItems)
               <div v-for="item in readingItems" :key="item.id" class="item-card">
                 <!-- 封面缩略图 -->
                 <div class="item-cover">
-                  <img v-if="item.cover_url" :src="item.cover_url" :alt="item.title" />
+                  <AuthenticatedFileImage
+                    v-if="item.cover_url"
+                    :fallback-url="item.cover_url"
+                    :alt="item.title"
+                  />
                   <div v-else class="cover-placeholder">
                     <span>无图</span>
                   </div>
@@ -447,7 +456,7 @@ onMounted(fetchItems)
               </div>
               <div v-else class="block-body block-image">
                 <template v-if="block.data.file_id">
-                  <img :src="`/api/files/${block.data.file_id}`" alt="图片预览" />
+                  <AuthenticatedFileImage :file-id="block.data.file_id" alt="图片预览" />
                   <el-input
                     :model-value="block.data.caption"
                     placeholder="可选：输入图片描述"
@@ -483,8 +492,12 @@ onMounted(fetchItems)
         <!-- 封面图片 -->
         <el-form-item label="封面图片">
           <!-- 已有封面预览 -->
-          <div v-if="coverPreviewUrl" class="cover-preview">
-            <img :src="coverPreviewUrl" alt="封面预览" />
+          <div v-if="coverFileId || coverPreviewUrl" class="cover-preview">
+            <AuthenticatedFileImage
+              :file-id="coverFileId"
+              :fallback-url="coverPreviewUrl"
+              alt="封面预览"
+            />
             <span class="cover-preview-tip">当前封面（上传新图后替换）</span>
           </div>
           <!-- 上传控件：直接提交至后端，带 Authorization 请求头 -->
@@ -545,6 +558,7 @@ onMounted(fetchItems)
 /* ── 页面整体 ──────────────────────────────────────────────── */
 .showcase-page {
   max-width: 1100px;
+  min-width: 0;
 }
 
 .page-header {
@@ -816,5 +830,51 @@ onMounted(fetchItems)
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .page-header,
+  .item-card,
+  .block-header,
+  .block-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-header {
+    gap: 12px;
+  }
+
+  .item-card {
+    flex-direction: column;
+  }
+
+  .item-cover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 2;
+  }
+
+  .item-meta {
+    align-items: flex-start;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .meta-top,
+  .item-actions,
+  .block-actions {
+    flex-wrap: wrap;
+  }
+
+  .cover-preview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .block-editor {
+    box-sizing: border-box;
+    padding: 10px;
+  }
 }
 </style>

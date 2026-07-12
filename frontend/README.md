@@ -9,9 +9,10 @@
 | `/learn` | `src/views/LearnView.vue` | 学生端课程列表 |
 | `/learn/course/:courseId` | `src/views/CourseDetailView.vue` | 学生端课程详情页 |
 | `/practice` | `src/views/PracticeView.vue` | 学生端在线练习入口 |
-| `/practice/assignments` | `src/views/PracticeAssignmentsView.vue` | 学生端作业练习列表 |
+| `/practice/assignments` | `src/views/PracticeAssignments.vue` | 学生端作业练习列表 |
 | `/practice/quiz/:courseId` | `src/views/PracticeQuizView.vue` | 学生端答题页 |
 | `/inbox` | `src/views/InboxView.vue` | 学生端消息通知（任务/公告） |
+| `/student/notifications` | `src/views/InboxView.vue` | 学生端通知中心（与 `/inbox` 共用页面） |
 | `/create` | `src/views/CreateView.vue` | 学生端作品广场 |
 | `/create/upload` | `src/views/ProjectUploadView.vue` | 学生端提交/编辑作品 |
 | `/create/project/:id` | `src/views/ProjectDetailView.vue` | 作品详情页 |
@@ -53,6 +54,7 @@
 | `src/api/adminPublicCourse.ts` | 管理员：公共课程管理 + 内容管理 |
 | `src/api/profile.ts` | 个人中心：错题本 + 收藏作品 + 密保设置 |
 | `src/api/notification.ts` | 学生通知列表、未读计数、标记已读 |
+| `src/api/progress.ts` | 课时进度、课程进度汇总、教师课程分析分页 |
 | `src/api/showcase.ts` | 悟页面图文内容：管理员增删改查 + 公开只读 |
 
 课程体系的前端关系：
@@ -60,6 +62,8 @@
 - 教师端在”课程管理”页维护课程，在”资料管理”页上传资料。
 - 学生端先进入课程列表，再进入课程详情查看资料。
 - 资料、题目、学习进度全部直接挂在课程下，不使用独立章节。
+- 课时进度只有真实进入课时时增加访问次数；普通心跳和离页补报只累计时长。
+- 无视频课时由学生点击“完成本课”确认完成；教师端课程分析学生明细由后端分页。
 
 ## Recommended IDE Setup
 

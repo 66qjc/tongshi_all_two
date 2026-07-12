@@ -44,12 +44,14 @@ const router = useRouter()
 }
 
 .not-found-content h1 {
-  font-size: 1.5rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .not-found-content p {

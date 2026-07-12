@@ -20,6 +20,8 @@ const studentBusinessPathPrefixes = [
   '/act',
   '/portfolio',
   '/inbox',
+  '/student/notifications',
+  '/student/settings/notifications',
 ]
 
 function isStudentBusinessPath(path: string): boolean {
@@ -136,6 +138,18 @@ const router = createRouter({
       meta: { title: '消息通知' },
     },
     {
+      path: '/student/notifications',
+      name: 'student-notifications',
+      component: () => import('../views/InboxView.vue'),
+      meta: { title: '通知中心' },
+    },
+    {
+      path: '/student/settings/notifications',
+      name: 'student-notification-settings',
+      component: () => import('../views/InboxView.vue'),
+      meta: { title: '通知偏好' },
+    },
+    {
       path: '/teacher',
       component: () => import('../views/teacher/TeacherLayout.vue'),
       meta: { title: '教师工作台', role: 'teacher' },
@@ -212,6 +226,12 @@ const router = createRouter({
           component: () => import('../views/teacher/TeacherReviews.vue'),
           meta: { title: '作品审核' },
         },
+        {
+          path: 'random-picker',
+          name: 'teacher-random-picker',
+          component: () => import('../views/teacher/TeacherRandomPicker.vue'),
+          meta: { title: 'AI 随机点名' },
+        },
       ],
     },
     {
@@ -235,6 +255,16 @@ const router = createRouter({
           path: 'password-reset',
           component: () => import('../views/admin/AdminPasswordReset.vue'),
           meta: { title: '密码重置管理', role: 'admin' },
+        },
+        {
+          path: 'recycle-bin',
+          component: () => import('../views/admin/AdminRecycleBin.vue'),
+          meta: { title: '数据回收站', role: 'admin' },
+        },
+        {
+          path: 'audit-logs',
+          component: () => import('../views/admin/AdminAuditLogs.vue'),
+          meta: { title: '审计日志', role: 'admin' },
         },
       ],
     },

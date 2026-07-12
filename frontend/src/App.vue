@@ -16,9 +16,11 @@ const isWorkbenchRoute = computed(() => route.path.startsWith('/admin') || route
     <RouterView v-slot="{ Component, route: viewRoute }">
       <template v-if="Component">
         <Transition v-if="useTransition" name="page-fade">
-          <component :is="Component" :key="viewRoute.fullPath" />
+          <div :key="viewRoute.path" class="page-transition-shell">
+            <component :is="Component" />
+          </div>
         </Transition>
-        <component v-else :is="Component" :key="viewRoute.fullPath" />
+        <component v-else :is="Component" :key="viewRoute.path" />
       </template>
     </RouterView>
   </main>
@@ -29,6 +31,10 @@ const isWorkbenchRoute = computed(() => route.path.startsWith('/admin') || route
 <style scoped>
 main {
   min-height: calc(100vh - 64px - 200px);
+}
+
+.page-transition-shell {
+  min-height: inherit;
 }
 
 .page-fade-enter-active,

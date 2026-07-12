@@ -98,17 +98,23 @@ const modules = [
 }
 
 .hero-inner h1 {
-  font-size: 2rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  font-size: 1rem;
+  max-width: 65ch;
+  margin: 0 auto;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
+  text-wrap: pretty;
 }
 
 .content-section {
@@ -120,19 +126,22 @@ const modules = [
 }
 
 .about-block h2 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-lg);
+  text-wrap: balance;
 }
 
 .about-block > p {
-  font-size: 0.95rem;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.8;
-  max-width: 720px;
+  line-height: var(--leading-body);
+  max-width: 72ch;
+  text-wrap: pretty;
 }
 
 .philosophy-grid {
@@ -170,12 +179,14 @@ const modules = [
 }
 
 .phil-card h3 {
-  font-size: 1rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: var(--space-sm);
+  text-wrap: balance;
 }
 
 .phil-card p {
@@ -226,11 +237,13 @@ const modules = [
 }
 
 .ch-top h3 {
-  font-size: 1rem;
-  font-weight: 700;
-  font-family: var(--font-serif);
-  letter-spacing: 0.05em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
   color: var(--color-text);
+  text-wrap: balance;
 }
 
 .ch-tag {

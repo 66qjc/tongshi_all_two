@@ -21,6 +21,7 @@ const navItems = [
   { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
   { name: '学生管理', path: '/teacher/student-admin', icon: '&#9782;' },
   { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
+  { name: 'AI 点名', path: '/teacher/random-picker', icon: '&#127922;' },
 ]
 
 function isActive(path: string) {
@@ -322,6 +323,34 @@ watch(
   .btn-logout {
     padding: 0.35rem 0.6rem;
     font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .teacher-header {
+    padding: 0 var(--space-sm);
+  }
+
+  .teacher-sidebar {
+    width: 48px;
+  }
+
+  .sidebar-nav {
+    padding: 0 4px;
+  }
+
+  .sidebar-link {
+    padding: 8px 4px;
+  }
+
+  .teacher-main {
+    margin-left: 48px;
+    padding: var(--space-sm);
+    min-width: 0;
+  }
+
+  .logo-text {
+    font-size: 0.9rem;
   }
 }
 </style>

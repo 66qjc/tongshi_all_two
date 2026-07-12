@@ -20,16 +20,17 @@ const radarOption = ref({
   tooltip: {},
   radar: {
     indicator: [
-      { name: '理论基础', max: 100 },
-      { name: '实践能力', max: 100 },
-      { name: '创新思维', max: 100 },
-      { name: '团队协作', max: 100 },
-      { name: '社会传播', max: 100 },
-      { name: '伦理意识', max: 100 },
+      { name: '理论基础', max: 100, alignTicks: false },
+      { name: '实践能力', max: 100, alignTicks: false },
+      { name: '创新思维', max: 100, alignTicks: false },
+      { name: '团队协作', max: 100, alignTicks: false },
+      { name: '社会传播', max: 100, alignTicks: false },
+      { name: '伦理意识', max: 100, alignTicks: false },
     ],
     shape: 'polygon',
-    splitNumber: 4,
+    splitNumber: 5,
     axisName: { color: '#475569', fontSize: 12 },
+    axisLabel: { show: false },
     splitLine: { lineStyle: { color: '#e2e8f0' } },
     splitArea: { areaStyle: { color: ['rgba(139,92,246,0.02)', 'rgba(139,92,246,0.04)'] } },
     axisLine: { lineStyle: { color: '#e2e8f0' } },
@@ -207,16 +208,19 @@ onMounted(async () => {
 }
 
 .hero-inner h1 {
-  font-family: var(--font-serif);
-  font-size: 1.7rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  font-size: 0.88rem;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
 }
 
@@ -247,10 +251,10 @@ onMounted(async () => {
 }
 
 .stat-value {
-  font-family: var(--font-serif);
   font-size: 1.7rem;
   font-weight: 900;
   font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   margin-bottom: var(--space-xs);
 }
 
@@ -262,12 +266,13 @@ onMounted(async () => {
 
 /* Section title */
 .section-title {
-  font-family: var(--font-serif);
-  font-size: 1.2rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xl);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 /* Radar */
@@ -402,12 +407,13 @@ onMounted(async () => {
 }
 
 .project-info h4 {
-  font-family: var(--font-serif);
-  font-size: 0.9rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-compact);
   color: var(--color-text);
   margin-bottom: var(--space-sm);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .project-tags {

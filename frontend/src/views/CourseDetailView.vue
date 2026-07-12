@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Check } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getCourseDetail, type CourseDetail } from '@/api/course'
 import { getCourseContents, type Material } from '@/api/material'
 import { getLessons, type Lesson } from '@/api/lesson'
-import { getCourseProgress, saveCourseProgress } from '@/api/progress'
+import {
+  getCourseProgress,
+  reportLessonProgress,
+  reportLessonProgressKeepalive,
+  type CourseProgress,
+} from '@/api/progress'
 import {
   getPublicCourseDetail,
   getPublicLessons,
@@ -15,8 +21,9 @@ import {
 import CourseToc from '@/components/lesson/CourseToc.vue'
 import LessonReader from '@/components/lesson/LessonReader.vue'
 import PrevNextNav from '@/components/lesson/PrevNextNav.vue'
-import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
+import MaterialInlineReader from '@/components/learn/MaterialInlineReader.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
+import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
 
 interface MaterialSection {
   key: string
@@ -41,6 +48,12 @@ const activeTab = ref<'lessons' | 'materials'>(route.query.tab === 'materials' ?
 const sidebarOpen = ref(false)
 const previewVisible = ref(false)
 const selectedMaterial = ref<Material | null>(null)
+const activeMaterialId = ref<number | null>(null)
+const courseProgress = ref<CourseProgress | null>(null)
+const videoPosition = ref(0)
+const videoDuration = ref(0)
+const currentLessonHasVideo = ref(true)
+const completingLesson = ref(false)
 
 const isTeacherOrAdmin = computed(() =>
   ['teacher', 'admin'].includes(authStore.user?.role || ''),
@@ -78,9 +91,17 @@ const nextLesson = computed<Lesson | null>(() => {
 })
 
 const progressPercent = computed(() => {
+  if (canSaveProgress.value && courseProgress.value) return Math.round(courseProgress.value.completion_rate || 0)
   if (!visibleLessons.value.length || currentLessonIndex.value < 0) return 0
   return Math.round(((currentLessonIndex.value + 1) / visibleLessons.value.length) * 100)
 })
+
+const currentLessonProgress = computed(() => {
+  if (!currentLessonId.value) return null
+  return courseProgress.value?.lessons.find((item) => item.lesson_id === currentLessonId.value) ?? null
+})
+
+const resumePosition = computed(() => currentLessonProgress.value?.last_position || 0)
 
 const railMaterials = computed(() => materials.value.slice(0, 5))
 
@@ -107,24 +128,76 @@ const materialSections = computed<MaterialSection[]>(() => {
   return sections
 })
 
-const materialTypeStats = computed(() => {
-  const stats = { pdf: 0, video: 0, link: 0 }
-  materials.value.forEach((material) => {
-    stats[material.type] += 1
-  })
-  return stats
-})
-
 const selectedMaterialPreviewUrl = computed(() => {
   if (!selectedMaterial.value) return undefined
+  if (selectedMaterial.value.type === 'link') return undefined
   if (contentSource.value === 'public') return getPublicMaterialFileUrl(selectedMaterial.value.id)
   return undefined
 })
+
+const defaultMaterial = computed(() => pickDefaultMaterial(materials.value))
+
+const activeMaterial = computed(() => {
+  if (!materials.value.length) return null
+  return materials.value.find((material) => material.id === activeMaterialId.value) || defaultMaterial.value
+})
+
+const activeMaterialIndex = computed(() => {
+  if (!activeMaterial.value) return -1
+  return materials.value.findIndex((material) => material.id === activeMaterial.value?.id)
+})
+
+const prevMaterial = computed<Material | null>(() => {
+  const index = activeMaterialIndex.value
+  return index > 0 ? (materials.value[index - 1] ?? null) : null
+})
+
+const nextMaterial = computed<Material | null>(() => {
+  const index = activeMaterialIndex.value
+  return index >= 0 && index < materials.value.length - 1
+    ? (materials.value[index + 1] ?? null)
+    : null
+})
+
+const activeMaterialFileUrl = computed(() => {
+  if (!activeMaterial.value) return ''
+  return materialFileUrl(activeMaterial.value)
+})
+
+const activeMaterialFileEnabled = computed(() =>
+  activeTab.value === 'materials' && Boolean(activeMaterial.value && activeMaterialFileUrl.value),
+)
+
+const {
+  resolvedUrl: activeMaterialResolvedUrl,
+  loading: activeMaterialFileLoading,
+  error: activeMaterialFileError,
+  retryOnce: retryActiveMaterialFileOnce,
+} = useAuthenticatedFileUrl(activeMaterialFileUrl, { enabled: activeMaterialFileEnabled })
+
+function handleActiveMaterialFileError(failedUrl: string) {
+  void retryActiveMaterialFileOnce(failedUrl)
+}
+
+const hasRefreshingMaterialPreview = computed(() =>
+  activeTab.value === 'materials' &&
+  materials.value.some((material) =>
+    ['pending', 'processing'].includes(material.preview?.status || ''),
+  ),
+)
+
+let materialRefreshTimer: number | undefined
+let lessonProgressTimer: number | undefined
+let lastProgressReportedAt = Date.now()
+let finalReportSent = false
 
 function selectLesson(lesson: Lesson) {
   if (lesson.id === currentLessonId.value) {
     sidebarOpen.value = false
     return
+  }
+  if (canSaveProgress.value) {
+    void reportCurrentLessonProgress(takeUnreportedDuration())
   }
   currentLessonId.value = lesson.id
   activeTab.value = 'lessons'
@@ -140,14 +213,102 @@ function goNext() {
   if (nextLesson.value) selectLesson(nextLesson.value)
 }
 
-async function saveProgressAndUrl(lessonId: number) {
-  if (canSaveProgress.value) {
-    try {
-      await saveCourseProgress(courseId.value, lessonId)
-    } catch {
-      // 进度保存失败不影响阅读流程。
-    }
+function takeUnreportedDuration() {
+  const now = Date.now()
+  const seconds = Math.max(0, Math.round((now - lastProgressReportedAt) / 1000))
+  lastProgressReportedAt = now
+  return Math.min(seconds, 120)
+}
+
+function calculatedLessonPercent() {
+  if (videoDuration.value > 0) {
+    return Math.min(100, Math.max(0, Math.round((videoPosition.value / videoDuration.value) * 100)))
   }
+  return Math.max(currentLessonProgress.value?.progress_percent || 0, 10)
+}
+
+async function refreshCourseProgress() {
+  if (!canSaveProgress.value) return
+  try {
+    courseProgress.value = await getCourseProgress(courseId.value)
+  } catch {
+    // 进度刷新失败不影响当前阅读。
+  }
+}
+
+async function reportCurrentLessonProgress(
+  durationSeconds = 0,
+  visitStarted = false,
+  progressPercentOverride?: number,
+) {
+  if (!canSaveProgress.value || !currentLessonId.value) return
+  try {
+    const progress = await reportLessonProgress(courseId.value, currentLessonId.value, {
+      progress_percent: progressPercentOverride ?? calculatedLessonPercent(),
+      last_position: videoPosition.value,
+      duration_seconds: durationSeconds,
+      visit_started: visitStarted,
+    })
+    if (courseProgress.value) {
+      const index = courseProgress.value.lessons.findIndex((item) => item.lesson_id === progress.lesson_id)
+      if (index >= 0) courseProgress.value.lessons[index] = progress
+      courseProgress.value.last_lesson_id = progress.lesson_id
+      courseProgress.value.completed_lessons = courseProgress.value.lessons.filter((item) => item.status === 'completed').length
+      courseProgress.value.total_duration = courseProgress.value.lessons.reduce((sum, item) => sum + item.duration_seconds, 0)
+      courseProgress.value.completion_rate = courseProgress.value.total_lessons
+        ? Math.round((courseProgress.value.completed_lessons / courseProgress.value.total_lessons) * 1000) / 10
+        : 0
+    }
+    return progress
+  } catch {
+    // 进度上报失败不影响阅读流程。
+    return null
+  }
+}
+
+function handleLessonContentKind(hasVideo: boolean) {
+  currentLessonHasVideo.value = hasVideo
+}
+
+async function completeCurrentLesson() {
+  if (completingLesson.value) return
+  completingLesson.value = true
+  try {
+    const progress = await reportCurrentLessonProgress(takeUnreportedDuration(), false, 100)
+    if (progress?.status === 'completed') {
+      ElMessage.success('本课已完成')
+      return
+    }
+    ElMessage.error('完成本课失败，请稍后重试')
+  } finally {
+    completingLesson.value = false
+  }
+}
+
+function stopLessonProgressTimer() {
+  if (lessonProgressTimer !== undefined) {
+    window.clearInterval(lessonProgressTimer)
+    lessonProgressTimer = undefined
+  }
+}
+
+function startLessonProgressTimer() {
+  stopLessonProgressTimer()
+  if (!canSaveProgress.value || !currentLessonId.value) return
+  lastProgressReportedAt = Date.now()
+  lessonProgressTimer = window.setInterval(() => {
+    if (document.hidden) return
+    void reportCurrentLessonProgress(takeUnreportedDuration())
+  }, 30000)
+}
+
+function resetLessonTracking() {
+  videoPosition.value = resumePosition.value
+  videoDuration.value = 0
+  startLessonProgressTimer()
+}
+
+function saveProgressAndUrl(lessonId: number) {
   router.replace({ query: { ...route.query, tab: 'lessons', lesson_id: String(lessonId) } })
 }
 
@@ -177,6 +338,7 @@ async function loadPublicData() {
 
 async function loadData() {
   loading.value = true
+  courseProgress.value = null
   try {
     let loaded: { detail: CourseDetail; lessonList: Lesson[]; materialList: Material[] }
     if (authStore.isLoggedIn && authStore.user?.role === 'student') {
@@ -196,6 +358,7 @@ async function loadData() {
     }
     lessons.value = loaded.lessonList
     materials.value = loaded.materialList
+    syncActiveMaterial(loaded.materialList)
 
     if (!visibleLessons.value.length && loaded.materialList.length > 0) {
       activeTab.value = 'materials'
@@ -211,6 +374,7 @@ async function loadData() {
     } else if (canSaveProgress.value) {
       try {
         const progress = await getCourseProgress(courseId.value)
+        courseProgress.value = progress
         const targetFromProgress = progress.last_lesson_id
           ? visibleLessons.value.find((lesson) => lesson.id === progress.last_lesson_id)
           : null
@@ -220,6 +384,9 @@ async function loadData() {
       }
     } else {
       currentLessonId.value = visibleLessons.value[0]?.id ?? null
+    }
+    if (canSaveProgress.value && !courseProgress.value) {
+      await refreshCourseProgress()
     }
   } catch {
     ElMessage.error('课程加载失败，请检查该课程是否公开，或登录后刷新重试。')
@@ -233,6 +400,49 @@ function previewMaterial(material: Material) {
   previewVisible.value = true
 }
 
+function selectMaterial(material: Material | null) {
+  if (!material) return
+  activeMaterialId.value = material.id
+  activeTab.value = 'materials'
+}
+
+function syncActiveMaterial(materialList: Material[]) {
+  const currentActive = materialList.find((material) => material.id === activeMaterialId.value)
+  if (currentActive) return
+  activeMaterialId.value = pickDefaultMaterial(materialList)?.id ?? null
+}
+
+function parseMaterialSize(size: string) {
+  const match = size.match(/([\d.]+)\s*(B|KB|MB|GB)?/i)
+  if (!match) return 0
+  const value = Number(match[1])
+  if (!Number.isFinite(value)) return 0
+  const unit = (match[2] || 'B').toUpperCase()
+  if (unit === 'GB') return value * 1024 * 1024 * 1024
+  if (unit === 'MB') return value * 1024 * 1024
+  if (unit === 'KB') return value * 1024
+  return value
+}
+
+function materialLearningScore(material: Material) {
+  let score = 0
+  if (material.type === 'pdf') score += 3000
+  else if (material.type === 'video') score += 2000
+  else score += 1000
+
+  if (material.preview?.status === 'failed') score -= 500
+  if (/长内容|阅读包|手册|学习|通识/.test(material.title)) score += 300
+  if (material.preview?.page_count || material.pages) {
+    score += Math.min(400, (material.preview?.page_count || material.pages) * 20)
+  }
+  score += Math.min(600, parseMaterialSize(material.size) / 4096)
+  return score
+}
+
+function pickDefaultMaterial(materialList: Material[]) {
+  return [...materialList].sort((a, b) => materialLearningScore(b) - materialLearningScore(a))[0] ?? null
+}
+
 function materialTypeLabel(type: Material['type']) {
   if (type === 'video') return '视频'
   if (type === 'pdf') return 'PDF'
@@ -243,19 +453,139 @@ function materialSummary(material: Material) {
   return material.preview?.summary || material.size || '暂无摘要'
 }
 
-function scrollToMaterialStage(key: string) {
-  const target = document.getElementById(`material-section-${key}`)
-  if (!target) return
-  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+function materialMetaText(material: Material) {
+  const parts: string[] = []
+  if (material.preview?.page_count) parts.push(`${material.preview.page_count} 页`)
+  else if (material.pages) parts.push(`${material.pages} 页`)
+  if (material.preview?.duration_seconds) {
+    parts.push(`${Math.max(1, Math.round(material.preview.duration_seconds / 60))} 分钟`)
+  } else if (material.duration) {
+    parts.push(material.duration)
+  }
+  if (material.size) parts.push(material.size)
+  if (material.date) parts.push(material.date)
+  return parts.join(' · ')
 }
 
-function readerFileUrl(material: Material) {
+function materialFileUrl(material: Material) {
+  if (material.type === 'link') return material.url
   if (contentSource.value === 'public') return getPublicMaterialFileUrl(material.id)
   if (material.file_id) return `/api/files/${material.file_id}`
   return material.url
 }
 
-onMounted(loadData)
+function readerFileUrl(material: Material) {
+  return materialFileUrl(material)
+}
+
+async function refreshMaterialsForInlineReader() {
+  if (activeTab.value !== 'materials') return
+  try {
+    if (contentSource.value === 'authenticated') {
+      const materialList = await getCourseContents(courseId.value)
+      materials.value = materialList
+      syncActiveMaterial(materialList)
+      return
+    }
+
+    const detail = await getPublicCourseDetail(courseId.value, true)
+    const refreshedStages = detail.stages ?? []
+    const materialList = [
+      ...refreshedStages.flatMap((stage) => stage.materials ?? []),
+      ...(detail.uncategorized_materials ?? []),
+    ]
+    course.value = {
+      ...detail,
+      stages: refreshedStages,
+      uncategorized_materials: detail.uncategorized_materials ?? [],
+    }
+    materials.value = materialList
+    syncActiveMaterial(materialList)
+  } catch {
+    // 资料状态刷新失败不打断当前阅读。
+  }
+}
+
+function stopMaterialRefreshTimer() {
+  if (materialRefreshTimer !== undefined) {
+    window.clearInterval(materialRefreshTimer)
+    materialRefreshTimer = undefined
+  }
+}
+
+function syncMaterialRefreshTimer() {
+  stopMaterialRefreshTimer()
+  if (!hasRefreshingMaterialPreview.value || document.hidden) return
+  materialRefreshTimer = window.setInterval(refreshMaterialsForInlineReader, 18000)
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopMaterialRefreshTimer()
+    reportFinalProgressOnce()
+    return
+  }
+  finalReportSent = false
+  lastProgressReportedAt = Date.now()
+  if (activeTab.value === 'materials') {
+    void refreshMaterialsForInlineReader()
+  }
+  syncMaterialRefreshTimer()
+}
+
+function reportFinalProgressOnce() {
+  if (!canSaveProgress.value || !currentLessonId.value) return
+  if (finalReportSent) return
+  finalReportSent = true
+  void reportLessonProgressKeepalive(courseId.value, currentLessonId.value, {
+    progress_percent: calculatedLessonPercent(),
+    last_position: videoPosition.value,
+    duration_seconds: takeUnreportedDuration(),
+    visit_started: false,
+  })
+}
+
+function handlePageHide() {
+  reportFinalProgressOnce()
+}
+
+function handleLessonVideoProgress(payload: { currentTime: number; duration: number; ended: boolean }) {
+  videoPosition.value = payload.currentTime
+  videoDuration.value = payload.duration
+  if (payload.ended) {
+    void reportCurrentLessonProgress(takeUnreportedDuration())
+  }
+}
+
+watch(hasRefreshingMaterialPreview, syncMaterialRefreshTimer)
+watch(activeTab, () => {
+  if (activeTab.value === 'materials') {
+    void refreshMaterialsForInlineReader()
+  }
+  syncMaterialRefreshTimer()
+})
+
+watch(currentLessonId, () => {
+  currentLessonHasVideo.value = true
+  completingLesson.value = false
+  finalReportSent = false
+  resetLessonTracking()
+  void reportCurrentLessonProgress(0, true)
+})
+
+onMounted(() => {
+  void loadData()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('pagehide', handlePageHide)
+})
+
+onBeforeUnmount(() => {
+  reportFinalProgressOnce()
+  stopLessonProgressTimer()
+  stopMaterialRefreshTimer()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('pagehide', handlePageHide)
+})
 </script>
 
 <template>
@@ -287,7 +617,7 @@ onMounted(loadData)
               type="button"
               @click="activeTab = 'materials'"
             >
-              学习资料
+              学习资料库
             </button>
           </div>
 
@@ -343,8 +673,24 @@ onMounted(loadData)
               :lesson="currentLesson"
               :materials="materials"
               :file-url-resolver="readerFileUrl"
+              :resume-position="resumePosition"
               @preview="previewMaterial"
+              @video-progress="handleLessonVideoProgress"
+              @content-kind="handleLessonContentKind"
             />
+            <div
+              v-if="canSaveProgress && currentLesson && !currentLessonHasVideo && currentLessonProgress?.status !== 'completed'"
+              class="lesson-completion-actions"
+            >
+              <el-button
+                type="primary"
+                :icon="Check"
+                :loading="completingLesson"
+                @click="completeCurrentLesson"
+              >
+                完成本课
+              </el-button>
+            </div>
             <PrevNextNav
               :prev-lesson="prevLesson"
               :next-lesson="nextLesson"
@@ -410,101 +756,119 @@ onMounted(loadData)
       </template>
 
       <main v-else class="materials-content">
-        <div class="materials-booksite-layout">
-          <aside class="materials-sidebar">
-            <section class="materials-panel">
-              <h2>资料目录</h2>
-              <button
-                v-for="section in materialSections"
-                :key="section.key"
-                type="button"
-                class="material-toc-item"
-                @click="scrollToMaterialStage(section.key)"
-              >
-                <span>{{ section.label }}</span>
-                <strong>{{ section.title }}</strong>
-                <small>{{ section.materials.length }} 份资料</small>
-              </button>
+        <div class="material-doc-shell">
+          <aside class="material-doc-sidebar">
+            <section class="doc-panel">
+              <p class="doc-panel-kicker">资料目录</p>
+              <h2>{{ course?.name || '学习资料' }}</h2>
+              <div v-if="materialSections.length" class="doc-section-list">
+                <section
+                  v-for="section in materialSections"
+                  :key="section.key"
+                  class="doc-section-group"
+                >
+                  <button
+                    type="button"
+                    class="doc-section-title"
+                    @click="selectMaterial(section.materials[0] || null)"
+                  >
+                    <span>{{ section.label }}</span>
+                    <strong>{{ section.title }}</strong>
+                    <small>{{ section.materials.length }} 份资料</small>
+                  </button>
+                  <button
+                    v-for="material in section.materials"
+                    :key="material.id"
+                    type="button"
+                    :class="['doc-material-link', { active: activeMaterial?.id === material.id }]"
+                    @click="selectMaterial(material)"
+                  >
+                    <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
+                    <strong>{{ material.title }}</strong>
+                    <small>{{ materialMetaText(material) || materialSummary(material) }}</small>
+                  </button>
+                </section>
+              </div>
               <div v-if="!materialSections.length" class="materials-empty-small">暂无资料目录</div>
             </section>
           </aside>
 
-          <section class="materials-reader">
-            <header class="materials-reader-header">
-              <p class="course-kicker">学习资料库</p>
-              <h2>{{ course?.name || '学习资料' }}</h2>
-              <p>按阶段整理课程 PDF、视频与外部链接。先浏览目录，再打开资料预览。</p>
-            </header>
-
-            <section
-              v-for="section in materialSections"
-              :id="`material-section-${section.key}`"
-              :key="section.key"
-              class="stage-section"
-            >
-              <h2>
-                <span class="stage-badge">{{ section.label }}</span>
-                {{ section.title }}
-              </h2>
-              <div v-if="section.materials.length > 0" class="material-flow">
-                <MaterialRichCard
-                  v-for="material in section.materials"
-                  :key="material.id"
-                  :material="material"
-                  @preview="previewMaterial"
-                />
-              </div>
-              <div v-else class="stage-empty">该阶段暂无资料</div>
-            </section>
-
-            <div v-if="!materialSections.length" class="empty-state">
-              该课程暂无学习资料。
-            </div>
+          <section class="material-doc-main">
+            <MaterialInlineReader
+              :material="activeMaterial"
+              :file-url="activeMaterialResolvedUrl"
+              :file-loading="activeMaterialFileLoading"
+              :file-error="activeMaterialFileError"
+              @file-error="handleActiveMaterialFileError"
+            />
           </section>
 
-          <aside class="materials-rail">
-            <section class="rail-section">
-              <h2>本页资料</h2>
-              <dl class="course-facts">
+          <aside class="material-doc-guide">
+            <section class="guide-panel">
+              <p class="doc-panel-kicker">当前资料</p>
+              <h2>{{ activeMaterial?.title || '未选择资料' }}</h2>
+              <p class="guide-summary">
+                {{ activeMaterial ? materialSummary(activeMaterial) : '请选择左侧目录中的资料开始阅读。' }}
+              </p>
+              <dl v-if="activeMaterial" class="guide-facts">
                 <div>
-                  <dt>全部资料</dt>
-                  <dd>{{ materials.length }}</dd>
+                  <dt>类型</dt>
+                  <dd>{{ materialTypeLabel(activeMaterial.type) }}</dd>
                 </div>
-                <div>
-                  <dt>PDF</dt>
-                  <dd>{{ materialTypeStats.pdf }}</dd>
+                <div v-if="activeMaterial.size">
+                  <dt>大小</dt>
+                  <dd>{{ activeMaterial.size }}</dd>
                 </div>
-                <div>
-                  <dt>视频</dt>
-                  <dd>{{ materialTypeStats.video }}</dd>
+                <div v-if="activeMaterial.preview?.page_count || activeMaterial.pages">
+                  <dt>页数</dt>
+                  <dd>{{ activeMaterial.preview?.page_count || activeMaterial.pages }} 页</dd>
                 </div>
-                <div>
-                  <dt>链接</dt>
-                  <dd>{{ materialTypeStats.link }}</dd>
+                <div v-if="activeMaterial.preview?.duration_seconds || activeMaterial.duration">
+                  <dt>时长</dt>
+                  <dd>
+                    {{
+                      activeMaterial.preview?.duration_seconds
+                        ? `${Math.max(1, Math.round(activeMaterial.preview.duration_seconds / 60))} 分钟`
+                        : activeMaterial.duration
+                    }}
+                  </dd>
                 </div>
               </dl>
+              <a
+                v-if="activeMaterialResolvedUrl"
+                class="guide-open-link"
+                :href="activeMaterialResolvedUrl"
+                target="_blank"
+                rel="noopener"
+              >
+                打开原资料
+              </a>
             </section>
 
-            <section class="rail-section">
-              <h2>快速打开</h2>
-              <div v-if="materials.length" class="rail-material-list">
-                <button
-                  v-for="material in materials.slice(0, 8)"
-                  :key="material.id"
-                  type="button"
-                  class="rail-material"
-                  @click="previewMaterial(material)"
-                >
-                  <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
-                  <strong>{{ material.title }}</strong>
-                  <small>{{ materialSummary(material) }}</small>
-                </button>
-              </div>
-              <div v-else class="rail-empty">暂无可打开的资料。</div>
+            <section class="guide-panel">
+              <p class="doc-panel-kicker">阅读顺序</p>
+              <button
+                type="button"
+                class="guide-nav"
+                :disabled="!prevMaterial"
+                @click="selectMaterial(prevMaterial)"
+              >
+                <span>上一份资料</span>
+                <strong>{{ prevMaterial?.title || '已经是第一份' }}</strong>
+              </button>
+              <button
+                type="button"
+                class="guide-nav"
+                :disabled="!nextMaterial"
+                @click="selectMaterial(nextMaterial)"
+              >
+                <span>下一份资料</span>
+                <strong>{{ nextMaterial?.title || '已经是最后一份' }}</strong>
+              </button>
             </section>
 
-            <section v-if="contentSource === 'public' && !canSaveProgress" class="rail-section">
-              <h2>学习提示</h2>
+            <section v-if="contentSource === 'public' && !canSaveProgress" class="guide-panel">
+              <p class="doc-panel-kicker">学习提示</p>
               <p class="rail-note">游客可以浏览公开资料；登录后可保存学习进度。</p>
             </section>
           </aside>
@@ -572,13 +936,15 @@ onMounted(loadData)
   letter-spacing: 0;
   color: var(--color-text);
   margin-bottom: 0.6rem;
+  text-wrap: balance;
 }
 
 .course-desc {
   color: var(--color-text-secondary);
-  max-width: 760px;
+  max-width: 72ch;
   line-height: 1.8;
   margin: 0;
+  text-wrap: pretty;
 }
 
 .hero-bottom {
@@ -683,6 +1049,18 @@ onMounted(loadData)
   margin: 0 auto;
 }
 
+.lesson-completion-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 0 4px;
+}
+
+@media (max-width: 640px) {
+  .lesson-completion-actions :deep(.el-button) {
+    width: 100%;
+  }
+}
+
 .resource-rail {
   display: flex;
   flex-direction: column;
@@ -778,6 +1156,7 @@ onMounted(loadData)
   color: var(--color-text-muted);
   line-height: 1.7;
   font-size: 0.88rem;
+  text-wrap: pretty;
 }
 
 .course-facts {
@@ -835,113 +1214,123 @@ onMounted(loadData)
   padding: 0 0 4rem;
 }
 
-.materials-booksite-layout {
+.material-doc-shell {
   max-width: 1480px;
   margin: 0 auto;
   padding: 24px 24px 80px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  grid-template-columns: 292px minmax(0, 1fr) 280px;
   gap: 24px;
   align-items: flex-start;
 }
 
-.materials-sidebar,
-.materials-rail {
+.material-doc-sidebar,
+.material-doc-guide {
   position: sticky;
   top: calc(var(--app-header-height) + 16px);
   max-height: calc(100vh - var(--app-header-height) - 32px);
   overflow-y: auto;
 }
 
-.materials-panel {
+.doc-panel,
+.guide-panel {
   padding: 16px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
 }
 
-.materials-panel h2 {
-  margin: 0 0 12px;
-  color: var(--color-text);
-  font-size: 1rem;
+.doc-panel-kicker {
+  margin: 0 0 6px;
+  color: var(--color-learn);
+  font-size: 0.74rem;
   font-weight: 900;
 }
 
-.material-toc-item {
+.doc-panel h2,
+.guide-panel h2 {
+  margin: 0 0 14px;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: var(--leading-compact);
+}
+
+.doc-section-list {
+  display: grid;
+  gap: 14px;
+}
+
+.doc-section-group {
+  display: grid;
+  gap: 6px;
+}
+
+.doc-section-title,
+.doc-material-link,
+.guide-nav {
+  width: 100%;
+  text-align: left;
+}
+
+.doc-section-title {
+  display: grid;
+  gap: 3px;
+  padding: 8px 4px;
+  color: var(--color-text);
+  background: transparent;
+}
+
+.doc-section-title span {
+  color: var(--color-learn);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.doc-section-title strong {
+  font-size: 0.92rem;
+}
+
+.doc-section-title small {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.doc-material-link {
   display: grid;
   gap: 4px;
-  width: 100%;
   padding: 10px;
-  margin-bottom: 6px;
-  text-align: left;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out);
 }
 
-.material-toc-item:hover {
+.doc-material-link:hover,
+.doc-material-link.active {
   background: var(--color-bg-alt);
-  border-color: rgba(45, 106, 122, 0.18);
+  border-color: rgba(45, 106, 122, 0.22);
 }
 
-.material-toc-item span {
-  color: var(--color-learn);
-  font-size: 0.72rem;
-  font-weight: 900;
+.doc-material-link.active {
+  box-shadow: inset 0 0 0 1px rgba(45, 106, 122, 0.18);
 }
 
-.material-toc-item strong {
+.doc-material-link strong {
   color: var(--color-text);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.45;
 }
 
-.material-toc-item small,
+.doc-material-link small,
 .materials-empty-small {
   color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.materials-reader {
-  min-width: 0;
-  max-width: 900px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.materials-reader-header {
-  margin-bottom: 24px;
-  padding: 32px 36px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.materials-reader-header h2 {
-  margin: 0 0 10px;
-  color: var(--color-text);
-  font-size: 1.55rem;
-  font-weight: 900;
-}
-
-.materials-reader-header p:last-child {
-  max-width: 680px;
-  margin: 0;
-  color: var(--color-text-secondary);
-  line-height: 1.8;
-}
-
-.material-flow {
-  display: grid;
-  gap: 16px;
-}
-
-.materials-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .stage-section {
@@ -988,6 +1377,87 @@ onMounted(loadData)
   color: var(--color-text-muted);
 }
 
+.material-doc-main {
+  min-width: 0;
+}
+
+.material-doc-guide {
+  display: grid;
+  gap: 16px;
+}
+
+.guide-summary {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.guide-facts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.guide-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.guide-facts div:last-child {
+  border-bottom: 0;
+}
+
+.guide-facts dt {
+  color: var(--color-text-muted);
+}
+
+.guide-facts dd {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.guide-open-link {
+  display: inline-flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 12px;
+  color: var(--color-bg-card);
+  background: var(--color-learn);
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+}
+
+.guide-nav {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-alt);
+}
+
+.guide-nav:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.guide-nav span {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+.guide-nav strong {
+  color: var(--color-text);
+  line-height: 1.45;
+}
+
 @media (max-width: 1180px) {
   .booksite-layout {
     grid-template-columns: 240px minmax(0, 1fr);
@@ -999,11 +1469,11 @@ onMounted(loadData)
     max-height: none;
   }
 
-  .materials-booksite-layout {
-    grid-template-columns: 240px minmax(0, 1fr);
+  .material-doc-shell {
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
-  .materials-rail {
+  .material-doc-guide {
     grid-column: 2;
     position: static;
     max-height: none;
@@ -1087,26 +1557,33 @@ onMounted(loadData)
     margin-top: 18px;
   }
 
-  .materials-booksite-layout {
+  .material-doc-shell {
     display: block;
     padding: 18px 16px 60px;
   }
 
-  .materials-sidebar,
-  .materials-rail {
+  .material-doc-sidebar,
+  .material-doc-guide {
     position: static;
     max-height: none;
   }
 
-  .materials-sidebar {
+  .material-doc-sidebar {
     margin-bottom: 18px;
   }
 
-  .materials-reader-header {
-    padding: 24px 20px;
+  .doc-section-list {
+    display: grid;
+    gap: 16px;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
-  .materials-rail {
+  .doc-section-group {
+    min-width: 0;
+  }
+
+  .material-doc-guide {
     margin-top: 18px;
   }
 

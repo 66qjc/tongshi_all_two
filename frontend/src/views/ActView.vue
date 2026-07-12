@@ -6,6 +6,7 @@ import { getShowcase } from '../api/showcase'
 import type { ShowcaseItemOut } from '../api/showcase'
 import { getProjects } from '../api/project'
 import type { Project } from '../api/project'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -246,7 +247,12 @@ function scrollToOutcomes() {
             @click="router.push(`/create/project/${project.id}`)"
           >
             <div class="project-cover">
-              <img v-if="project.image_url" :src="project.image_url" :alt="project.title" />
+              <AuthenticatedFileImage
+                v-if="project.cover_file_id || project.images?.[0]?.file_id || project.images?.[0]?.image_url || project.image_url"
+                :file-id="project.cover_file_id || project.images?.[0]?.file_id"
+                :fallback-url="project.images?.[0]?.image_url || project.image_url"
+                :alt="project.title"
+              />
               <div v-else class="project-cover-placeholder"></div>
             </div>
             <div class="project-body">
@@ -317,20 +323,23 @@ function scrollToOutcomes() {
 }
 
 .hero-inner h1 {
-  font-family: var(--font-serif);
-  font-size: 1.8rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-sm);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  max-width: 520px;
+  max-width: 65ch;
   margin: 0 auto;
-  font-size: 0.92rem;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.7;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .hero-actions {
@@ -353,23 +362,26 @@ function scrollToOutcomes() {
   margin-bottom: var(--space-xs);
   color: var(--color-act);
   font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-weight: 800;
+  letter-spacing: 0.03em;
 }
 
 .section-header h2 {
-  font-family: var(--font-serif);
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .section-header p {
   color: var(--color-text-secondary);
-  font-size: 0.88rem;
-  line-height: 1.7;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .outcome-card-grid {
@@ -416,10 +428,12 @@ function scrollToOutcomes() {
 
 .outcome-title {
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .outcome-subtitle {
@@ -430,8 +444,9 @@ function scrollToOutcomes() {
 
 .outcome-desc {
   color: var(--color-text-secondary);
-  font-size: 0.85rem;
-  line-height: 1.65;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .outcome-stat {
@@ -481,22 +496,25 @@ function scrollToOutcomes() {
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.03em;
 }
 
 .detail-main h2 {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   color: var(--color-text);
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
   margin-bottom: var(--space-md);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .detail-main p {
   color: var(--color-text-secondary);
-  font-size: 0.88rem;
-  line-height: 1.8;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .detail-highlights {
@@ -505,12 +523,14 @@ function scrollToOutcomes() {
 
 .detail-highlights h3,
 .case-box h3 {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   color: var(--color-text);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
   margin-bottom: var(--space-md);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .detail-highlights ul {
@@ -588,12 +608,14 @@ function scrollToOutcomes() {
 }
 
 .portfolio-content h3 {
-  font-family: var(--font-serif);
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .portfolio-content p {
@@ -738,12 +760,14 @@ function scrollToOutcomes() {
 }
 
 .showcase-title {
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-sm);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .showcase-content {
@@ -821,15 +845,15 @@ function scrollToOutcomes() {
 }
 
 .project-title {
-  font-family: var(--font-serif);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
   color: var(--color-text);
   margin-bottom: var(--space-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .project-author {

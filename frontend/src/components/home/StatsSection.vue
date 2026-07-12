@@ -77,95 +77,121 @@ const orderItems = [
 
 .section-tag {
   display: inline-block;
-  padding: 0.25rem 0.72rem;
+  padding: 0.22rem 0.68rem;
   color: var(--color-primary);
   background: var(--color-primary-glow);
-  border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  border: 1px solid rgba(45, 90, 110, 0.12);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   margin-bottom: var(--space-md);
 }
 
 .loop-copy h2 {
   margin-bottom: var(--space-sm);
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.55rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
   font-weight: 900;
-  letter-spacing: 0.03em;
+  line-height: var(--leading-title);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .loop-copy p {
+  max-width: 65ch;
   color: var(--color-text-secondary);
-  font-size: 0.92rem;
-  line-height: 1.8;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .loop-detail {
   display: grid;
-  gap: var(--space-lg);
+  gap: 0.85rem;
 }
 
 .flow-line {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-md);
+  gap: 0.85rem;
 }
 
+/* 四步骤卡片：用左上角数字 + 中文字做区分，无侧边框 */
 .flow-step {
-  min-height: 168px;
+  min-height: 164px;
   padding: var(--space-lg);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  transition: box-shadow 150ms var(--ease-out), transform 150ms var(--ease-out);
+}
+
+.flow-step:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .loop-step {
   display: block;
-  margin-bottom: var(--space-lg);
+  margin-bottom: 0.9rem;
   color: var(--color-primary);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 900;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
 }
 
 .flow-step strong {
   display: block;
-  margin-bottom: var(--space-sm);
+  margin-bottom: 0.45rem;
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1.15rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  text-wrap: balance;
 }
 
 .flow-step p {
   color: var(--color-text-secondary);
-  font-size: 0.82rem;
-  line-height: 1.65;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
+/* 建议顺序面板 */
 .order-panel {
   padding: var(--space-lg);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 .order-panel h3 {
-  margin-bottom: var(--space-md);
+  margin-bottom: 0.9rem;
   color: var(--color-text);
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
+  text-wrap: balance;
 }
 
 .order-panel ol {
   display: grid;
-  gap: var(--space-sm);
+  gap: 0.6rem;
   padding-left: 1.2rem;
   color: var(--color-text-secondary);
   font-size: 0.86rem;
-  line-height: 1.7;
+  line-height: 1.72;
+}
+
+.order-panel li::marker {
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 @media (max-width: 1024px) {

@@ -5,6 +5,14 @@ import { approveProject, deleteProject, downloadProjectReportsZip, getAllProject
 import type { Project } from '@/api/project'
 import { resolveFileUrl } from '@/utils/url'
 import { useDebounce } from '@/composables/useDebounce'
+import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
+
+interface ProtectedImageSource {
+  fileId?: number
+  url: string
+  key: string
+}
 
 const projects = ref<Project[]>([])
 const loading = ref(true)
@@ -13,13 +21,14 @@ const drawerVisible = ref(false)
 const selectedProject = ref<Project | null>(null)
 const rejectReason = ref('')
 const imagePreviewVisible = ref(false)
-const previewImage = ref('')
+const previewImage = ref<ProtectedImageSource | null>(null)
 
 // 分页
 const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const statusFilter = ref<string | null>(null)
+const ALL_STATUS_VALUE = 'all'
+const statusFilter = ref<string>(ALL_STATUS_VALUE)
 const searchKeyword = ref('')
 const debouncedSearchKeyword = useDebounce(searchKeyword, 300)
 watch(debouncedSearchKeyword, () => {
@@ -33,12 +42,21 @@ const statusMap: Record<string, { label: string; type: 'warning' | 'success' | '
   rejected: { label: '驳回', type: 'danger' },
 }
 
-const imageList = computed(() => {
+const imageList = computed<ProtectedImageSource[]>(() => {
   if (!selectedProject.value) return []
   if (selectedProject.value.images && selectedProject.value.images.length > 0) {
-    return selectedProject.value.images.map(item => resolveFileUrl(item.image_url))
+    return selectedProject.value.images.map((item, index) => ({
+      fileId: item.file_id,
+      url: item.image_url,
+      key: String(item.id || item.file_id || `${selectedProject.value?.id}-${index}`),
+    }))
   }
-  return selectedProject.value.image_url ? [resolveFileUrl(selectedProject.value.image_url)] : []
+  if (!selectedProject.value.image_url && !selectedProject.value.cover_file_id) return []
+  return [{
+    fileId: selectedProject.value.cover_file_id,
+    url: selectedProject.value.image_url,
+    key: `legacy-${selectedProject.value.id}`,
+  }]
 })
 const materialsSummary = computed(() => ({
   hasReport: Boolean(selectedProject.value?.report_url || selectedProject.value?.report_file_id),
@@ -47,12 +65,18 @@ const materialsSummary = computed(() => ({
   hasLink: Boolean(selectedProject.value?.link_url),
 }))
 
-const reportPreviewUrl = computed(() => {
+const reportSource = computed(() => {
   const p = selectedProject.value
   if (!p) return ''
-  if (p.report_file_id) return resolveFileUrl(`/api/files/${p.report_file_id}`)
-  return resolveFileUrl(p.report_url)
+  if (p.report_file_id) return `/api/files/${p.report_file_id}`
+  return p.report_url || ''
 })
+const reportEnabled = computed(() => drawerVisible.value && Boolean(reportSource.value))
+const {
+  resolvedUrl: reportPreviewUrl,
+  loading: reportLoading,
+  error: reportError,
+} = useAuthenticatedFileUrl(reportSource, { enabled: reportEnabled })
 
 onMounted(async () => {
   await loadProjects()
@@ -62,7 +86,7 @@ async function loadProjects() {
   loading.value = true
   try {
     const res = await getAllProjects(
-      statusFilter.value || undefined,
+      statusFilter.value === ALL_STATUS_VALUE ? undefined : statusFilter.value,
       debouncedSearchKeyword.value || undefined,
       currentPage.value,
       pageSize.value,
@@ -97,8 +121,8 @@ function openDetail(project: Project) {
   drawerVisible.value = true
 }
 
-function openImagePreview(imageUrl: string) {
-  previewImage.value = imageUrl
+function openImagePreview(image: ProtectedImageSource) {
+  previewImage.value = image
   imagePreviewVisible.value = true
 }
 
@@ -199,7 +223,7 @@ async function handleBatchDownload() {
         style="width: 140px"
         @change="handleStatusChange"
       >
-        <el-option label="全部状态" :value="null" />
+        <el-option label="全部状态" :value="ALL_STATUS_VALUE" />
         <el-option label="待审" value="pending" />
         <el-option label="通过" value="approved" />
         <el-option label="驳回" value="rejected" />
@@ -292,11 +316,13 @@ async function handleBatchDownload() {
 
         <div class="detail-section">
           <label>课程报告</label>
-          <div v-if="reportPreviewUrl" class="pdf-preview">
+          <div v-if="reportSource" class="pdf-preview">
             <p class="pdf-preview-hint">PDF 预览不稳定时，请在新窗口打开报告。</p>
-            <a :href="reportPreviewUrl" target="_blank" rel="noopener" class="detail-link">
+            <a v-if="reportPreviewUrl" :href="reportPreviewUrl" target="_blank" rel="noopener" class="detail-link">
               在新窗口打开 PDF
             </a>
+            <p v-else-if="reportLoading" class="empty-inline">正在获取报告访问地址，请稍候。</p>
+            <p v-else-if="reportError" class="empty-inline">{{ reportError }}</p>
           </div>
           <p v-else class="empty-inline">学生未上传 PDF 报告。</p>
         </div>
@@ -306,11 +332,15 @@ async function handleBatchDownload() {
           <div v-if="imageList.length > 0" class="image-grid">
             <button
               v-for="(image, index) in imageList"
-              :key="`${image}-${index}`"
+              :key="image.key"
               class="image-thumb"
               @click="openImagePreview(image)"
             >
-              <img :src="image" :alt="`作品图片 ${index + 1}`" />
+              <AuthenticatedFileImage
+                :file-id="image.fileId"
+                :fallback-url="image.url"
+                :alt="`作品图片 ${index + 1}`"
+              />
             </button>
           </div>
           <p v-else class="empty-inline">学生未上传作品图片。</p>
@@ -351,8 +381,14 @@ async function handleBatchDownload() {
       </template>
     </el-drawer>
 
-    <el-dialog v-model="imagePreviewVisible" width="720px" append-to-body @close="previewImage = ''">
-      <img v-if="previewImage" :src="previewImage" alt="作品大图" class="preview-image" />
+    <el-dialog v-model="imagePreviewVisible" width="720px" append-to-body @close="previewImage = null">
+      <AuthenticatedFileImage
+        v-if="previewImage"
+        :file-id="previewImage.fileId"
+        :fallback-url="previewImage.url"
+        alt="作品大图"
+        class="preview-image"
+      />
     </el-dialog>
   </div>
 </template>

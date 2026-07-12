@@ -54,37 +54,44 @@ const modules = [
   margin-bottom: var(--space-2xl);
 }
 
+/* 与其他 section 统一的 tag 样式 */
 .section-tag {
   display: inline-block;
-  padding: 0.25rem 0.8rem;
-  font-size: 0.72rem;
-  font-weight: 600;
+  padding: 0.22rem 0.68rem;
+  font-size: 0.7rem;
+  font-weight: 700;
   color: var(--color-primary);
   background: var(--color-primary-glow);
-  border-radius: var(--radius-sm);
-  letter-spacing: 0.1em;
+  border: 1px solid rgba(45, 90, 110, 0.12);
+  border-radius: var(--radius-full);
+  letter-spacing: 0.04em;
   margin-bottom: var(--space-lg);
 }
 
 .section-title {
-  font-family: var(--font-serif);
-  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-md);
-  letter-spacing: 0.05em;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
 }
 
 .section-desc {
-  font-size: 1rem;
+  max-width: 65ch;
+  font-size: var(--text-body);
   color: var(--color-text-secondary);
-  line-height: 1.8;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+  margin: 0 auto;
 }
 
 .modules-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-lg);
+  gap: 0.9rem;
 }
 
 .module-card {
@@ -92,29 +99,34 @@ const modules = [
   padding: var(--space-xl);
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  transition: all var(--duration-normal) var(--ease-out);
+  border-radius: var(--radius-lg);
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
   overflow: hidden;
 }
 
 .module-card:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--color-primary-light);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(74, 143, 166, 0.5);
 }
 
+/* 大号序号作为装饰，不喧宾夺主 */
 .module-num {
-  font-size: 3rem;
+  font-size: 2.6rem;
   font-weight: 900;
-  color: var(--color-border);
+  color: var(--color-border-light);
   line-height: 1;
-  margin-bottom: var(--space-md);
-  transition: color var(--duration-normal) var(--ease-out);
+  margin-bottom: 0.9rem;
   font-family: var(--font-mono);
+  transition: color var(--duration-fast) var(--ease-out);
+  user-select: none;
 }
 
 .module-card:hover .module-num {
-  color: var(--color-primary-light);
+  color: rgba(74, 143, 166, 0.38);
 }
 
 .module-content {
@@ -126,39 +138,44 @@ const modules = [
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--space-sm);
+  margin-bottom: 0.55rem;
 }
 
 .module-tag {
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 700;
   color: var(--color-primary);
   background: var(--color-primary-glow);
-  padding: 0.15rem 0.6rem;
+  border: 1px solid rgba(45, 90, 110, 0.1);
+  padding: 0.14rem 0.6rem;
   border-radius: var(--radius-full);
   letter-spacing: 0.04em;
 }
 
 .module-icon {
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  color: var(--color-border);
 }
 
 .module-title {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-title);
   color: var(--color-text);
-  margin-bottom: var(--space-sm);
-  letter-spacing: 0.03em;
+  margin-bottom: 0.45rem;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .module-desc {
-  font-size: 0.85rem;
+  font-size: var(--text-muted);
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
+/* 底部彩线：宽度由 0 → 100% 的 hover 动效 */
 .module-line {
   position: absolute;
   bottom: 0;
@@ -167,6 +184,7 @@ const modules = [
   height: 2px;
   background: var(--gradient-cta);
   transition: width var(--duration-normal) var(--ease-out);
+  border-radius: 0 2px 0 0;
 }
 
 .module-card:hover .module-line {

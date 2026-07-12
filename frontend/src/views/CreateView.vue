@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getProjects, type Project } from '@/api/project'
-import { resolveFileUrl } from '@/utils/url'
+import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const router = useRouter()
 const projects = ref<Project[]>([])
@@ -70,9 +70,10 @@ function handlePageChange(page: number) {
           >
             <!-- Project image -->
             <div class="project-image">
-              <img
-                v-if="project.images?.length || project.image_url"
-                :src="resolveFileUrl(project.images?.[0]?.image_url || project.image_url)"
+              <AuthenticatedFileImage
+                v-if="project.cover_file_id || project.images?.[0]?.file_id || project.images?.[0]?.image_url || project.image_url"
+                :file-id="project.cover_file_id || project.images?.[0]?.file_id"
+                :fallback-url="project.images?.[0]?.image_url || project.image_url"
                 :alt="project.title"
                 class="project-thumb"
               />
@@ -178,16 +179,19 @@ function handlePageChange(page: number) {
 }
 
 .hero-inner h1 {
-  font-family: var(--font-serif);
-  font-size: 1.8rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-page-title);
   font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-sm);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
+  text-wrap: balance;
 }
 
 .hero-inner p {
-  font-size: 0.92rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
 }
 
@@ -201,16 +205,18 @@ function handlePageChange(page: number) {
 }
 
 .gallery-header h2 {
-  font-family: var(--font-serif);
-  font-size: 1.3rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-section-title);
+  font-weight: 900;
+  line-height: var(--leading-title);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .gallery-header p {
-  font-size: 0.88rem;
+  font-size: var(--text-muted);
+  line-height: var(--leading-body);
   color: var(--color-text-secondary);
 }
 
@@ -276,12 +282,13 @@ function handlePageChange(page: number) {
 }
 
 .project-title {
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 800;
+  line-height: var(--leading-compact);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .project-author {
@@ -362,12 +369,13 @@ function handlePageChange(page: number) {
 }
 
 .upload-content h3 {
-  font-family: var(--font-serif);
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-size: var(--text-card-title);
+  font-weight: 900;
+  line-height: var(--leading-compact);
   color: var(--color-text);
   margin-bottom: var(--space-xs);
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
 }
 
 .upload-content p {
