@@ -93,13 +93,13 @@ FastAPI 中间件自动记录：
 async def audit_middleware(request: Request, call_next):
     # 获取当前用户
     user = get_current_user_from_request(request)
-    
+
     # 记录开始时间
     start_time = time.time()
-    
+
     # 执行请求
     response = await call_next(request)
-    
+
     # 判断是否需要审计
     if should_audit(request.method, request.url.path):
         log_audit(
@@ -111,7 +111,7 @@ async def audit_middleware(request: Request, call_next):
             user_agent=request.headers.get("user-agent"),
             status="success" if response.status_code < 400 else "failed"
         )
-    
+
     return response
 ```
 
@@ -122,7 +122,7 @@ async def audit_middleware(request: Request, call_next):
 ```python
 def delete_course(db: Session, course_id: int, operator_id: str):
     course = db.query(Course).get(course_id)
-    
+
     # 记录审计日志
     audit_log = AuditLog(
         user_id=operator_id,
@@ -139,7 +139,7 @@ def delete_course(db: Session, course_id: int, operator_id: str):
         status="success"
     )
     db.add(audit_log)
-    
+
     # 执行删除
     soft_delete(db, course, operator_id)
     db.commit()
@@ -231,10 +231,10 @@ def upgrade():
         sa.Column('status', sa.String(16), nullable=False),
         sa.Column('error_message', sa.String(512), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
-        
+
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL')
     )
-    
+
     op.create_index('ix_audit_logs_user_id', 'audit_logs', ['user_id'])
     op.create_index('ix_audit_logs_action', 'audit_logs', ['action'])
     op.create_index('ix_audit_logs_resource_type', 'audit_logs', ['resource_type'])

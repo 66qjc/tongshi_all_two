@@ -363,7 +363,7 @@ tar -czf "$BACKUP_FILE" -C /data/tongshi uploads/
 if [ -f "$BACKUP_FILE" ]; then
     SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo "✓ 备份完成: $BACKUP_FILE ($SIZE)"
-    
+
     # 保留最近 7 天的备份
     find "$BACKUP_DIR" -name "uploads_*.tar.gz" -mtime +7 -delete
     echo "✓ 已清理 7 天前的旧备份"

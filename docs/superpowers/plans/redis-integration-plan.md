@@ -74,15 +74,15 @@ def cache_result(key_prefix: str, ttl: int = 300):
         async def wrapper(*args, **kwargs):
             # 生成缓存键
             cache_key = f"{key_prefix}:{args}:{kwargs}"
-            
+
             # 尝试从缓存读取
             cached = redis_client.get(cache_key)
             if cached:
                 return json.loads(cached)
-            
+
             # 执行函数
             result = await func(*args, **kwargs)
-            
+
             # 写入缓存
             redis_client.setex(cache_key, ttl, json.dumps(result))
             return result

@@ -127,20 +127,20 @@ cd /opt/tongshi/backend
 # 检查是否有文件
 if [ -d "uploads" ] && [ "$(ls -A uploads)" ]; then
     echo "发现旧文件，开始迁移..."
-    
+
     # 复制文件到新目录
     sudo cp -r uploads/* /data/tongshi/uploads/
-    
+
     # 修复权限
     sudo chown -R www-data:www-data /data/tongshi/uploads
-    
+
     # 验证迁移
     echo "新目录文件数："
     find /data/tongshi/uploads/ -type f | wc -l
-    
+
     echo "旧目录文件数："
     find uploads/ -type f | wc -l
-    
+
     # ⚠️ 验证无误后再删除旧文件
     # sudo rm -rf uploads/
 else
@@ -352,7 +352,7 @@ echo -e "\n[1] .env 配置："
 if [ -f ".env" ]; then
     LOCAL_UPLOAD_DIR=$(grep "^LOCAL_UPLOAD_DIR=" .env | cut -d'=' -f2)
     echo "LOCAL_UPLOAD_DIR=$LOCAL_UPLOAD_DIR"
-    
+
     if [[ "$LOCAL_UPLOAD_DIR" == /* ]]; then
         echo "✅ 使用绝对路径"
     else
@@ -366,13 +366,13 @@ fi
 echo -e "\n[2] 目录检查："
 if [ -d "$LOCAL_UPLOAD_DIR" ]; then
     echo "✅ 目录存在: $LOCAL_UPLOAD_DIR"
-    
+
     # 检查权限
     OWNER=$(stat -c '%U:%G' "$LOCAL_UPLOAD_DIR")
     PERMS=$(stat -c '%a' "$LOCAL_UPLOAD_DIR")
     echo "   所有者: $OWNER"
     echo "   权限: $PERMS"
-    
+
     # 检查文件数量
     FILE_COUNT=$(find "$LOCAL_UPLOAD_DIR" -type f | wc -l)
     TOTAL_SIZE=$(du -sh "$LOCAL_UPLOAD_DIR" | cut -f1)
@@ -392,10 +392,10 @@ MYSQL_DATABASE=$(grep "^MYSQL_DATABASE=" .env | cut -d'=' -f2)
 if [ -n "$MYSQL_HOST" ]; then
     DB_COUNT=$(mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
         -e "SELECT COUNT(*) FROM stored_files;" -sN 2>/dev/null)
-    
+
     if [ $? -eq 0 ]; then
         echo "数据库记录: $DB_COUNT 个文件"
-        
+
         if [ $FILE_COUNT -lt $DB_COUNT ]; then
             echo "⚠️  警告：实际文件少于数据库记录 (差异: $((DB_COUNT - FILE_COUNT)))"
         else

@@ -112,7 +112,7 @@ def get_project_likes(project_id: int) -> int:
     cached = get_cached(cache_key)
     if cached is not None:
         return cached
-    
+
     count = db.query(ProjectLike).filter(ProjectLike.project_id == project_id).count()
     set_cached(cache_key, count, ttl=60)
     return count
@@ -294,7 +294,7 @@ def update_course(course_id: int, data: dict):
     # 1. 更新数据库
     db.query(Course).filter(Course.id == course_id).update(data)
     db.commit()
-    
+
     # 2. 删除缓存（重要！）
     invalidate_cache(f"course:detail:{course_id}")
     invalidate_cache("course:public:*")  # 如果是公共课程

@@ -34,7 +34,7 @@ CREATE TABLE lesson_progress (
     last_viewed_at DATETIME,
     completed_at DATETIME,
     view_count INT DEFAULT 0,
-    
+
     UNIQUE KEY uq_user_lesson (user_id, lesson_id),
     INDEX ix_lesson_progress_user_course (user_id, course_id),
     INDEX ix_lesson_progress_status (status),
@@ -60,22 +60,22 @@ class LessonProgress(Base):
         UniqueConstraint("user_id", "lesson_id"),
         Index("ix_lesson_progress_user_course", "user_id", "course_id"),
     )
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
     course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"))
     lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"))
-    
+
     status = Column(String(16), default="not_started")
     progress_percent = Column(Integer, default=0)
     last_position = Column(Integer, default=0)
     duration_seconds = Column(Integer, default=0)
-    
+
     first_viewed_at = Column(DateTime, nullable=True)
     last_viewed_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     view_count = Column(Integer, default=0)
-    
+
     user = relationship("User")
     course = relationship("Course")
     lesson = relationship("Lesson")
@@ -161,7 +161,7 @@ onMounted(() => {
   if (lessonProgress.value?.last_position) {
     videoPlayer.currentTime = lessonProgress.value.last_position
   }
-  
+
   // 启动心跳上报
   progressTimer = setInterval(() => {
     updateProgress({
@@ -206,13 +206,13 @@ def upgrade():
         sa.Column('last_viewed_at', sa.DateTime(), nullable=True),
         sa.Column('completed_at', sa.DateTime(), nullable=True),
         sa.Column('view_count', sa.Integer(), default=0),
-        
+
         sa.UniqueConstraint('user_id', 'lesson_id'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['course_id'], ['courses.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['lesson_id'], ['lessons.id'], ondelete='CASCADE')
     )
-    
+
     op.create_index('ix_lesson_progress_user_course', 'lesson_progress', ['user_id', 'course_id'])
     op.create_index('ix_lesson_progress_status', 'lesson_progress', ['status'])
 
