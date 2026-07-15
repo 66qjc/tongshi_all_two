@@ -1,8 +1,13 @@
 from datetime import datetime
+from types import SimpleNamespace
 
-from sqlalchemy import inspect
+import pytest
+from sqlalchemy import create_engine, inspect
+from sqlalchemy.exc import OperationalError
 
 from app.core.timezone_utils import BEIJING_TZ
+from app.db import schema_compat
+from app.db.schema_compat import ensure_schema_compatibility
 from app.models.entities import HistorySnapshot, Question
 from app.services.history_snapshot_service import capture_snapshot, list_snapshots
 from app.services.soft_delete_policy import retention_deadline
@@ -84,3 +89,42 @@ def test_history_snapshot_indexes_are_present(db_session):
     assert "uq_history_snapshots_fact" in indexes
     assert "ix_history_snapshots_cleanup_batch" in indexes
     assert "ix_history_snapshots_captured_at" in indexes
+
+
+def test_schema_compatibility_creates_history_snapshots_for_old_sqlite_database():
+    engine = create_engine("sqlite:///:memory:")
+    try:
+        ensure_schema_compatibility(engine)
+        inspector = inspect(engine)
+        assert "history_snapshots" in inspector.get_table_names()
+        indexes = {index["name"] for index in inspector.get_indexes("history_snapshots")}
+        assert {
+            "ix_history_snapshots_resource",
+            "uq_history_snapshots_fact",
+            "ix_history_snapshots_cleanup_batch",
+            "ix_history_snapshots_captured_at",
+        }.issubset(indexes)
+
+        ensure_schema_compatibility(engine)
+    finally:
+        engine.dispose()
+
+
+def test_history_snapshot_schema_compatibility_does_not_hide_mysql_ddl_errors(monkeypatch):
+    class ExistingHistorySnapshotInspector:
+        def get_table_names(self):
+            return ["history_snapshots"]
+
+        def get_indexes(self, _table_name):
+            return []
+
+    class FailingMySQLConnection:
+        dialect = SimpleNamespace(name="mysql")
+
+        def execute(self, _statement):
+            raise OperationalError("CREATE INDEX", {}, RuntimeError("DDL permission denied"))
+
+    monkeypatch.setattr(schema_compat, "inspect", lambda _conn: ExistingHistorySnapshotInspector())
+
+    with pytest.raises(OperationalError, match="DDL permission denied"):
+        schema_compat._ensure_history_snapshot_table(FailingMySQLConnection())

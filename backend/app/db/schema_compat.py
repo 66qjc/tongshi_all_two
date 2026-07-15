@@ -1,5 +1,6 @@
 """数据库结构兼容修复。"""
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def ensure_schema_compatibility(engine) -> None:
@@ -977,9 +978,23 @@ def _ensure_history_snapshot_table(conn) -> None:
             conn.execute(text(
                 f"CREATE {unique_sql}INDEX {name} ON history_snapshots ({columns})"
             ))
-        except Exception:
-            # A concurrent worker may have created this index between inspection and DDL.
-            pass
+        except SQLAlchemyError as exc:
+            if _is_duplicate_history_snapshot_index_error(exc, name):
+                continue
+            raise
+
+
+def _is_duplicate_history_snapshot_index_error(exc: SQLAlchemyError, index_name: str) -> bool:
+    """Recognize only the SQLite/MySQL duplicate-index races we can safely ignore."""
+
+    original = getattr(exc, "orig", exc)
+    message = " ".join(str(part) for part in getattr(original, "args", ()) or (original,))
+    message = message.lower()
+    expected_name = index_name.lower()
+    return expected_name in message and (
+        ("index" in message and "already exists" in message)
+        or "duplicate key name" in message
+    )
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:
