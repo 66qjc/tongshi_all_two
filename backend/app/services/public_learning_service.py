@@ -41,8 +41,11 @@ def _count_by_course(rows) -> dict[int, int]:
 
 
 def _public_course_query(db: Session):
-    """公开课程基础查询。"""
-    return db.query(Course).filter(Course.is_public.is_(True))
+    """公开课程基础查询（排除软删）。"""
+    return db.query(Course).filter(
+        Course.is_public.is_(True),
+        Course.deleted_at.is_(None),
+    )
 
 
 def _format_public_course(
@@ -84,7 +87,10 @@ def list_public_courses(db: Session, keyword: str | None = None) -> dict:
     )
     material_counts = _count_by_course(
         db.query(Material.course_id, func.count(Material.id))
-        .filter(Material.course_id.in_(course_ids))
+        .filter(
+            Material.course_id.in_(course_ids),
+            Material.deleted_at.is_(None),
+        )
         .group_by(Material.course_id)
         .all()
     )
@@ -119,7 +125,10 @@ def build_public_course_detail(db: Session, course_id: int) -> dict:
         or 0
     )
     material_count = (
-        db.query(func.count(Material.id)).filter(Material.course_id == course.id).scalar() or 0
+        db.query(func.count(Material.id))
+        .filter(Material.course_id == course.id, Material.deleted_at.is_(None))
+        .scalar()
+        or 0
     )
     data = _format_public_course(course, lesson_count=lesson_count, material_count=material_count)
 
@@ -132,14 +141,18 @@ def build_public_course_detail(db: Session, course_id: int) -> dict:
             "name": stage.name,
             "sort_order": stage.sort_order,
             "created_at": to_beijing_iso(stage.created_at),
-            "materials": [_format_public_material(material) for material in stage.materials],
+            "materials": [
+                _format_public_material(material)
+                for material in stage.materials
+                if getattr(material, "deleted_at", None) is None
+            ],
         }
         stages.append(stage_data)
     data["stages"] = stages
     data["uncategorized_materials"] = [
         _format_public_material(material)
         for material in course.materials
-        if material.stage_id is None
+        if material.stage_id is None and getattr(material, "deleted_at", None) is None
     ]
     return data
 
@@ -164,7 +177,15 @@ def list_public_materials(
 ) -> dict:
     """游客读取公开课程资料列表。"""
     safe_limit = max(1, min(limit or 12, 50))
-    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(Course.is_public.is_(True))
+    query = (
+        db.query(Material)
+        .join(Course, Course.id == Material.course_id)
+        .filter(
+            Course.is_public.is_(True),
+            Course.deleted_at.is_(None),
+            Material.deleted_at.is_(None),
+        )
+    )
     if course_id is not None:
         query = query.filter(Material.course_id == course_id)
     if keyword:
@@ -179,7 +200,12 @@ def resolve_public_material_file(db: Session, material_id: int):
     material = (
         db.query(Material)
         .join(Course, Course.id == Material.course_id)
-        .filter(Material.id == material_id, Course.is_public.is_(True))
+        .filter(
+            Material.id == material_id,
+            Course.is_public.is_(True),
+            Course.deleted_at.is_(None),
+            Material.deleted_at.is_(None),
+        )
         .first()
     )
     if not material:
@@ -205,6 +231,4 @@ def resolve_public_material_file(db: Session, material_id: int):
         "Accept-Ranges": "bytes",
         "Cache-Control": "public, max-age=300",
     }
-    if stored.size_bytes:
-        headers["Content-Length"] = str(stored.size_bytes)
     return material, stored, headers

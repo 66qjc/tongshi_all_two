@@ -1,19 +1,57 @@
 """共享题库辅助函数。"""
 from __future__ import annotations
 
+import hashlib
 import re
 
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.models.entities import Course, Question
 
 
+def compute_stem_hash(stem: str) -> str:
+    """计算兼容现有数据的题干哈希。"""
+    return hashlib.md5(stem.strip().lower().encode("utf-8")).hexdigest()
+
+
+def _active_questions_query(db: Session):
+    """返回题目和所属课程均未软删除的共享题库查询。"""
+    return (
+        db.query(Question)
+        .join(Course, Course.id == Question.course_id)
+        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+    )
+
+
+def find_same_stem_question(
+    db: Session,
+    stem: str,
+    exclude_question_id: int | None = None,
+) -> Question | None:
+    """按兼容哈希语义查找同题干题目，仅检查活跃题目和活跃课程。"""
+    normalized_stem = stem.strip().lower()
+    stem_hash = compute_stem_hash(stem)
+    query = _active_questions_query(db).filter(
+        or_(
+            Question.stem_hash == stem_hash,
+            func.lower(func.trim(Question.stem)) == normalized_stem,
+        )
+    )
+    if exclude_question_id is not None:
+        query = query.filter(Question.id != exclude_question_id)
+    return query.first()
+
+
 def resolve_question_bank_course(db: Session, course: Course) -> Course:
     """解析课程所属的共享题库根课程。"""
     if course.question_bank_root_course_id is None:
         return course
-    root = db.query(Course).filter(Course.id == course.question_bank_root_course_id).first()
+    root = db.query(Course).filter(
+        Course.id == course.question_bank_root_course_id,
+        Course.deleted_at.is_(None),
+    ).first()
     return root or course
 
 
@@ -21,6 +59,7 @@ def get_shared_question_bank_root_course(db: Session) -> Course | None:
     """获取当前系统内的共享题库根课程。"""
     root = db.query(Course).filter(
         Course.question_bank_root_course_id.is_(None),
+        Course.deleted_at.is_(None),
     ).order_by(
         Course.is_public.desc(),
         Course.id.asc(),
@@ -30,9 +69,13 @@ def get_shared_question_bank_root_course(db: Session) -> Course | None:
 
     referenced_root_id = db.query(Course.question_bank_root_course_id).filter(
         Course.question_bank_root_course_id.isnot(None),
+        Course.deleted_at.is_(None),
     ).order_by(Course.id.asc()).first()
     if referenced_root_id and referenced_root_id[0] is not None:
-        return db.query(Course).filter(Course.id == referenced_root_id[0]).first()
+        return db.query(Course).filter(
+            Course.id == referenced_root_id[0],
+            Course.deleted_at.is_(None),
+        ).first()
     return None
 
 
@@ -114,19 +157,19 @@ def build_question_fingerprint_from_question(question: Question) -> tuple[str, s
 def collect_question_fingerprints(db: Session) -> set[tuple[str, str, tuple[str, ...], str]]:
     """收集全站共享题库已存在题目的指纹。"""
     fingerprints: set[tuple[str, str, tuple[str, ...], str]] = set()
-    for question in db.query(Question).all():
+    for question in _active_questions_query(db).all():
         fingerprints.add(build_question_fingerprint_from_question(question))
     return fingerprints
 
 
 def list_all_questions(db: Session):
     """返回全站共享题库的所有题目查询（全站只有一个共享题库，不按课程过滤）。"""
-    return db.query(Question)
+    return _active_questions_query(db)
 
 
 def count_all_questions(db: Session) -> int:
     """统计全站共享题库的题目总数。"""
-    return db.query(Question).count()
+    return _active_questions_query(db).count()
 
 
 def _candidate_stem_fragment(stem: str) -> str:
@@ -157,7 +200,7 @@ def find_duplicate_question(
     """
     fingerprint = build_question_fingerprint(question_type, stem, options, answer)
     fragment = _candidate_stem_fragment(stem)
-    query = db.query(Question).filter(Question.type == question_type)
+    query = _active_questions_query(db).filter(Question.type == question_type)
     if fragment:
         query = query.filter(Question.stem.ilike(f"%{fragment}%"))
     if exclude_question_id is not None:

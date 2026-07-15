@@ -8,7 +8,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
-from app.models.entities import Announcement, AnnouncementClass, QuizAttempt, StudentClassEnrollment, TaskCompletion, User
+from app.models.entities import (
+    Announcement,
+    AnnouncementClass,
+    Class,
+    Course,
+    QuizAttempt,
+    StudentClassEnrollment,
+    TaskCompletion,
+    User,
+)
 
 
 # 北京时间时区偏移（UTC+8）
@@ -31,17 +40,38 @@ def _to_beijing_time(dt: datetime) -> datetime:
 
 
 def _student_can_access(db: Session, user_id: str, announcement_id: int) -> bool:
+    """学生可访问任务：作业本身、目标班级、所属课程均未软删。"""
     class_ids = [
-        row.class_id for row in db.query(StudentClassEnrollment.class_id)
-        .filter(StudentClassEnrollment.user_id == user_id)
-        .all()
+        row.class_id
+        for row in (
+            db.query(StudentClassEnrollment.class_id)
+            .join(Class, Class.id == StudentClassEnrollment.class_id)
+            .join(Course, Course.id == Class.course_id)
+            .filter(
+                StudentClassEnrollment.user_id == user_id,
+                Class.deleted_at.is_(None),
+                Course.deleted_at.is_(None),
+            )
+            .all()
+        )
     ]
     if not class_ids:
         return False
-    return db.query(AnnouncementClass).filter(
-        AnnouncementClass.announcement_id == announcement_id,
-        AnnouncementClass.class_id.in_(class_ids),
-    ).first() is not None
+    return (
+        db.query(AnnouncementClass)
+        .join(Announcement, Announcement.id == AnnouncementClass.announcement_id)
+        .join(Class, Class.id == AnnouncementClass.class_id)
+        .join(Course, Course.id == Class.course_id)
+        .filter(
+            AnnouncementClass.announcement_id == announcement_id,
+            AnnouncementClass.class_id.in_(class_ids),
+            Announcement.deleted_at.is_(None),
+            Class.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        )
+        .first()
+        is not None
+    )
 
 
 def _is_not_started(ann: Announcement) -> bool:
@@ -65,8 +95,11 @@ def validate_assignment_available(ann: Announcement) -> None:
 
 
 def get_accessible_assignment(db: Session, user_id: str, announcement_id: int) -> Announcement | None:
-    """获取学生可访问的任务。"""
-    ann = db.query(Announcement).filter(Announcement.id == announcement_id).first()
+    """获取学生可访问的任务（排除已软删作业）。"""
+    ann = db.query(Announcement).filter(
+        Announcement.id == announcement_id,
+        Announcement.deleted_at.is_(None),
+    ).first()
     if not ann or not _student_can_access(db, user_id, announcement_id):
         return None
     return ann
@@ -85,8 +118,10 @@ def get_assignment_questions(db: Session, user_id: str, announcement_id: int) ->
     if not question_ids:
         raise BusinessException(400, "该任务暂无题目")
 
+    # 作业题目也排除软删题，避免把已删除题继续下发给学生。
     questions = db.query(Question).filter(
         Question.id.in_(question_ids),
+        Question.deleted_at.is_(None),
     ).order_by(Question.id).all()
     question_by_id = {question.id: question for question in questions}
     ordered_questions = [question_by_id[qid] for qid in question_ids if qid in question_by_id]

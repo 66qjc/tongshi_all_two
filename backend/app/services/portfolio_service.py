@@ -14,7 +14,10 @@ def _derive_grade(db: Session, user_id: str) -> str:
     class_names = (
         db.query(Class.name)
         .join(StudentClassEnrollment, StudentClassEnrollment.class_id == Class.id)
-        .filter(StudentClassEnrollment.user_id == user_id)
+        .filter(
+            StudentClassEnrollment.user_id == user_id,
+            Class.deleted_at.is_(None),
+        )
         .all()
     )
     for (name,) in class_names:
@@ -29,7 +32,10 @@ def _derive_grade(db: Session, user_id: str) -> str:
 
 
 def get_portfolio(db: Session, user_id: str):
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted_at.is_(None),
+    ).first()
     if not user:
         return None
 
@@ -40,7 +46,9 @@ def get_portfolio(db: Session, user_id: str):
     accuracy = int(correct / attempts * 100) if attempts > 0 else 0
 
     projects = db.query(Project).filter(
-        Project.author_id == user_id, Project.status == "approved",
+        Project.author_id == user_id,
+        Project.status == "approved",
+        Project.deleted_at.is_(None),
     ).all()
 
     # 作品平均点赞

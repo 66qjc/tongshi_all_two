@@ -287,7 +287,20 @@ def test_assignment_report_uses_latest_attempt_per_question_and_current_announce
 def test_student_free_practice_can_submit_shared_bank_question_and_stats_count_it(client, db_session, student_token):
     """学生在任一已加入课程入口自由练习时，可以作答全站共享题并纳入该入口统计。"""
     course = db_session.query(Course).filter(Course.created_by == "T001").first()
-    shared_question = _create_other_course_question(db_session, "共享题库自由练习题")
+    public_course = Course(name="共享题库公共课", created_by="admin", is_public=True)
+    db_session.add(public_course)
+    db_session.flush()
+    shared_question = Question(
+        type="choice",
+        course_id=public_course.id,
+        stem="共享题库自由练习题",
+        options=["A. 正确", "B. 错误"],
+        answer="A",
+        explanation="公共课程挂载的共享题库题目",
+    )
+    db_session.add(shared_question)
+    db_session.commit()
+    db_session.refresh(shared_question)
 
     submit_resp = client.post(
         "/api/quiz/submit",

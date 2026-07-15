@@ -65,16 +65,46 @@ def _announcement_payload(ann: Announcement, current_user_id: str | None = None)
 
 def list_announcements(db: Session, current_user):
     if current_user.role == "teacher":
-        anns = db.query(Announcement).filter(Announcement.teacher_id == current_user.id).order_by(Announcement.created_at.desc()).all()
+        anns = (
+            db.query(Announcement)
+            .join(Course, Course.id == Announcement.course_id)
+            .filter(
+                Announcement.teacher_id == current_user.id,
+                Announcement.deleted_at.is_(None),
+                Course.deleted_at.is_(None),
+            )
+            .order_by(Announcement.created_at.desc())
+            .all()
+        )
         return [_announcement_payload(ann, current_user.id) for ann in anns]
 
-    class_ids = [row.class_id for row in db.query(StudentClassEnrollment.class_id).filter(StudentClassEnrollment.user_id == current_user.id).all()]
+    class_ids = [
+        row.class_id
+        for row in (
+            db.query(StudentClassEnrollment.class_id)
+            .join(Class, Class.id == StudentClassEnrollment.class_id)
+            .join(Course, Course.id == Class.course_id)
+            .filter(
+                StudentClassEnrollment.user_id == current_user.id,
+                Class.deleted_at.is_(None),
+                Course.deleted_at.is_(None),
+            )
+            .all()
+        )
+    ]
     if not class_ids:
         return []
     anns = (
         db.query(Announcement)
         .join(AnnouncementClass, AnnouncementClass.announcement_id == Announcement.id)
-        .filter(AnnouncementClass.class_id.in_(class_ids))
+        .join(Class, Class.id == AnnouncementClass.class_id)
+        .join(Course, Course.id == Announcement.course_id)
+        .filter(
+            AnnouncementClass.class_id.in_(class_ids),
+            Announcement.deleted_at.is_(None),
+            Class.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        )
         .order_by(Announcement.created_at.desc())
         .distinct()
         .all()
@@ -94,6 +124,7 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
     course = db.query(Course).filter(
         Course.id == course_id,
         Course.created_by == teacher_id,
+        Course.deleted_at.is_(None),
     ).first()
     if not course:
         raise BusinessException(404, "课程不存在")
@@ -102,11 +133,15 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
         Class.id.in_(class_ids),
         Class.course_id == course_id,
         Class.created_by == teacher_id,
+        Class.deleted_at.is_(None),
     ).all()
     if len(classes) != len(set(class_ids)):
         raise BusinessException(400, "目标班级必须属于所选课程")
 
-    questions = db.query(Question).filter(Question.id.in_(question_ids)).all()
+    questions = db.query(Question).filter(
+        Question.id.in_(question_ids),
+        Question.deleted_at.is_(None),
+    ).all()
     if len(questions) != len(set(question_ids)):
         raise BusinessException(400, "题目必须来自全站题库")
 
@@ -167,29 +202,82 @@ def delete_announcement(db: Session, announcement_id: int, teacher_id: str):
 
 
 def get_announcement(db: Session, announcement_id: int, current_user):
-    ann = db.query(Announcement).filter(Announcement.id == announcement_id).first()
+    ann = (
+        db.query(Announcement)
+        .join(Course, Course.id == Announcement.course_id)
+        .filter(
+            Announcement.id == announcement_id,
+            Announcement.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        )
+        .first()
+    )
     if not ann:
         return None
     if current_user.role == "teacher":
         if ann.teacher_id != current_user.id:
             raise BusinessException(403, "无权访问")
     else:
-        class_ids = [row.class_id for row in db.query(StudentClassEnrollment.class_id).filter(StudentClassEnrollment.user_id == current_user.id).all()]
-        ann_class_ids = [row.class_id for row in db.query(AnnouncementClass.class_id).filter(AnnouncementClass.announcement_id == announcement_id).all()]
+        class_ids = [
+            row.class_id
+            for row in (
+                db.query(StudentClassEnrollment.class_id)
+                .join(Class, Class.id == StudentClassEnrollment.class_id)
+                .join(Course, Course.id == Class.course_id)
+                .filter(
+                    StudentClassEnrollment.user_id == current_user.id,
+                    Class.deleted_at.is_(None),
+                    Course.deleted_at.is_(None),
+                )
+                .all()
+            )
+        ]
+        ann_class_ids = [
+            row.class_id
+            for row in (
+                db.query(AnnouncementClass.class_id)
+                .join(Class, Class.id == AnnouncementClass.class_id)
+                .filter(
+                    AnnouncementClass.announcement_id == announcement_id,
+                    Class.deleted_at.is_(None),
+                )
+                .all()
+            )
+        ]
         if not set(class_ids).intersection(ann_class_ids):
             raise BusinessException(403, "无权访问")
     return _announcement_payload(ann, current_user.id)
 
 
 def unread_count(db: Session, user_id: str) -> int:
-    class_ids = [row.class_id for row in db.query(StudentClassEnrollment.class_id).filter(StudentClassEnrollment.user_id == user_id).all()]
+    class_ids = [
+        row.class_id
+        for row in (
+            db.query(StudentClassEnrollment.class_id)
+            .join(Class, Class.id == StudentClassEnrollment.class_id)
+            .join(Course, Course.id == Class.course_id)
+            .filter(
+                StudentClassEnrollment.user_id == user_id,
+                Class.deleted_at.is_(None),
+                Course.deleted_at.is_(None),
+            )
+            .all()
+        )
+    ]
     if not class_ids:
         return 0
     read_ids = [row.announcement_id for row in db.query(AnnouncementRead.announcement_id).filter(AnnouncementRead.user_id == user_id).all()]
     query = (
         db.query(Announcement)
         .join(AnnouncementClass, AnnouncementClass.announcement_id == Announcement.id)
-        .filter(AnnouncementClass.class_id.in_(class_ids))
+        .join(Class, Class.id == AnnouncementClass.class_id)
+        .join(Course, Course.id == Announcement.course_id)
+        .filter(
+            AnnouncementClass.class_id.in_(class_ids),
+            Announcement.deleted_at.is_(None),
+            Class.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        )
     )
     if read_ids:
         query = query.filter(~Announcement.id.in_(read_ids))

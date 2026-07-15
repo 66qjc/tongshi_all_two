@@ -219,25 +219,28 @@ git commit -m "feat: 统一七类资源软删除入口"
 - Test: `backend/tests/test_soft_delete_read_filters.py`
 - Test: `backend/tests/test_material_file_acceleration.py`
 
-- [ ] **Step 1: 增加漏网读路径的失败测试**
+> **进度（2026-07-15）**：正常读取/统计/文件访问过滤缺口已补齐；公告、作品、教师统计、成长档案与文件签名二次校验相关回归通过；**未改服务器配置**。
+
+
+- [x] **Step 1: 增加漏网读路径的失败测试**
 
 覆盖公告列表/详情/未读数、教师学生统计、作品列表、题库、课程访问、资料/作品文件申请；每个测试先创建活跃记录，再软删资源，断言普通服务返回空或 404，旧签名 URL 返回 401/404。
 
-- [ ] **Step 2: 运行现有过滤回归**
+- [x] **Step 2: 运行现有过滤回归**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_read_filters.py backend/tests/test_material_file_acceleration.py -q`
 
 Expected: 至少公告、作品统计或用户关联路径失败，作为实现基线。
 
-- [ ] **Step 3: 统一服务查询条件**
+- [x] **Step 3: 统一服务查询条件**
 
 所有普通查询加入自身 `deleted_at.is_(None)`；跨资源读取同时过滤父资源：作业要求作业/班级/课程活跃，资料要求资料/课程活跃，作品要求作品/用户/课程活跃，题目只要求题目自身活跃并移除旧课程删除条件。教师统计只统计活跃学生、班级、作业，历史数据留到 Task 5 的快照读取。
 
-- [ ] **Step 4: 加强文件权限二次校验**
+- [x] **Step 4: 加强文件权限二次校验**
 
 `file_service.py` 的资料、作品、预览、课程和用户权限查询均过滤软删；`file_routes.py` 在签名 URL 解码后重新查活跃用户和资源，不能信任签发时状态。文件被软删后旧 URL 和新申请都失败，恢复后重新申请成功。
 
-- [ ] **Step 5: 运行过滤与文件回归并提交**
+- [x] **Step 5: 运行过滤与文件回归并提交**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_read_filters.py backend/tests/test_material_file_acceleration.py backend/tests/test_quiz_submit_scope.py -q`
 

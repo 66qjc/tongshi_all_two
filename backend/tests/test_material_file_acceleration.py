@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from starlette.requests import Request
 
 from app.api.v1.routes import file_routes
@@ -15,6 +16,7 @@ from app.models.entities import (
     MaterialPreview,
     Project,
     ShowcaseItem,
+    ShowcaseItemImage,
     StoredFile,
     StudentClassEnrollment,
     User,
@@ -78,6 +80,13 @@ def _request_access_url(client, file_id: int, token: str) -> str:
     return data["data"]["url"]
 
 
+def _admin_token(client) -> str:
+    response = client.post("/api/token", json={"id": "admin", "password": "Admin#2026"})
+    data = response.json()
+    assert data["code"] == 0
+    return data["data"]["access_token"]
+
+
 def test_generic_file_rejects_anonymous_user(client, db_session):
     stored = _stored_file(db_session)
     _write_local_file(stored.object_key)
@@ -124,6 +133,35 @@ def test_generic_file_allows_owner_teacher_for_material(client, db_session, teac
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/pdf")
+
+
+def test_generic_material_read_does_not_scan_showcase_content_blocks(
+    client,
+    db_session,
+    teacher_token,
+    monkeypatch,
+):
+    """已有资料关联时，读取不应扫描展示内容块 JSON。"""
+    stored = _stored_file(db_session)
+    _write_local_file(stored.object_key)
+    _material(db_session, file_id=stored.id)
+    scan_calls = []
+
+    def record_showcase_content_scan(*args, **kwargs):
+        scan_calls.append((args, kwargs))
+        return False
+
+    monkeypatch.setattr(
+        file_service,
+        "_showcase_content_block_file_exists",
+        record_showcase_content_scan,
+    )
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(teacher_token))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert scan_calls == []
 
 
 def test_generic_file_allows_when_any_material_reference_is_accessible(client, db_session, student_token):
@@ -463,6 +501,304 @@ def test_anonymous_user_can_read_active_showcase_image(client, db_session):
     assert response.content == content
 
 
+def test_anonymous_user_can_read_active_showcase_gallery_image(client, db_session):
+    """匿名用户可以读取已激活展示的图库图片。"""
+    content = b"public showcase gallery"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/public-gallery.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    item = ShowcaseItem(
+        section="welfare",
+        title="公开图库",
+        is_active=True,
+        created_by="T001",
+    )
+    db_session.add(item)
+    db_session.flush()
+    db_session.add(ShowcaseItemImage(showcase_item_id=item.id, file_id=stored.id))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}")
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+def test_anonymous_user_can_read_active_showcase_content_block_image(client, db_session):
+    content = b"public content block image"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/content-block.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="公开图文",
+        content_blocks=[{"type": "image", "data": {"file_id": stored.id}}],
+        is_active=True,
+        created_by="T001",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}")
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+def test_anonymous_user_cannot_read_inactive_showcase_content_block_image(client, db_session):
+    content = b"inactive content block image"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/inactive-content-block.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="未展示图文",
+        content_blocks=[{"type": "image", "data": {"file_id": stored.id}}],
+        is_active=False,
+        created_by="T001",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}")
+
+    assert response.status_code == 200
+    assert response.json()["code"] == 401
+
+
+def test_inactive_showcase_cover_is_only_readable_by_owner(
+    client,
+    db_session,
+    teacher_token,
+    other_teacher_token,
+):
+    """未发布展示封面仅允许管理员或教师拥有者读取。"""
+    content = b"inactive showcase cover"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/inactive-cover.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="未发布封面",
+        cover_file_id=stored.id,
+        is_active=False,
+        created_by="T001",
+    ))
+    db_session.commit()
+
+    owner_response = client.get(f"/api/files/{stored.id}", headers=auth_header(teacher_token))
+    assert owner_response.status_code == 200
+    assert owner_response.content == content
+    other_response = client.get(f"/api/files/{stored.id}", headers=auth_header(other_teacher_token))
+    assert other_response.json()["code"] == 404
+
+
+def test_inactive_showcase_gallery_image_is_only_readable_by_owner(
+    client,
+    db_session,
+    teacher_token,
+    other_teacher_token,
+):
+    """未发布展示图库图片仅允许管理员或教师拥有者读取。"""
+    content = b"inactive showcase gallery"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/inactive-gallery.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    item = ShowcaseItem(
+        section="welfare",
+        title="未发布图库",
+        is_active=False,
+        created_by="T001",
+    )
+    db_session.add(item)
+    db_session.flush()
+    db_session.add(ShowcaseItemImage(showcase_item_id=item.id, file_id=stored.id))
+    db_session.commit()
+
+    owner_response = client.get(f"/api/files/{stored.id}", headers=auth_header(teacher_token))
+    assert owner_response.status_code == 200
+    assert owner_response.content == content
+    other_response = client.get(f"/api/files/{stored.id}", headers=auth_header(other_teacher_token))
+    assert other_response.json()["code"] == 404
+
+
+def test_inactive_showcase_content_block_image_is_only_readable_by_owner(
+    client,
+    db_session,
+    teacher_token,
+    other_teacher_token,
+):
+    """未发布展示内容块图片仅允许管理员或教师拥有者读取。"""
+    content = b"inactive showcase content block"
+    stored = _stored_file(
+        db_session,
+        object_key="showcase/inactive-owner-content-block.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="未发布内容块",
+        content_blocks=[{"type": "image", "data": {"file_id": stored.id}}],
+        is_active=False,
+        created_by="T001",
+    ))
+    db_session.commit()
+
+    owner_response = client.get(f"/api/files/{stored.id}", headers=auth_header(teacher_token))
+    assert owner_response.status_code == 200
+    assert owner_response.content == content
+    other_response = client.get(f"/api/files/{stored.id}", headers=auth_header(other_teacher_token))
+    assert other_response.json()["code"] == 404
+
+
+def test_admin_creator_can_read_inactive_showcase_content_block_image(client, db_session):
+    """管理员创建者可以读取未激活展示内容块图片。"""
+    content = b"inactive admin showcase content block"
+    stored = _stored_file(
+        db_session,
+        created_by="admin",
+        object_key="showcase/inactive-admin-content-block.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="管理员未发布内容块",
+        content_blocks=[{"type": "image", "data": {"file_id": stored.id}}],
+        is_active=False,
+        created_by="admin",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(_admin_token(client)))
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+def test_admin_creator_can_read_inactive_showcase_cover_image(client, db_session):
+    """管理员创建者可以读取未激活展示封面。"""
+    content = b"inactive admin showcase cover"
+    stored = _stored_file(
+        db_session,
+        created_by="admin",
+        object_key="showcase/inactive-admin-cover.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    db_session.add(ShowcaseItem(
+        section="welfare",
+        title="管理员未发布封面",
+        cover_file_id=stored.id,
+        is_active=False,
+        created_by="admin",
+    ))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(_admin_token(client)))
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+def test_admin_creator_can_read_inactive_showcase_gallery_image(client, db_session):
+    """管理员创建者可以读取未激活展示图库图片。"""
+    content = b"inactive admin showcase gallery"
+    stored = _stored_file(
+        db_session,
+        created_by="admin",
+        object_key="showcase/inactive-admin-gallery.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    item = ShowcaseItem(
+        section="welfare",
+        title="管理员未发布图库",
+        is_active=False,
+        created_by="admin",
+    )
+    db_session.add(item)
+    db_session.flush()
+    db_session.add(ShowcaseItemImage(showcase_item_id=item.id, file_id=stored.id))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(_admin_token(client)))
+
+    assert response.status_code == 200
+    assert response.content == content
+
+
+@pytest.mark.parametrize("reference_type", ["cover", "gallery", "content_block"])
+def test_other_admin_cannot_read_inactive_showcase_file(
+    client,
+    db_session,
+    reference_type,
+):
+    """非创建者管理员不能读取未激活展示文件。"""
+    content = f"inactive showcase {reference_type}".encode()
+    stored = _stored_file(
+        db_session,
+        object_key=f"showcase/inactive-other-admin-{reference_type}.jpg",
+        content_type="image/jpeg",
+        size_bytes=len(content),
+        biz_type="showcase",
+    )
+    _write_local_file(stored.object_key, content)
+    item = ShowcaseItem(
+        section="welfare",
+        title="教师未发布展示",
+        is_active=False,
+        created_by="T001",
+    )
+    if reference_type == "cover":
+        item.cover_file_id = stored.id
+    elif reference_type == "content_block":
+        item.content_blocks = [{"type": "image", "data": {"file_id": stored.id}}]
+    db_session.add(item)
+    db_session.flush()
+    if reference_type == "gallery":
+        db_session.add(ShowcaseItemImage(showcase_item_id=item.id, file_id=stored.id))
+    db_session.commit()
+
+    response = client.get(f"/api/files/{stored.id}", headers=auth_header(_admin_token(client)))
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["code"] == 404
+
+
 def test_anonymous_public_material_cover_rechecks_soft_delete(client, db_session):
     content = b"public course cover"
     stored = _stored_file(
@@ -510,6 +846,19 @@ def test_material_file_returns_x_accel_redirect_for_owner_teacher(client, db_ses
     assert response.headers["x-accel-redirect"] == f"/_protected_uploads/{stored.object_key}"
     assert response.headers["content-type"].startswith("application/pdf")
     assert "inline" in response.headers["content-disposition"]
+
+
+def test_material_file_rejects_soft_deleted_material(client, db_session, teacher_token):
+    """资料专用读取接口不得继续打开已软删除资料。"""
+    stored = _stored_file(db_session)
+    material = _material(db_session, file_id=stored.id)
+    material.deleted_at = datetime.now(timezone.utc)
+    material.deleted_by = "T001"
+    db_session.commit()
+
+    response = client.get(f"/api/materials/{material.id}/file", headers=auth_header(teacher_token))
+
+    assert response.json()["code"] == 404
 
 
 def test_material_file_allows_enrolled_student(client, db_session, student_token):

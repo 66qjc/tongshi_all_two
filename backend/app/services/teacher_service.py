@@ -18,7 +18,12 @@ from app.services.project_service import with_project_eager_load
 def _teacher_class_ids(db: Session, teacher_id: str) -> list[int]:
     return [
         row.id for row in db.query(Class.id)
-        .filter(Class.created_by == teacher_id)
+        .join(Course, Course.id == Class.course_id)
+        .filter(
+            Class.created_by == teacher_id,
+            Class.deleted_at.is_(None),
+            Course.deleted_at.is_(None),
+        )
         .all()
     ]
 
@@ -28,17 +33,27 @@ def _teacher_student_ids(db: Session, teacher_id: str) -> list[str]:
     if not class_ids:
         return []
     return [
-        row.user_id for row in db.query(StudentClassEnrollment.user_id)
-        .filter(StudentClassEnrollment.class_id.in_(class_ids))
-        .distinct()
-        .all()
+        row.user_id for row in (
+            db.query(StudentClassEnrollment.user_id)
+            .join(User, User.id == StudentClassEnrollment.user_id)
+            .filter(
+                StudentClassEnrollment.class_id.in_(class_ids),
+                User.deleted_at.is_(None),
+                User.role == "student",
+            )
+            .distinct()
+            .all()
+        )
     ]
 
 
 def _teacher_course_ids(db: Session, teacher_id: str) -> list[int]:
     return [
         row.id for row in db.query(Course.id)
-        .filter(Course.created_by == teacher_id)
+        .filter(
+            Course.created_by == teacher_id,
+            Course.deleted_at.is_(None),
+        )
         .all()
     ]
 
@@ -53,14 +68,21 @@ def _apply_teacher_project_scope(query, db: Session, teacher_id: str):
         filters.append(Project.course_id.is_(None) & Project.author_id.in_(student_ids))
     if not filters:
         return query.filter(False)
+    query = query.filter(Project.deleted_at.is_(None))
     return query.filter(or_(*filters))
 
 
 def get_teacher_stats(db: Session, teacher_id: str):
     student_ids = _teacher_student_ids(db, teacher_id)
     total_students = len(student_ids)
-    my_courses = db.query(Course).filter(Course.created_by == teacher_id).count()
-    public_courses = db.query(Course).filter(Course.is_public == True).count()
+    my_courses = db.query(Course).filter(
+        Course.created_by == teacher_id,
+        Course.deleted_at.is_(None),
+    ).count()
+    public_courses = db.query(Course).filter(
+        Course.is_public == True,
+        Course.deleted_at.is_(None),
+    ).count()
     pending_reviews_query = _apply_teacher_project_scope(
         db.query(Project).filter(Project.status == "pending"),
         db,
@@ -91,11 +113,16 @@ def list_students(
     keyword: str = None,
     course_id: int = None,
 ):
-    class_query = db.query(Class.id).filter(Class.created_by == teacher_id)
+    class_query = db.query(Class.id).join(Course, Course.id == Class.course_id).filter(
+        Class.created_by == teacher_id,
+        Class.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    )
     if course_id:
         course_exists = db.query(Course.id).filter(
             Course.id == course_id,
             Course.created_by == teacher_id,
+            Course.deleted_at.is_(None),
         ).first()
         if not course_exists:
             return [], 0
@@ -124,7 +151,7 @@ def list_students(
     student_query = (
         db.query(User, sort_sub.c.sort_class_id, sort_sub.c.sort_import_order)
         .join(sort_sub, sort_sub.c.user_id == User.id)
-        .filter(User.role == "student")
+        .filter(User.role == "student", User.deleted_at.is_(None))
     )
     if keyword:
         keyword_like = f"%{keyword.strip()}%"
@@ -354,7 +381,10 @@ def build_student_task_score_export(
     class_id: int = None,
 ) -> list[dict]:
     """构建按课程分组的学生作业分数导出数据。"""
-    course_query = db.query(Course).filter(Course.created_by == teacher_id)
+    course_query = db.query(Course).filter(
+        Course.created_by == teacher_id,
+        Course.deleted_at.is_(None),
+    )
     if course_id:
         course_query = course_query.filter(Course.id == course_id)
     courses = course_query.order_by(Course.id.asc()).all()
@@ -364,6 +394,7 @@ def build_student_task_score_export(
         selected_class = db.query(Class).filter(
             Class.id == class_id,
             Class.created_by == teacher_id,
+            Class.deleted_at.is_(None),
         ).first()
         if not selected_class:
             return []
@@ -376,6 +407,7 @@ def build_student_task_score_export(
         class_query = db.query(Class).filter(
             Class.created_by == teacher_id,
             Class.course_id == course.id,
+            Class.deleted_at.is_(None),
         )
         if selected_class:
             class_query = class_query.filter(Class.id == selected_class.id)
@@ -396,6 +428,7 @@ def build_student_task_score_export(
                 Announcement.teacher_id == teacher_id,
                 Announcement.type == "quiz",
                 Announcement.course_id == course.id,
+                Announcement.deleted_at.is_(None),
             )
             .order_by(Announcement.created_at.asc(), Announcement.id.asc())
             .all()
@@ -419,7 +452,12 @@ def build_student_task_score_export(
             db.query(User, StudentClassEnrollment, Class)
             .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
             .join(Class, Class.id == StudentClassEnrollment.class_id)
-            .filter(User.role == "student", StudentClassEnrollment.class_id.in_(class_ids))
+            .filter(
+                User.role == "student",
+                User.deleted_at.is_(None),
+                StudentClassEnrollment.class_id.in_(class_ids),
+                Class.deleted_at.is_(None),
+            )
             .order_by(Class.id.asc(), StudentClassEnrollment.import_order.asc(), User.id.asc())
             .all()
         )
@@ -511,7 +549,7 @@ def list_all_projects(
     teacher_id: str | None = None,
     keyword: str | None = None,
 ):
-    base_query = db.query(Project)
+    base_query = db.query(Project).filter(Project.deleted_at.is_(None))
     if teacher_id:
         base_query = _apply_teacher_project_scope(base_query, db, teacher_id)
     if status:
