@@ -143,7 +143,9 @@ git commit -m "feat: 增加软删除策略与历史快照基础"
 - Test: `backend/tests/test_soft_delete_lifecycle.py`
 - Test: `backend/tests/test_030405_management_systems.py`
 
-- [ ] **Step 1: 为七类正式入口写失败测试**
+> **进度（2026-07-15）**：核心入口与公共课程/资料/题目删除入口均已改为软删除；生命周期 + 管理 + 公共删除相关回归已通过。Step 1–7 代码与测试已完成；**未执行 git commit**（按当前会话“未提交任何改动”约定）。
+
+- [x] **Step 1: 为七类正式入口写失败测试**
 
 每项测试必须调用真实 API/服务入口而不是直接赋值 `deleted_at`：
 
@@ -159,17 +161,17 @@ def assert_soft_deleted_and_restorable(db_session, client, admin_token, delete_r
 
 覆盖课程、班级、作业、资料、作品、用户字符串 ID、题目；同时断言教师不能访问回收站，管理员不能提前 purge。
 
-- [ ] **Step 2: 运行失败测试并记录现状**
+- [x] **Step 2: 运行失败测试并记录现状**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_lifecycle.py backend/tests/test_030405_management_systems.py -q`
 
 Expected: FAIL，班级、作业、资料、作品、用户、题目仍物理删除或恢复 ID 仍被整数路径参数拒绝。
 
-- [ ] **Step 3: 扩展统一软删除服务**
+- [x] **Step 3: 扩展统一软删除服务**
 
 在 `soft_delete_service.py` 增加 `_coerce_resource_id(model, resource_id: str)`，根据主键 `python_type` 转换并用中文 400 错误；`soft_delete()` 默认 `cascade=False`，只有课程按策略级联班级、资料、作业并共享同一 UTC 时间。`restore_resource()` 使用策略的 `same_batch` 规则，返回 `恢复子资源数量`；删除、恢复动作保留内部代码，同时写入中文详情。
 
-- [ ] **Step 4: 改造六类服务删除入口**
+- [x] **Step 4: 改造六类服务删除入口**
 
 各服务保留原权限检查和业务限制，只移除关联 `delete()`：
 
@@ -182,15 +184,15 @@ Expected: FAIL，班级、作业、资料、作品、用户、题目仍物理删
 
 每个入口只在最外层提交一次，动作代码分别为 `class.delete`、`announcement.delete`、`material.delete`、`project.delete`、`question.delete`、`course.delete`。
 
-- [ ] **Step 5: 改造管理员教师删除**
+- [x] **Step 5: 改造管理员教师删除**
 
 `admin_routes.delete_teacher()` 删除现有 `force` 物理级联逻辑，改为查询活跃教师后调用 `soft_delete(db, teacher, current_user, action="user.delete")`；不删除课程、作品、答题、班级关系、文件或密码重置记录。`force` 查询参数移除，旧客户端额外传入时不改变软删除语义。用户软删后登录和文件访问必须返回中文错误。
 
-- [ ] **Step 6: 处理回收站路由与提前 purge**
+- [x] **Step 6: 处理回收站路由与提前 purge**
 
 恢复路由的 `resource_id` 改为 `str`，路径构造使用 URL 编码。`DELETE /api/admin/purge/...` 保留兼容路由但始终抛出 `BusinessException(403, "资源仍在保留期，不能提前彻底删除")`；只有内部清理服务可调用 `_purge_expired_resource()`。
 
-- [ ] **Step 7: 运行生命周期回归并提交**
+- [x] **Step 7: 运行生命周期回归并提交**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_lifecycle.py backend/tests/test_030405_management_systems.py backend/tests/test_public_course_delete.py -q`
 
