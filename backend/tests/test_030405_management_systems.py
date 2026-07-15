@@ -31,13 +31,12 @@ def test_course_delete_is_soft_deleted_and_can_restore(client, db_session, teach
     assert restored.deleted_by is None
 
 
-def test_course_soft_delete_rehomes_shared_questions_and_preserves_creator(
+def test_course_soft_delete_keeps_question_course_and_creator(
     client,
     db_session,
     teacher_token,
-    other_teacher_token,
 ):
-    """软删除课程时保留共享题，并保持原贡献教师的编辑权限。"""
+    """软删除课程时保留题目的原课程归属与创建人。"""
     admin_token = _admin_token(client)
     material = Material(course_id=1, type="pdf", title="测试资料", url="/x.pdf")
     question = Question(
@@ -57,45 +56,15 @@ def test_course_soft_delete_rehomes_shared_questions_and_preserves_creator(
     deleted_materials = client.get("/api/admin/deleted/materials", headers=auth_header(admin_token)).json()
     deleted_questions = client.get("/api/admin/deleted/questions", headers=auth_header(admin_token)).json()
     db_session.expire_all()
-    rehomed_question = db_session.get(Question, question_id)
+    stored_question = db_session.get(Question, question_id)
 
     assert resp["code"] == 0
     assert any(item["id"] == 1 for item in deleted_classes["data"]["items"])
     assert any(item["id"] == material.id for item in deleted_materials["data"]["items"])
     assert all(item["id"] != question_id for item in deleted_questions["data"]["items"])
-    assert rehomed_question.deleted_at is None
-    assert rehomed_question.course_id == 2
-    assert rehomed_question.created_by == "T001"
-
-    creator_edit = client.put(
-        f"/api/questions/{question_id}",
-        json={
-            "course_id": rehomed_question.course_id,
-            "type": "choice",
-            "stem": "原贡献教师已编辑",
-            "options": ["A", "B"],
-            "answer": "B",
-            "explanation": "",
-            "tags": [],
-        },
-        headers=auth_header(teacher_token),
-    ).json()
-    holder_edit = client.put(
-        f"/api/questions/{question_id}",
-        json={
-            "course_id": rehomed_question.course_id,
-            "type": "choice",
-            "stem": "承接课程教师尝试编辑",
-            "options": ["A", "B"],
-            "answer": "A",
-            "explanation": "",
-            "tags": [],
-        },
-        headers=auth_header(other_teacher_token),
-    ).json()
-
-    assert creator_edit["code"] == 0
-    assert holder_edit["code"] == 404
+    assert stored_question.deleted_at is None
+    assert stored_question.course_id == 1
+    assert stored_question.created_by == "T001"
 
     restore_resp = client.post("/api/admin/restore/courses/1", headers=auth_header(admin_token)).json()
     db_session.expire_all()
@@ -105,26 +74,28 @@ def test_course_soft_delete_rehomes_shared_questions_and_preserves_creator(
     assert db_session.query(Material).filter(Material.id == material.id).first().deleted_at is None
     restored_question = db_session.get(Question, question_id)
     assert restored_question.deleted_at is None
-    assert restored_question.course_id == 2
-    assert restored_question.stem == "原贡献教师已编辑"
+    assert restored_question.course_id == 1
+    assert restored_question.created_by == "T001"
     assert db_session.query(Question).filter(Question.id == question_id).count() == 1
 
 
-def test_course_with_questions_cannot_be_deleted_without_rehome_target(
+def test_course_with_questions_deletes_without_rehome_target(
     client,
     db_session,
     teacher_token,
     other_teacher_token,
 ):
-    """没有可用承接课程时，必须拒绝删除仍挂有共享题的课程。"""
+    """没有承接课程时，删除课程也不得迁移或删除题目。"""
     assert client.delete("/api/courses/2", headers=auth_header(other_teacher_token)).json()["code"] == 0
 
     response = client.delete("/api/courses/1", headers=auth_header(teacher_token)).json()
 
-    assert response["code"] == 400
-    assert "承接共享题库" in response["message"]
+    assert response["code"] == 0
     db_session.expire_all()
-    assert db_session.get(Course, 1).deleted_at is None
+    assert db_session.get(Course, 1).deleted_at is not None
+    question = db_session.get(Question, 1)
+    assert question.course_id == 1
+    assert question.deleted_at is None
 
 
 def test_notification_batch_send_preferences_and_read_all(client, db_session, student_token):

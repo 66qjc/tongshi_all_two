@@ -183,33 +183,11 @@ def delete_class(db: Session, class_id: int, teacher_id: str):
             StudentClassEnrollment.class_id == class_id).count()
         if student_count > 0:
             raise BusinessException(400, "该班级仍有学生，无法删除，请先在学生管理中移除学生")
+        from app.schemas.common import AuthUser
+        from app.services.soft_delete_service import soft_delete
 
-        class_announcement_ids = [
-            row.announcement_id
-            for row in db.query(AnnouncementClass.announcement_id).filter(AnnouncementClass.class_id == class_id).all()
-        ]
-        if class_announcement_ids:
-            db.query(AnnouncementClass).filter(AnnouncementClass.class_id == class_id).delete(synchronize_session=False)
-            remaining_announcement_ids = {
-                row.announcement_id
-                for row in db.query(AnnouncementClass.announcement_id)
-                .filter(AnnouncementClass.announcement_id.in_(class_announcement_ids))
-                .all()
-            }
-            orphan_announcement_ids = [
-                announcement_id
-                for announcement_id in class_announcement_ids
-                if announcement_id not in remaining_announcement_ids
-            ]
-            if orphan_announcement_ids:
-                db.query(AnnouncementRead).filter(
-                    AnnouncementRead.announcement_id.in_(orphan_announcement_ids)
-                ).delete(synchronize_session=False)
-                db.query(TaskCompletion).filter(
-                    TaskCompletion.announcement_id.in_(orphan_announcement_ids)
-                ).delete(synchronize_session=False)
-                db.query(Announcement).filter(Announcement.id.in_(orphan_announcement_ids)).delete(synchronize_session=False)
-        db.delete(cls)
+        operator = AuthUser(id=teacher_id, name="", role="teacher")
+        soft_delete(db, cls, operator, action="class.delete")
         db.commit()
         logger.info(f"班级删除: class_id={class_id}, name={cls.name}")
         # 清除班级列表缓存

@@ -23,7 +23,7 @@ from app.services.auth_service import (
     rotate_user_tokens,
 )
 from app.services.audit_service import create_audit_log, export_audit_logs, query_audit_logs
-from app.services.soft_delete_service import list_deleted_resources, purge_resource, restore_resource
+from app.services.soft_delete_service import list_deleted_resources, purge_resource, restore_resource, soft_delete
 
 router = APIRouter()
 
@@ -75,7 +75,10 @@ def list_teachers(
     _: AuthUser = Depends(require_role("admin")),
 ):
     """获取所有教师列表"""
-    teachers = db.query(User).filter(User.role == "teacher").all()
+    teachers = db.query(User).filter(
+        User.role == "teacher",
+        User.deleted_at.is_(None),
+    ).all()
     return success([_build_teacher_info(t) for t in teachers])
 
 
@@ -194,8 +197,11 @@ def reset_teacher_password(
     current_user: AuthUser = Depends(require_role("admin")),
 ):
     """重置教师密码为 123456，并标记需要重新修改密码"""
-    teacher = db.query(User).filter(User.id == teacher_id,
-                                    User.role == "teacher").first()
+    teacher = db.query(User).filter(
+        User.id == teacher_id,
+        User.role == "teacher",
+        User.deleted_at.is_(None),
+    ).first()
     if not teacher:
         raise BusinessException(404, "教师不存在")
     teacher.hashed_password = get_password_hash(DEFAULT_PASSWORD)
@@ -221,8 +227,11 @@ def get_teacher_dependencies(
     _: AuthUser = Depends(require_role("admin")),
 ):
     """查询教师名下的关联数据统计"""
-    teacher = db.query(User).filter(User.id == teacher_id,
-                                    User.role == "teacher").first()
+    teacher = db.query(User).filter(
+        User.id == teacher_id,
+        User.role == "teacher",
+        User.deleted_at.is_(None),
+    ).first()
     if not teacher:
         raise BusinessException(404, "教师不存在")
     course_count = db.query(Course).filter(Course.created_by == teacher_id).count()
@@ -239,121 +248,21 @@ def get_teacher_dependencies(
     })
 
 
-@router.delete("/teachers/{teacher_id}", summary="删除教师账号", description="管理员：删除指定教师账号，force=true 时级联删除所有关联数据")
+@router.delete("/teachers/{teacher_id}", summary="删除教师账号", description="管理员：软删除指定教师账号")
 def delete_teacher(
     teacher_id: str,
-    force: bool = False,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    """删除教师账号。force=false 时若有关联数据则拒绝删除，force=true 时级联删除所有关联数据"""
-    teacher = db.query(User).filter(User.id == teacher_id,
-                                    User.role == "teacher").first()
+    """软删除活跃教师账号，保留全部关联事实。"""
+    teacher = db.query(User).filter(
+        User.id == teacher_id,
+        User.role == "teacher",
+        User.deleted_at.is_(None),
+    ).first()
     if not teacher:
         raise BusinessException(404, "教师不存在")
-
-    # 检查关联数据
-    course_count = db.query(Course).filter(Course.created_by == teacher_id).count()
-    class_count = db.query(Class).filter(Class.created_by == teacher_id).count()
-    announcement_count = db.query(Announcement).filter(Announcement.teacher_id == teacher_id).count()
-
-    has_dependencies = course_count > 0 or class_count > 0 or announcement_count > 0
-
-    if has_dependencies and not force:
-        raise BusinessException(409, "该教师名下有关联数据，请确认后使用 force=true 强制删除")
-
-    # 级联删除关联数据（全部使用显式操作，避免 ORM cascade 顺序冲突）
-    if force:
-        # 1. 删除公告关联（公告班级、已读、任务完成）
-        announcement_ids = [a.id for a in db.query(Announcement.id).filter(
-            Announcement.teacher_id == teacher_id).all()]
-        if announcement_ids:
-            db.query(AnnouncementClass).filter(
-                AnnouncementClass.announcement_id.in_(announcement_ids)
-            ).delete(synchronize_session=False)
-            db.query(AnnouncementRead).filter(
-                AnnouncementRead.announcement_id.in_(announcement_ids)
-            ).delete(synchronize_session=False)
-            db.query(TaskCompletion).filter(
-                TaskCompletion.announcement_id.in_(announcement_ids)
-            ).delete(synchronize_session=False)
-            db.query(Announcement).filter(
-                Announcement.id.in_(announcement_ids)
-            ).delete(synchronize_session=False)
-
-        # 2. 删除课程关联（选课、资料、题目、班级）
-        teacher_course_ids = [c.id for c in db.query(Course.id).filter(
-            Course.created_by == teacher_id).all()]
-        if teacher_course_ids:
-            # 选课记录
-            class_ids = [c.id for c in db.query(Class.id).filter(
-                Class.course_id.in_(teacher_course_ids)).all()]
-            if class_ids:
-                db.query(StudentClassEnrollment).filter(
-                    StudentClassEnrollment.class_id.in_(class_ids)
-                ).delete(synchronize_session=False)
-                db.query(Class).filter(Class.id.in_(class_ids)).delete(synchronize_session=False)
-            # 资料、题目
-            db.query(Material).filter(Material.course_id.in_(teacher_course_ids)).delete(synchronize_session=False)
-            db.query(Question).filter(Question.course_id.in_(teacher_course_ids)).delete(synchronize_session=False)
-            db.query(Course).filter(Course.id.in_(teacher_course_ids)).delete(synchronize_session=False)
-
-        # 3. 删除作品关联（图片、点赞、作品）
-        project_ids = [p.id for p in db.query(Project.id).filter(
-            Project.author_id == teacher_id).all()]
-        if project_ids:
-            db.query(ProjectImage).filter(ProjectImage.project_id.in_(project_ids)).delete(synchronize_session=False)
-            db.query(ProjectLike).filter(ProjectLike.project_id.in_(project_ids)).delete(synchronize_session=False)
-            db.query(Project).filter(Project.id.in_(project_ids)).delete(synchronize_session=False)
-
-        # 4. 清理该教师的点赞记录
-        db.query(ProjectLike).filter(
-            ProjectLike.user_id == teacher_id
-        ).delete(synchronize_session=False)
-
-        # 5. 删除图文内容（图片记录、图文）
-        showcase_ids = [s.id for s in db.query(ShowcaseItem.id).filter(
-            ShowcaseItem.created_by == teacher_id).all()]
-        if showcase_ids:
-            db.query(ShowcaseItemImage).filter(
-                ShowcaseItemImage.showcase_item_id.in_(showcase_ids)
-            ).delete(synchronize_session=False)
-            db.query(ShowcaseItem).filter(ShowcaseItem.id.in_(showcase_ids)).delete(synchronize_session=False)
-
-        # 6. 删除该教师的答题记录和选课记录
-        db.query(QuizAttempt).filter(QuizAttempt.user_id == teacher_id).delete(synchronize_session=False)
-        db.query(StudentClassEnrollment).filter(
-            StudentClassEnrollment.user_id == teacher_id
-        ).delete(synchronize_session=False)
-
-        # 7. 将该教师上传的文件转给管理员
-        db.query(StoredFile).filter(
-            StoredFile.created_by == teacher_id
-        ).update({StoredFile.created_by: current_user.id}, synchronize_session=False)
-
-        # 8. 清除密码重置申请中的 resolved_by 引用
-        db.query(PasswordResetRequest).filter(
-            PasswordResetRequest.resolved_by == teacher_id
-        ).update({PasswordResetRequest.resolved_by: None}, synchronize_session=False)
-
-        db.flush()
-
-    # 删除教师账号
-    create_audit_log(
-        db,
-        user=current_user,
-        action="user.delete",
-        resource_type="users",
-        resource_id=teacher.id,
-        resource_name=teacher.name,
-        details={
-            "force": force,
-            "course_count": course_count,
-            "class_count": class_count,
-            "announcement_count": announcement_count,
-        },
-    )
-    db.delete(teacher)
+    soft_delete(db, teacher, current_user, action="user.delete")
     db.commit()
     return success({"message": "删除成功"})
 
@@ -438,7 +347,7 @@ def get_deleted_resources(
 @router.post("/restore/{resource_type}/{resource_id}", summary="恢复已删除数据", description="管理员：恢复回收站中的数据")
 def post_restore_resource(
     resource_type: str,
-    resource_id: int,
+    resource_id: str,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
@@ -448,7 +357,7 @@ def post_restore_resource(
 @router.delete("/purge/{resource_type}/{resource_id}", summary="彻底删除数据", description="管理员：彻底删除回收站中的数据")
 def delete_purged_resource(
     resource_type: str,
-    resource_id: int,
+    resource_id: str,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):

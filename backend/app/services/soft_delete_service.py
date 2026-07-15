@@ -1,9 +1,12 @@
 """软删除与回收站服务。"""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import String, cast
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
@@ -11,6 +14,7 @@ from app.core.timezone_utils import to_beijing_iso
 from app.models.entities import Announcement, Class, Course, Material, Project, Question, User
 from app.schemas.common import AuthUser
 from app.services.audit_service import create_audit_log
+from app.services.soft_delete_policy import get_resource_policy
 
 RESOURCE_MODELS = {
     "users": User,
@@ -32,6 +36,18 @@ RESOURCE_ACTION_NAMES = {
     "questions": "question",
 }
 
+RESOURCE_DISPLAY_NAMES = {
+    "classes": "班级",
+    "materials": "资料",
+    "announcements": "作业",
+}
+
+COURSE_CHILD_MODELS = {
+    "classes": (Class, Class.course_id),
+    "materials": (Material, Material.course_id),
+    "announcements": (Announcement, Announcement.course_id),
+}
+
 
 def now_utc() -> datetime:
     """返回 UTC 当前时间。"""
@@ -43,6 +59,18 @@ def filter_active(query, model):
     if hasattr(model, "deleted_at"):
         return query.filter(model.deleted_at.is_(None))
     return query
+
+
+def _coerce_resource_id(model, resource_id: str) -> Any:
+    """按资源主键类型转换路径参数，拒绝错误格式。"""
+    raw_id = str(resource_id).strip() if resource_id is not None else ""
+    if not raw_id:
+        raise BusinessException(400, "资源 ID 格式不正确")
+    try:
+        python_type = inspect(model).primary_key[0].type.python_type
+        return raw_id if python_type is str else python_type(raw_id)
+    except (TypeError, ValueError, AttributeError):
+        raise BusinessException(400, "资源 ID 格式不正确")
 
 
 def _resource_name(item: Any) -> str:
@@ -76,26 +104,47 @@ def list_deleted_resources(db: Session, resource_type: str, page: int = 1, page_
     return {"items": [_format_deleted(item) for item in items], "total": total, "page": safe_page, "page_size": safe_page_size}
 
 
-def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = True, action: str | None = None) -> Any:
-    """软删除单个对象，并按课程级联软删除核心子资源。"""
+def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = False, action: str | None = None) -> Any:
+    """软删除单个对象；仅课程依固定策略级联同批子资源。"""
     if not hasattr(item, "deleted_at"):
         raise BusinessException(400, "该资源不支持软删除")
-    if item.deleted_at is None:
-        item.deleted_at = now_utc()
+    was_active = item.deleted_at is None
+    if isinstance(item, Question) and was_active:
+        active_assignment_question_ids = db.query(
+            cast(Announcement.question_ids, String),
+        ).filter(
+            Announcement.deleted_at.is_(None),
+        ).all()
+        for (raw_question_ids,) in active_assignment_question_ids:
+            try:
+                question_ids = json.loads(raw_question_ids)
+            except (TypeError, json.JSONDecodeError):
+                raise BusinessException(400, "作业题目数据格式异常，不能删除题目")
+            if not isinstance(question_ids, list) or any(
+                not isinstance(question_id, int) or isinstance(question_id, bool)
+                for question_id in question_ids
+            ):
+                raise BusinessException(400, "作业题目数据格式异常，不能删除题目")
+            if item.id in question_ids:
+                raise BusinessException(400, "题目已被未删除作业使用，不能删除")
+    if was_active:
+        deleted_at = now_utc()
+        item.deleted_at = deleted_at
         item.deleted_by = operator.id
-    details: dict[str, Any] = {}
-    if cascade and isinstance(item, Course):
-        child_specs = [
-            (Class, Class.course_id == item.id),
-            (Material, Material.course_id == item.id),
-            (Announcement, Announcement.course_id == item.id),
-        ]
-        for model, criterion in child_specs:
-            rows = db.query(model).filter(criterion, model.deleted_at.is_(None)).all()
-            details[model.__tablename__] = len(rows)
+    details: dict[str, Any] = {"删除方式": "软删除"}
+    if isinstance(item, Course) and was_active:
+        child_counts: dict[str, int] = {}
+        for child_type in get_resource_policy("courses").cascade_children:
+            model, course_id_column = COURSE_CHILD_MODELS[child_type]
+            rows = db.query(model).filter(
+                course_id_column == item.id,
+                model.deleted_at.is_(None),
+            ).all()
+            child_counts[RESOURCE_DISPLAY_NAMES[child_type]] = len(rows)
             for row in rows:
                 row.deleted_at = item.deleted_at
                 row.deleted_by = operator.id
+        details["级联删除子资源"] = child_counts
     resource_type = getattr(item, "__tablename__", None)
     create_audit_log(
         db,
@@ -110,12 +159,13 @@ def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = T
     return item
 
 
-def restore_resource(db: Session, resource_type: str, resource_id: int, operator: AuthUser) -> dict:
+def restore_resource(db: Session, resource_type: str, resource_id: str, operator: AuthUser) -> dict:
     """恢复已软删除资源。"""
     model = RESOURCE_MODELS.get(resource_type)
     if model is None:
         raise BusinessException(404, "资源类型不存在")
-    item = db.query(model).filter(model.id == resource_id).first()
+    coerced_id = _coerce_resource_id(model, resource_id)
+    item = db.query(model).filter(model.id == coerced_id).first()
     if not item or item.deleted_at is None:
         raise BusinessException(404, "已删除资源不存在")
     deleted_at = item.deleted_at
@@ -123,22 +173,19 @@ def restore_resource(db: Session, resource_type: str, resource_id: int, operator
     item.deleted_at = None
     item.deleted_by = None
     restored_children: dict[str, int] = {}
-    if isinstance(item, Course):
-        child_specs = [
-            (Class, Class.course_id == item.id),
-            (Material, Material.course_id == item.id),
-            (Announcement, Announcement.course_id == item.id),
-        ]
-        for child_model, criterion in child_specs:
+    if isinstance(item, Course) and get_resource_policy(resource_type).restore_mode == "same_batch":
+        for child_type in get_resource_policy(resource_type).cascade_children:
+            child_model, course_id_column = COURSE_CHILD_MODELS[child_type]
             rows = db.query(child_model).filter(
-                criterion,
+                course_id_column == item.id,
                 child_model.deleted_at == deleted_at,
                 child_model.deleted_by == deleted_by,
             ).all()
-            restored_children[child_model.__tablename__] = len(rows)
+            restored_children[RESOURCE_DISPLAY_NAMES[child_type]] = len(rows)
             for row in rows:
                 row.deleted_at = None
                 row.deleted_by = None
+    restored_child_count = sum(restored_children.values())
     create_audit_log(
         db,
         user=operator,
@@ -146,29 +193,17 @@ def restore_resource(db: Session, resource_type: str, resource_id: int, operator
         resource_type=resource_type,
         resource_id=item.id,
         resource_name=_resource_name(item),
-        details={"restored_children": restored_children} if restored_children else {},
+        details={
+            "恢复子资源数量": restored_child_count,
+            "恢复子资源明细": restored_children,
+        },
     )
     db.commit()
-    return _format_deleted(item)
+    result = _format_deleted(item)
+    result["恢复子资源数量"] = restored_child_count
+    return result
 
 
-def purge_resource(db: Session, resource_type: str, resource_id: int, operator: AuthUser) -> dict:
-    """彻底删除已软删除资源。"""
-    model = RESOURCE_MODELS.get(resource_type)
-    if model is None:
-        raise BusinessException(404, "资源类型不存在")
-    item = db.query(model).filter(model.id == resource_id, model.deleted_at.isnot(None)).first()
-    if not item:
-        raise BusinessException(404, "已删除资源不存在")
-    name = _resource_name(item)
-    db.delete(item)
-    create_audit_log(
-        db,
-        user=operator,
-        action=f"{RESOURCE_ACTION_NAMES.get(resource_type, resource_type)}.purge",
-        resource_type=resource_type,
-        resource_id=resource_id,
-        resource_name=name,
-    )
-    db.commit()
-    return {"id": resource_id}
+def purge_resource(db: Session, resource_type: str, resource_id: str, operator: AuthUser) -> dict:
+    """公开清除入口在保留期内固定拒绝。"""
+    raise BusinessException(403, "资源仍在保留期，不能提前彻底删除")

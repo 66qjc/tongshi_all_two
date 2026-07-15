@@ -243,18 +243,17 @@ def reject_project(db: Session, project_id: int, reason: str, teacher_id: str | 
 
 
 def delete_project(db: Session, project_id: int, teacher_id: str | None = None):
-    """删除作品及其关联数据"""
+    """软删除作品，保留图片与点赞等关联事实。"""
     project = get_project(db, project_id)
-    if not project:
+    if not project or project.deleted_at is not None:
         return None
     if teacher_id and not _teacher_can_review_project(db, teacher_id, project):
         return None
-    # 删除关联的点赞记录
-    db.query(ProjectLike).filter(ProjectLike.project_id == project_id).delete()
-    # 删除关联的图片记录
-    db.query(ProjectImage).filter(ProjectImage.project_id == project_id).delete()
-    # 删除作品
-    db.delete(project)
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
+
+    operator = AuthUser(id=teacher_id or project.author_id, name="", role="teacher")
+    soft_delete(db, project, operator, action="project.delete")
     db.commit()
     logger.info("作品删除: project_id=%s, title=%s", project_id, project.title)
     return project

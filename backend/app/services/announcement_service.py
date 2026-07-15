@@ -145,11 +145,19 @@ def create_announcement(db: Session, teacher_id: str, data: dict):
 
 
 def delete_announcement(db: Session, announcement_id: int, teacher_id: str):
-    ann = db.query(Announcement).filter(Announcement.id == announcement_id, Announcement.teacher_id == teacher_id).first()
+    ann = db.query(Announcement).filter(
+        Announcement.id == announcement_id,
+        Announcement.teacher_id == teacher_id,
+        Announcement.deleted_at.is_(None),
+    ).first()
     if not ann:
         return None
     try:
-        db.delete(ann)
+        from app.schemas.common import AuthUser
+        from app.services.soft_delete_service import soft_delete
+
+        operator = AuthUser(id=teacher_id, name="", role="teacher")
+        soft_delete(db, ann, operator, action="announcement.delete")
         db.commit()
         logger.info(f"教师删除发布题目: teacher_id={teacher_id}, announcement_id={announcement_id}")
     except SQLAlchemyError:
