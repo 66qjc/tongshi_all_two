@@ -13,6 +13,83 @@ from app.models.entities import AuditLog
 from app.schemas.common import AuthUser
 
 
+ACTION_LABELS: dict[str, str] = {
+    "course.delete": "删除课程",
+    "course.restore": "恢复课程",
+    "class.delete": "删除班级",
+    "class.restore": "恢复班级",
+    "announcement.delete": "删除作业",
+    "announcement.restore": "恢复作业",
+    "material.delete": "删除资料",
+    "material.restore": "恢复资料",
+    "project.delete": "删除作品",
+    "project.restore": "恢复作品",
+    "question.delete": "删除题目",
+    "question.restore": "恢复题目",
+    "user.delete": "删除用户",
+    "user.restore": "恢复用户",
+    "user.password_reset": "重置用户密码",
+    "teacher.create": "创建教师",
+    "teacher.delete": "删除教师",
+    "teacher.reset_password": "重置教师密码",
+    "audit_log.export": "导出审计日志",
+    "system.soft_delete_cleanup": "系统自动清理",
+    "password_reset.approve": "通过密码重置",
+    "password_reset.reject": "驳回密码重置",
+}
+
+RESOURCE_TYPE_LABELS: dict[str, str] = {
+    "users": "用户",
+    "courses": "课程",
+    "classes": "班级",
+    "announcements": "作业",
+    "projects": "作品",
+    "materials": "资料",
+    "questions": "题目",
+    "audit_logs": "审计日志",
+}
+
+STATUS_LABELS: dict[str, str] = {
+    "success": "成功",
+    "failed": "失败",
+    "error": "错误",
+}
+
+
+def action_name(action: str | None) -> str:
+    """将内部动作代码映射为中文展示名。"""
+    if not action:
+        return ""
+    if action in ACTION_LABELS:
+        return ACTION_LABELS[action]
+    # 兼容未登记动作：resource.action → 中文资源 + 动作
+    if "." in action:
+        resource, verb = action.split(".", 1)
+        resource_label = RESOURCE_TYPE_LABELS.get(resource, resource)
+        verb_map = {
+            "delete": "删除",
+            "restore": "恢复",
+            "create": "创建",
+            "update": "更新",
+            "export": "导出",
+            "purge": "彻底删除",
+        }
+        return f"{verb_map.get(verb, verb)}{resource_label}"
+    return action
+
+
+def resource_type_name(resource_type: str | None) -> str:
+    if not resource_type:
+        return ""
+    return RESOURCE_TYPE_LABELS.get(resource_type, resource_type)
+
+
+def status_name(status: str | None) -> str:
+    if not status:
+        return ""
+    return STATUS_LABELS.get(status, status)
+
+
 def create_audit_log(
     db: Session,
     *,
@@ -53,13 +130,16 @@ def _format_log(log: AuditLog) -> dict:
         "user_id": log.user_id,
         "user_role": log.user_role,
         "action": log.action,
+        "action_name": action_name(log.action),
         "resource_type": log.resource_type,
+        "resource_type_name": resource_type_name(log.resource_type),
         "resource_id": log.resource_id,
         "resource_name": log.resource_name,
         "details": log.details or {},
         "ip_address": log.ip_address,
         "user_agent": log.user_agent,
         "status": log.status,
+        "status_name": status_name(log.status),
         "error_message": log.error_message,
         "created_at": to_beijing_iso(log.created_at),
     }
@@ -163,17 +243,33 @@ def export_audit_logs(
     wb = Workbook()
     ws = wb.active
     ws.title = "审计日志"
-    ws.append(["时间", "操作人", "角色", "动作", "资源类型", "资源ID", "资源名称", "状态", "错误信息"])
+    ws.append([
+        "时间",
+        "操作人",
+        "角色",
+        "动作代码",
+        "动作名称",
+        "资源类型",
+        "资源类型名称",
+        "资源ID",
+        "资源名称",
+        "状态",
+        "状态名称",
+        "错误信息",
+    ])
     for log in logs:
         ws.append([
             to_beijing_iso(log.created_at),
             log.user_id or "",
             log.user_role or "",
             log.action,
+            action_name(log.action),
             log.resource_type or "",
+            resource_type_name(log.resource_type),
             log.resource_id or "",
             log.resource_name or "",
             log.status,
+            status_name(log.status),
             log.error_message or "",
         ])
     buffer = BytesIO()

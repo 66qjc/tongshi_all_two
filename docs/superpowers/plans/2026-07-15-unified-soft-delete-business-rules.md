@@ -344,23 +344,29 @@ git commit -m "feat: 增加软删除到期快照与自动清理"
 - Test: `backend/tests/test_soft_delete_snapshots.py`
 - Test: `backend/tests/test_030405_management_systems.py`
 
-- [ ] **Step 1: 写清理后历史报表失败测试**
+- [x] **Step 1: 写清理后历史报表失败测试**
 
 先创建作业、答题、完成记录和用户，再执行到期清理；调用教师成绩列表、完成报告、学生作品/练习统计和导出，断言仍有历史数值，且响应不含可跳转的已清理详情 URL。
 
-- [ ] **Step 2: 实现快照聚合读取**
+- [x] **Step 2: 实现快照聚合读取**
 
 在 `history_snapshot_service.py` 提供 `history_attempt_totals()`、`history_completion_rows()`、`history_project_rows()`，统一把快照 JSON 映射为现有报表 DTO；服务只读，不重新创建业务 ORM 行。教师报表把活跃表聚合与快照聚合相加，去重键使用 `(快照批次, 事实 ID)`。
 
-- [ ] **Step 3: 添加中文审计字段**
+- [x] **Step 3: 添加中文审计字段**
 
 在 `audit_service.py` 增加固定 `ACTION_LABELS`，`_format_log()` 返回 `action_name`，导出表头改为中文动作名称、资源类型名称、状态名称和错误信息；内部 `action` 代码保留，确保现有 `?action=course.delete` 筛选不破坏。新详情键统一使用中文。
 
-- [ ] **Step 4: 运行历史和审计回归并提交**
+- [x] **Step 4: 运行历史和审计回归并提交**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_snapshots.py backend/tests/test_030405_management_systems.py -q`
 
 Expected: PASS；清理后教师仍可查看历史成绩/完成情况，审计展示中文且保留必要 ID。
+
+进度（2026-07-15）：
+- 清理快照补齐作业摘要/作品摘要字段，便于清理后报表回填。
+- `history_snapshot_service` 新增聚合读取；`teacher/task/portfolio` 合并历史。
+- 审计返回 `action_name`/`resource_type_name`/`status_name`，导出含中文列。
+- 回归：`test_soft_delete_snapshots` + `test_030405_management_systems` + `test_soft_delete_cleanup` 共 30 passed。
 
 ```bash
 git add backend/app/services/history_snapshot_service.py backend/app/services/teacher_service.py backend/app/services/task_service.py backend/app/services/portfolio_service.py backend/app/services/audit_service.py backend/app/api/v1/routes/admin_routes.py backend/tests/test_soft_delete_snapshots.py backend/tests/test_030405_management_systems.py

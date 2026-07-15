@@ -422,14 +422,15 @@ def export_audit_logs_excel(
         resource_name="审计日志导出",
         details={
             "export_count": export_count,
-            "filters": {
-                "user_id": user_id,
-                "action": action,
-                "resource_type": resource_type,
-                "resource_id": resource_id,
-                "status": status,
-                "start_date": start_date,
-                "end_date": end_date,
+            "导出条数": export_count,
+            "筛选条件": {
+                "用户ID": user_id,
+                "动作": action,
+                "资源类型": resource_type,
+                "资源ID": resource_id,
+                "状态": status,
+                "开始时间": start_date,
+                "结束时间": end_date,
             },
         },
     )

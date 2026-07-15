@@ -152,7 +152,30 @@ def _snapshot_announcement_facts(
     cleanup_batch_id: str,
 ) -> int:
     count = 0
+    question_ids = list(announcement.question_ids or []) if isinstance(announcement.question_ids, list) else []
+    _snapshot(
+        db,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        fact_type="作业摘要",
+        fact_id=f"announcement-meta-{announcement.id}",
+        payload={
+            "作业ID": announcement.id,
+            "作业标题": announcement.title,
+            "教师ID": announcement.teacher_id,
+            "课程ID": announcement.course_id,
+            "题目IDs": question_ids,
+            "题目数量": len(question_ids),
+            "作业类型": announcement.type,
+        },
+        cleanup_batch_id=cleanup_batch_id,
+    )
+    count += 1
     for link in db.query(AnnouncementClass).filter(AnnouncementClass.announcement_id == announcement.id).all():
+        class_name = ""
+        class_row = db.query(Class).filter(Class.id == link.class_id).first()
+        if class_row:
+            class_name = class_row.name or ""
         _snapshot(
             db,
             resource_type=resource_type,
@@ -162,7 +185,10 @@ def _snapshot_announcement_facts(
             payload={
                 "作业ID": announcement.id,
                 "作业标题": announcement.title,
+                "教师ID": announcement.teacher_id,
+                "课程ID": announcement.course_id,
                 "班级ID": link.class_id,
+                "班级名称": class_name,
             },
             cleanup_batch_id=cleanup_batch_id,
         )
@@ -177,6 +203,8 @@ def _snapshot_announcement_facts(
             payload={
                 "作业ID": announcement.id,
                 "作业标题": announcement.title,
+                "教师ID": announcement.teacher_id,
+                "课程ID": announcement.course_id,
                 "用户ID": read.user_id,
                 "学生姓名": _user_name(db, read.user_id),
             },
@@ -193,9 +221,12 @@ def _snapshot_announcement_facts(
             payload={
                 "作业ID": announcement.id,
                 "作业标题": announcement.title,
+                "教师ID": announcement.teacher_id,
+                "课程ID": announcement.course_id,
                 "用户ID": completion.user_id,
                 "学生姓名": _user_name(db, completion.user_id),
                 "得分": completion.score,
+                "满分": completion.max_score,
             },
             cleanup_batch_id=cleanup_batch_id,
         )
@@ -210,11 +241,13 @@ def _snapshot_announcement_facts(
             payload={
                 "作业ID": announcement.id,
                 "作业标题": announcement.title,
+                "教师ID": announcement.teacher_id,
+                "课程ID": announcement.course_id,
                 "题目ID": attempt.question_id,
                 "用户ID": attempt.user_id,
                 "学生姓名": _user_name(db, attempt.user_id),
                 "作答": attempt.user_answer,
-                "是否正确": attempt.is_correct,
+                "是否正确": bool(attempt.is_correct),
             },
             cleanup_batch_id=cleanup_batch_id,
         )
@@ -276,6 +309,33 @@ def _cleanup_material(db: Session, material: Material, cleanup_batch_id: str) ->
 
 def _cleanup_project(db: Session, project: Project, cleanup_batch_id: str) -> dict[str, Any]:
     snapshot_count = 0
+    _snapshot(
+        db,
+        resource_type="projects",
+        resource_id=project.id,
+        fact_type="作品摘要",
+        fact_id=f"project-meta-{project.id}",
+        payload={
+            "作品ID": project.id,
+            "作品标题": project.title,
+            "作者ID": project.author_id,
+            "作者姓名": _user_name(db, project.author_id),
+            "课程ID": project.course_id,
+            "专业": project.major or "",
+            "描述": project.description or "",
+            "标签": list(project.tags or []) if isinstance(project.tags, list) else [],
+            "点赞数": int(project.likes or 0),
+            "是否精选": bool(project.featured),
+            "状态": project.status or "",
+            "日期": project.date or "",
+            # 清理后不再保留可跳转详情地址
+            "视频地址": "",
+            "报告地址": "",
+            "封面地址": "",
+        },
+        cleanup_batch_id=cleanup_batch_id,
+    )
+    snapshot_count += 1
     for image in db.query(ProjectImage).filter(ProjectImage.project_id == project.id).all():
         _snapshot(
             db,
@@ -286,7 +346,7 @@ def _cleanup_project(db: Session, project: Project, cleanup_batch_id: str) -> di
             payload={
                 "作品ID": project.id,
                 "作品标题": project.title,
-                "图片地址": image.image_url,
+                "图片地址": "",
                 "文件ID": image.file_id,
             },
             cleanup_batch_id=cleanup_batch_id,
@@ -360,7 +420,7 @@ def _cleanup_question(db: Session, question: Question, cleanup_batch_id: str) ->
                 "学生姓名": _user_name(db, attempt.user_id),
                 "作业ID": attempt.announcement_id,
                 "作答": attempt.user_answer,
-                "是否正确": attempt.is_correct,
+                "是否正确": bool(attempt.is_correct),
             },
             cleanup_batch_id=cleanup_batch_id,
         )
@@ -455,6 +515,19 @@ def _cleanup_user(db: Session, user: User, cleanup_batch_id: str) -> dict[str, A
                 "用户姓名": user.name,
                 "作品ID": project.id,
                 "作品标题": project.title,
+                "作者ID": user.id,
+                "作者姓名": user.name,
+                "课程ID": project.course_id,
+                "专业": project.major or "",
+                "描述": project.description or "",
+                "标签": list(project.tags or []) if isinstance(project.tags, list) else [],
+                "点赞数": int(project.likes or 0),
+                "是否精选": bool(project.featured),
+                "状态": project.status or "",
+                "日期": project.date or "",
+                "视频地址": "",
+                "报告地址": "",
+                "封面地址": "",
             },
             cleanup_batch_id=cleanup_batch_id,
         )
@@ -472,6 +545,7 @@ def _cleanup_user(db: Session, user: User, cleanup_batch_id: str) -> dict[str, A
                 "题目ID": attempt.question_id,
                 "作业ID": attempt.announcement_id,
                 "作答": attempt.user_answer,
+                "是否正确": bool(attempt.is_correct),
             },
             cleanup_batch_id=cleanup_batch_id,
         )

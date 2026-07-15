@@ -232,6 +232,9 @@ def test_audit_logs_query_user_resource_and_export(client, teacher_token):
     assert list_resp["code"] == 0
     assert list_resp["data"]["total"] >= 1
     assert list_resp["data"]["items"][0]["action"] == "course.delete"
+    assert list_resp["data"]["items"][0]["action_name"] == "删除课程"
+    assert list_resp["data"]["items"][0]["resource_type_name"] == "课程"
+    assert list_resp["data"]["items"][0]["status_name"] in {"成功", "失败", "错误"}
     assert user_resp["code"] == 0
     assert user_resp["data"]["total"] >= 1
     assert resource_resp["code"] == 0

@@ -18,6 +18,11 @@ from app.models.entities import (
     TaskCompletion,
     User,
 )
+from app.services.history_snapshot_service import (
+    history_attempt_totals,
+    history_completion_rows,
+    history_task_catalog,
+)
 
 
 # 北京时间时区偏移（UTC+8）
@@ -186,8 +191,19 @@ def completion_report(
         Announcement.id == announcement_id,
         Announcement.teacher_id == teacher_id,
     ).first()
-    if not ann:
-        return None
+
+    # 活跃作业走原路径；已清理作业回退历史快照
+    if ann is None:
+        return _completion_report_from_history(
+            db,
+            announcement_id=announcement_id,
+            teacher_id=teacher_id,
+            class_id=class_id,
+            completed_page=completed_page,
+            completed_page_size=completed_page_size,
+            incomplete_page=incomplete_page,
+            incomplete_page_size=incomplete_page_size,
+        )
 
     class_links = db.query(AnnouncementClass).filter(AnnouncementClass.announcement_id == announcement_id).all()
     if class_id is not None:
@@ -196,7 +212,11 @@ def completion_report(
     students = (
         db.query(User, StudentClassEnrollment.class_id)
         .join(StudentClassEnrollment, StudentClassEnrollment.user_id == User.id)
-        .filter(StudentClassEnrollment.class_id.in_(class_ids), User.role == "student")
+        .filter(
+            StudentClassEnrollment.class_id.in_(class_ids),
+            User.role == "student",
+            User.deleted_at.is_(None),
+        )
         .all()
     )
     completed_ids = {
@@ -241,6 +261,20 @@ def completion_report(
                 score_counts[user_id] = score_counts.get(user_id, 0) + 1
         for user_id, correct_count in score_counts.items():
             student_scores[user_id] = min(100, round(correct_count / total_questions * 100)) if total_questions > 0 else 0
+
+    # 历史快照补充（作业仍在但部分学生/完成已被清理）
+    history_scores = history_attempt_totals(
+        db, announcement_ids=[announcement_id]
+    ).get("task_scores", {})
+    for (user_id, task_id), score in history_scores.items():
+        if task_id == announcement_id:
+            student_scores.setdefault(user_id, score)
+    for row in history_completion_rows(
+        db, announcement_ids=[announcement_id], teacher_id=teacher_id
+    ):
+        completed_ids.add(row["user_id"])
+        if row.get("score") is not None:
+            student_scores.setdefault(row["user_id"], int(row["score"]))
 
     for current_class_id in class_ids:
         # 修复：原循环变量 class_id 与函数参数同名，导致函数参数被遮蔽，改用 current_class_id
@@ -300,6 +334,123 @@ def completion_report(
         "deadline": _iso(ann.end_time),
         "created_at": _iso(ann.created_at),
         "total_questions": total_questions,
+        "source": "live",
+    }
+
+
+def _completion_report_from_history(
+    db: Session,
+    *,
+    announcement_id: int,
+    teacher_id: str,
+    class_id: int | None,
+    completed_page: int,
+    completed_page_size: int,
+    incomplete_page: int,
+    incomplete_page_size: int,
+) -> dict | None:
+    """作业本体已清理时，仅基于历史快照生成完成报告。"""
+    catalog = {
+        item["announcement_id"]: item
+        for item in history_task_catalog(db, teacher_id=teacher_id, announcement_ids=[announcement_id])
+    }
+    task = catalog.get(announcement_id)
+    completions = history_completion_rows(
+        db,
+        announcement_ids=[announcement_id],
+        teacher_id=teacher_id,
+    )
+    if task is None and not completions:
+        return None
+
+    title = task["title"] if task else (
+        completions[0]["announcement_title"] if completions else f"历史作业#{announcement_id}"
+    )
+    course_id = task.get("course_id") if task else (
+        completions[0].get("course_id") if completions else None
+    )
+    total_questions = task.get("total_questions", 0) if task else (
+        completions[0].get("total_questions", 0) if completions else 0
+    )
+    class_ids = list(task.get("class_ids") or []) if task else []
+    class_name_by_id = {}
+    if task:
+        for idx, cid in enumerate(class_ids):
+            names = task.get("class_names") or []
+            class_name_by_id[cid] = names[idx] if idx < len(names) else ""
+    if class_id is not None:
+        class_ids = [cid for cid in class_ids if cid == class_id]
+
+    history_scores = history_attempt_totals(
+        db, announcement_ids=[announcement_id]
+    ).get("task_scores", {})
+
+    completed_students = []
+    seen: set[str] = set()
+    for row in completions:
+        user_id = row["user_id"]
+        if user_id in seen:
+            continue
+        seen.add(user_id)
+        score = row.get("score")
+        if score is None:
+            score = history_scores.get((user_id, announcement_id), 0)
+        student_class_ids = row.get("class_ids") or class_ids
+        if class_id is not None and student_class_ids and class_id not in student_class_ids:
+            continue
+        current_class_id = class_id if class_id is not None else (
+            student_class_ids[0] if student_class_ids else None
+        )
+        completed_students.append({
+            "id": user_id,
+            "name": row.get("student_name") or user_id,
+            "major": "",
+            "class_id": current_class_id,
+            "class_name": class_name_by_id.get(current_class_id, "") if current_class_id else "",
+            "score": int(score or 0),
+            "total_questions": total_questions or row.get("total_questions") or 0,
+        })
+
+    completed_total = len(completed_students)
+    completed_start = (completed_page - 1) * completed_page_size
+    incomplete_start = (incomplete_page - 1) * incomplete_page_size
+    per_class = []
+    for cid in class_ids:
+        count = sum(1 for item in completed_students if item.get("class_id") == cid)
+        per_class.append({
+            "class_id": cid,
+            "class_name": class_name_by_id.get(cid, ""),
+            "total": count,
+            "completed": count,
+        })
+
+    return {
+        "announcement_id": announcement_id,
+        "announcement_title": title,
+        "course_id": course_id,
+        "class_names": [class_name_by_id.get(cid, "") for cid in class_ids],
+        "total_students": completed_total,
+        "completed_students": {
+            "items": completed_students[completed_start:completed_start + completed_page_size],
+            "total": completed_total,
+            "page": completed_page,
+            "page_size": completed_page_size,
+        },
+        "completed_count": completed_total,
+        "incomplete_students": {
+            "items": [],
+            "total": 0,
+            "page": incomplete_page,
+            "page_size": incomplete_page_size,
+        },
+        "per_class": per_class,
+        "is_expired": True,
+        "deadline": "",
+        "created_at": "",
+        "total_questions": total_questions,
+        "source": "history_snapshot",
+        # 清理后不返回详情跳转
+        "detail_url": "",
     }
 
 

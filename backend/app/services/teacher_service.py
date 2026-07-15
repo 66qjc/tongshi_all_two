@@ -12,6 +12,11 @@ from app.models.entities import (
     TaskCompletion,
     User,
 )
+from app.services.history_snapshot_service import (
+    history_attempt_totals,
+    history_completion_rows,
+    history_task_catalog,
+)
 from app.services.project_service import with_project_eager_load
 
 
@@ -212,7 +217,7 @@ def list_students(
     task_by_id: dict[int, Announcement] = {}
     task_scores: dict[tuple[str, int], int] = {}
     task_titles: dict[int, str] = {}
-    ordered_tasks: list[Announcement] = []
+    ordered_task_meta: list[dict] = []
 
     if paged_ids and course_ids:
         task_rows = (
@@ -221,6 +226,7 @@ def list_students(
                 Announcement.teacher_id == teacher_id,
                 Announcement.type == "quiz",
                 Announcement.course_id.in_(course_ids),
+                Announcement.deleted_at.is_(None),
             )
             .order_by(Announcement.created_at.asc(), Announcement.id.asc())
             .all()
@@ -254,12 +260,49 @@ def list_students(
                 completed_task_ids.setdefault(user_id, set()).add(task_id)
 
             ordered_tasks = sorted(task_by_id.values(), key=lambda item: (item.created_at, item.id))
-            task_titles = _ordered_task_header_titles(ordered_tasks)
+            live_titles = _ordered_task_header_titles(ordered_tasks)
             task_question_counts = {
                 task.id: len(task.question_ids if isinstance(task.question_ids, list) else [])
                 for task in ordered_tasks
             }
             task_scores = _latest_task_scores(db, list(all_task_ids), task_question_counts)
+            for task in ordered_tasks:
+                ordered_task_meta.append({
+                    "id": task.id,
+                    "title": live_titles.get(task.id, task.title),
+                    "source": "live",
+                })
+                task_titles[task.id] = live_titles.get(task.id, task.title)
+
+    # 合并清理后的历史作业完成与成绩
+    history_tasks = history_task_catalog(db, teacher_id=teacher_id, course_id=course_id)
+    history_completions = history_completion_rows(
+        db,
+        user_ids=paged_ids,
+        teacher_id=teacher_id,
+        course_id=course_id,
+    )
+    history_scores = history_attempt_totals(db, user_ids=paged_ids).get("task_scores", {})
+    existing_task_ids = {item["id"] for item in ordered_task_meta}
+    for task in history_tasks:
+        aid = task["announcement_id"]
+        for cid in task.get("class_ids") or []:
+            if cid in class_ids:
+                class_task_ids.setdefault(cid, set()).add(aid)
+        if aid not in existing_task_ids:
+            ordered_task_meta.append({
+                "id": aid,
+                "title": task["title"],
+                "source": "history_snapshot",
+            })
+            existing_task_ids.add(aid)
+            task_titles[aid] = task["title"]
+    for row in history_completions:
+        completed_task_ids.setdefault(row["user_id"], set()).add(row["announcement_id"])
+        if row.get("score") is not None:
+            task_scores.setdefault((row["user_id"], row["announcement_id"]), int(row["score"]))
+    for key, score in history_scores.items():
+        task_scores.setdefault(key, score)
 
     result = []
     for sid in paged_ids:
@@ -271,19 +314,21 @@ def list_students(
         assigned_task_ids: set[int] = set()
         for cid in class_id_list:
             assigned_task_ids.update(class_task_ids.get(cid, set()))
+        # 历史完成但班级关联丢失时，仍把完成过的历史作业计入该生
+        assigned_task_ids.update(completed_task_ids.get(sid, set()))
         completed_count = len(assigned_task_ids & completed_task_ids.get(sid, set()))
         total_task_count = len(assigned_task_ids)
         incomplete_count = max(total_task_count - completed_count, 0)
         task_completion_rate = int(round(completed_count / total_task_count * 100)) if total_task_count else 0
         score_items = []
-        for task in ordered_tasks:
-            if task.id not in assigned_task_ids:
+        for task in ordered_task_meta:
+            if task["id"] not in assigned_task_ids:
                 continue
             score_items.append({
-                "announcement_id": task.id,
-                "title": task_titles.get(task.id, task.title),
-                "score": task_scores.get((sid, task.id)),
-                "is_completed": task.id in completed_task_ids.get(sid, set()),
+                "announcement_id": task["id"],
+                "title": task_titles.get(task["id"], task["title"]),
+                "score": task_scores.get((sid, task["id"])),
+                "is_completed": task["id"] in completed_task_ids.get(sid, set()),
             })
 
         result.append({
@@ -359,6 +404,15 @@ def _latest_task_scores(db: Session, task_ids: list[int], task_question_counts: 
                 scores[key] = 0
             else:
                 scores[key] = min(100, round(correct_counts.get(key, 0) / total_questions * 100))
+
+    # 清理后的历史完成/答题补充缺失分数
+    history_scores = history_attempt_totals(db, announcement_ids=task_ids).get("task_scores", {})
+    for key, score in history_scores.items():
+        scores.setdefault(key, score)
+    for row in history_completion_rows(db, announcement_ids=task_ids):
+        if row.get("score") is None:
+            continue
+        scores.setdefault((row["user_id"], row["announcement_id"]), int(row["score"]))
 
     return scores
 
@@ -447,6 +501,21 @@ def build_student_task_score_export(
             task_class_ids.setdefault(task_id, set()).add(owned_class_id)
         tasks = [task for task in tasks if task_class_ids.get(task.id)]
         task_ids = [task.id for task in tasks]
+        task_titles = _ordered_task_header_titles(tasks)
+        export_tasks: list[dict] = [
+            {"id": task.id, "title": task_titles[task.id]}
+            for task in tasks
+        ]
+
+        # 合并历史作业目录
+        for hist in history_task_catalog(db, teacher_id=teacher_id, course_id=course.id):
+            aid = hist["announcement_id"]
+            for cid in hist.get("class_ids") or []:
+                task_class_ids.setdefault(aid, set()).add(cid)
+            if aid not in {item["id"] for item in export_tasks}:
+                export_tasks.append({"id": aid, "title": hist["title"]})
+                task_ids.append(aid)
+                task_titles[aid] = hist["title"]
 
         rows = (
             db.query(User, StudentClassEnrollment, Class)
@@ -487,13 +556,21 @@ def build_student_task_score_export(
         completed_task_ids: dict[str, set[int]] = {sid: set() for sid in student_ids}
         for user_id, task_id in completed_rows:
             completed_task_ids.setdefault(user_id, set()).add(task_id)
+        for row in history_completion_rows(
+            db,
+            user_ids=student_ids,
+            teacher_id=teacher_id,
+            course_id=course.id,
+        ):
+            completed_task_ids.setdefault(row["user_id"], set()).add(row["announcement_id"])
 
         task_question_counts = {
             task.id: len(task.question_ids if isinstance(task.question_ids, list) else [])
             for task in tasks
         }
+        for hist in history_task_catalog(db, teacher_id=teacher_id, course_id=course.id):
+            task_question_counts.setdefault(hist["announcement_id"], hist.get("total_questions") or 0)
         task_scores = _latest_task_scores(db, task_ids, task_question_counts)
-        task_titles = _ordered_task_header_titles(tasks)
 
         student_ids.sort(key=lambda sid: (
             min(student_class_ids[sid]) if student_class_ids[sid] else 0,
@@ -505,9 +582,10 @@ def build_student_task_score_export(
         for sid in student_ids:
             student = student_user[sid]
             assigned_task_ids = {
-                task.id
-                for task in tasks
-                if student_class_ids.get(sid, set()).intersection(task_class_ids.get(task.id, set()))
+                task["id"]
+                for task in export_tasks
+                if student_class_ids.get(sid, set()).intersection(task_class_ids.get(task["id"], set()))
+                or task["id"] in completed_task_ids.get(sid, set())
             }
             completed_count = len(assigned_task_ids & completed_task_ids.get(sid, set()))
             total_task_count = len(assigned_task_ids)
@@ -523,18 +601,15 @@ def build_student_task_score_export(
                 "incomplete_tasks": incomplete_count,
                 "task_completion_rate": task_completion_rate,
                 "scores": {
-                    task.id: task_scores.get((sid, task.id)) if task.id in assigned_task_ids else None
-                    for task in tasks
+                    task["id"]: task_scores.get((sid, task["id"])) if task["id"] in assigned_task_ids else None
+                    for task in export_tasks
                 },
             })
 
         groups.append({
             "course_id": course.id,
             "course_name": course.name,
-            "tasks": [
-                {"id": task.id, "title": task_titles[task.id]}
-                for task in tasks
-            ],
+            "tasks": export_tasks,
             "students": students,
         })
 
