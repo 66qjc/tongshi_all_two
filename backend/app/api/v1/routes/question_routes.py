@@ -24,23 +24,34 @@ from app.services.question_service import (
 router = APIRouter(prefix="/questions", tags=["questions"])
 
 
-def _format_question(q, current_user_id: str | None = None):
+def _format_question(q, current_user_id: str | None = None, *, include_answer: bool = True):
     course = q.course
-    return {
+    creator = getattr(q, "creator", None)
+    data = {
         "id": q.id,
         "type": q.type,
         "course_id": q.course_id,
         "course_name": course.name if course else "",
         "stem": q.stem,
         "options": q.options or [],
-        "answer": q.answer,
-        "explanation": q.explanation or "",
         "tags": q.tags or [],
         "source_question_id": q.source_question_id,
+        # 历史同步痕迹字段；全站共享后不再表示“公共/私有题库”。
         "is_synced": bool(q.source_question_id),
-        # 全站共享题库：标识当前教师是否是该题的归属人（题所在课程的 created_by 即创建者）
-        "is_owner": bool(course and current_user_id and course.created_by == current_user_id),
+        "created_by": q.created_by,
+        "creator_name": creator.name if creator else None,
+        "star_rating": q.star_rating if q.star_rating is not None else 3,
+        # 全站共享题库：是否可编辑以题目创建人为准，不是课程创建人。
+        "is_owner": bool(current_user_id and q.created_by == current_user_id),
     }
+    # 学生拉题不得预下发标准答案；提交后由 /quiz/submit 返回对错与解析。
+    if include_answer:
+        data["answer"] = q.answer
+        data["explanation"] = q.explanation or ""
+    else:
+        data["answer"] = ""
+        data["explanation"] = ""
+    return data
 
 
 @router.get("", summary="题目列表", description="按课程和题型筛选题目，支持分页和关键词搜索")
@@ -66,12 +77,18 @@ def get_course_questions_for_quiz(
 ):
     if not can_view_course_questions(db, course_id, current_user.id, current_user.role):
         raise BusinessException(404, "课程不存在")
-    questions = get_course_questions(db, course_id)
+    # 学生自由练习仅返回其可见题（本课 + 公共共享题库）；教师/管理员仍看全站活跃题。
+    student_id = current_user.id if current_user.role == "student" else None
+    questions = get_course_questions(db, course_id, student_user_id=student_id)
     # 按 question_ids 过滤（作业入口传入）
     if ids:
         id_set = {int(i) for i in ids.split(",") if i.strip().isdigit()}
         questions = [q for q in questions if q.id in id_set]
-    return success([_format_question(q) for q in questions])
+    include_answer = current_user.role != "student"
+    return success([
+        _format_question(q, current_user.id, include_answer=include_answer)
+        for q in questions
+    ])
 
 
 @router.post("", summary="新增题目", description="教师端：创建选择题或填空题")
