@@ -18,6 +18,7 @@ from app.schemas.common import (
     AdminMaterialUpdate,
     AdminPublicCourseCreate,
     AdminPublicCourseUpdate,
+    AdminQuestionBatchDelete,
     AdminQuestionCreate,
     AdminQuestionUpdate,
     AuthUser,
@@ -33,6 +34,8 @@ router = APIRouter(prefix="/public-courses", tags=["admin-public-courses"])
 
 
 def _format_course(course, sync_info: dict | None = None, total_question_count: int | None = None) -> dict:
+    active_material_count = sum(material.deleted_at is None for material in course.materials)
+    active_question_count = sum(question.deleted_at is None for question in course.questions)
     data = {
         "id": course.id,
         "name": course.name,
@@ -40,9 +43,9 @@ def _format_course(course, sync_info: dict | None = None, total_question_count: 
         "created_at": course.created_at.isoformat() if course.created_at else "",
         "created_by": course.created_by,
         "is_public": bool(course.is_public),
-        "material_count": len(course.materials),
+        "material_count": active_material_count,
         # 全站共享题库：题目数为全站题目总数
-        "question_count": total_question_count if total_question_count is not None else len(course.questions),
+        "question_count": total_question_count if total_question_count is not None else active_question_count,
     }
     if sync_info:
         data.update(sync_info)
@@ -341,7 +344,7 @@ def download_public_question_template(
     )
 
 
-@router.post("/{course_id}/questions", summary="新增公共课程题目", description="管理员：新增题目并同步教师副本")
+@router.post("/{course_id}/questions", summary="新增共享题库题目", description="管理员：通过公共课程入口新增全站共享题目")
 def add_public_question(
     course_id: int,
     data: AdminQuestionCreate,
@@ -358,7 +361,7 @@ def add_public_question(
     return success(_format_question(question))
 
 
-@router.post("/{course_id}/questions/import", summary="Excel 批量导入公共课程题目", description="管理员：上传 Excel 批量导入题目到公共课程并同步教师副本")
+@router.post("/{course_id}/questions/import", summary="Excel 批量导入共享题库题目", description="管理员：通过公共课程入口批量导入全站共享题目")
 def import_public_questions(
     course_id: int,
     file: UploadFile = File(...),
@@ -407,7 +410,7 @@ def import_public_questions(
     ))
 
 
-@router.put("/{course_id}/questions/{question_id}", summary="编辑公共课程题目", description="管理员：修改题目并同步教师副本")
+@router.put("/{course_id}/questions/{question_id}", summary="编辑共享题库题目", description="管理员：通过公共课程入口修改全站共享题目")
 def edit_public_question(
     course_id: int,
     question_id: int,
@@ -415,22 +418,44 @@ def edit_public_question(
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
+    # course_id 仅用于确认当前管理入口是有效公共课程；共享题目可挂在任意活跃课程。
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
     question = service.update_public_question(db, question_id, data.model_dump(exclude_unset=True))
-    if not question or question.course_id != course_id:
+    if not question:
         raise BusinessException(404, "公共题目不存在")
     return success(_format_question(question))
 
 
-@router.delete("/{course_id}/questions/{question_id}", summary="删除公共课程题目", description="管理员：删除题目并同步删除教师副本")
+@router.delete("/{course_id}/questions/{question_id}", summary="删除共享题库题目", description="管理员：从全站共享题库删除指定题目")
 def remove_public_question(
     course_id: int,
     question_id: int,
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    question = service.get_public_question(db, question_id)
-    if not question or question.course_id != course_id:
-        raise BusinessException(404, "公共题目不存在")
+    # course_id 仅用于确认当前管理入口存在；共享题库删除不再要求题目挂在该公共课。
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
     if not service.delete_public_question(db, question_id):
         raise BusinessException(404, "公共题目不存在")
     return success()
+
+
+@router.post(
+    "/{course_id}/questions/batch-delete",
+    summary="批量删除共享题库题目",
+    description="管理员：按题目 ID 列表从全站共享题库批量删除题目",
+)
+def batch_remove_public_questions(
+    course_id: int,
+    data: AdminQuestionBatchDelete,
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    course = service.get_course_by_id(db, course_id)
+    if not course or not course.is_public:
+        raise BusinessException(404, "公共课程不存在")
+    return success(service.delete_public_questions(db, data.question_ids))

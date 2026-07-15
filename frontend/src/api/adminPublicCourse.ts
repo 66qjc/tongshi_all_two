@@ -112,6 +112,13 @@ export function deleteAdminPublicQuestion(courseId: number, questionId: number) 
   return http.delete<any, any>(`/admin/public-courses/${courseId}/questions/${questionId}`)
 }
 
+export function batchDeleteAdminPublicQuestions(courseId: number, questionIds: number[]) {
+  return http.post<any, { deleted_count: number; deleted_ids: number[]; missing_ids: number[] }>(
+    `/admin/public-courses/${courseId}/questions/batch-delete`,
+    { question_ids: questionIds },
+  )
+}
+
 export function getAdminPublicQuestionContributions(courseId: number, page = 1, page_size = 20) {
   return http.get<any, { items: AdminQuestionContributionLog[]; total: number; page: number; page_size: number }>(
     `/admin/public-courses/${courseId}/question-contributions`,
@@ -122,7 +129,7 @@ export function getAdminPublicQuestionContributions(courseId: number, page = 1, 
 export function importAdminPublicQuestions(courseId: number, file: File) {
   const formData = new FormData()
   formData.append('file', file)
-  return http.post<any, { success_count: number; fail_count: number; errors: { row: number; reason: string }[] }>(
+  return http.post<any, { success_count: number; skip_count: number; fail_count: number; skips: { row: number; reason: string }[]; errors: { row: number; reason: string }[] }>(
     `/admin/public-courses/${courseId}/questions/import`,
     formData,
     { headers: { 'Content-Type': 'multipart/form-data' } },

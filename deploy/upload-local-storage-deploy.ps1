@@ -26,14 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $UploadItems = @(
-    @{ Source = "deploy/nginx.conf"; Target = "deploy/nginx.conf" },
-    @{ Source = "deploy/README.md"; Target = "deploy/README.md" },
-    @{ Source = "backend/scripts/check_deploy_env.py"; Target = "backend/scripts/check_deploy_env.py" },
-    @{ Source = "backend/.env.example"; Target = "backend/.env.example" },
-    @{ Source = "backend/README.md"; Target = "backend/README.md" },
-    @{ Source = "frontend/.env.production.example"; Target = "frontend/.env.production.example" },
-    @{ Source = "frontend/README.md"; Target = "frontend/README.md" },
-    @{ Source = "docs/superpowers/project-map.md"; Target = "docs/superpowers/project-map.md" }
+    @{ Source = "deploy/nginx.conf"; Target = "tongshi.nginx.conf.candidate" }
 )
 
 function Get-RepoRoot {
@@ -71,6 +64,37 @@ function Protect-RemoteShellArg {
     }
 
     return "'$Value'"
+}
+
+function Get-NormalizedRemotePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    if (-not $Value.StartsWith("/")) {
+        throw "候选目录必须是绝对 Linux 路径：$Value"
+    }
+
+    if ($Value.Contains("'") -or $Value.Contains("`n") -or $Value.Contains("`r") -or $Value.Contains("\")) {
+        throw "候选目录包含不支持的字符：$Value"
+    }
+
+    $normalized = $Value.TrimEnd("/")
+    if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized -eq "/") {
+        throw "候选目录不能是根目录：$Value"
+    }
+
+    if ($normalized -notmatch "^/[A-Za-z0-9._/-]+$") {
+        throw "候选目录包含不支持的字符：$Value"
+    }
+
+    $segments = $normalized.Substring(1).Split("/")
+    if ($segments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." }) {
+        throw "候选目录不能包含空路径段、`.` 或 `..`：$Value"
+    }
+
+    return $normalized
 }
 
 function Invoke-ExternalCommand {
@@ -139,18 +163,7 @@ if ([string]::IsNullOrWhiteSpace($User)) {
     throw "User cannot be empty."
 }
 
-if ([string]::IsNullOrWhiteSpace($RemoteRoot)) {
-    throw "Remote root cannot be empty."
-}
-
-if ($RemoteRoot.Contains('\')) {
-    throw "Remote root must use a Linux path, for example /opt/tongshi."
-}
-
-$RemoteRoot = $RemoteRoot.TrimEnd("/")
-if ([string]::IsNullOrWhiteSpace($RemoteRoot)) {
-    throw "Remote root cannot be empty."
-}
+$RemoteRoot = Get-NormalizedRemotePath -Value $RemoteRoot
 
 $RepoRoot = Get-RepoRoot
 $ResolvedItems = foreach ($item in $UploadItems) {
@@ -178,21 +191,37 @@ if (-not $DryRun) {
 
 $SshBaseArgs = Get-SshBaseArgs
 $ScpBaseArgs = Get-ScpBaseArgs
-$RemoteDirs = $ResolvedItems |
-    ForEach-Object { Split-Path -Path $_.Target -Parent } |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-    Sort-Object -Unique
-
-$MkdirPaths = @($RemoteRoot) + ($RemoteDirs | ForEach-Object { Join-RemotePath -Root $RemoteRoot -RelativePath $_ })
-$MkdirCommand = "mkdir -p " + (($MkdirPaths | ForEach-Object { Protect-RemoteShellArg -Value $_ }) -join " ")
 $RemoteUserHost = "${User}@${ServerHost}"
+$QuotedRemoteRoot = Protect-RemoteShellArg -Value $RemoteRoot
+$RemotePreflightCommand = @'
+set -eu
+CandidateDirectory=__CANDIDATE_DIRECTORY__
+GitProbe="$CandidateDirectory"
+while [ ! -e "$GitProbe" ]; do
+    ParentDirectory="$(dirname -- "$GitProbe")"
+    if [ "$ParentDirectory" = "$GitProbe" ]; then
+        printf '%s\n' '无法找到候选目录的已存在祖先，已停止上传。' >&2
+        exit 1
+    fi
+    GitProbe="$ParentDirectory"
+done
+if ! command -v git >/dev/null 2>&1; then
+    printf '%s\n' '服务器缺少 git，无法验证候选目录是否安全。' >&2
+    exit 1
+fi
+if git -C "$GitProbe" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s\n' '候选目录位于 Git 工作区中，已停止上传。' >&2
+    exit 1
+fi
+mkdir -p -- "$CandidateDirectory"
+'@.Replace("__CANDIDATE_DIRECTORY__", $QuotedRemoteRoot)
 
-Write-Host "Prepare remote directories: $RemoteRoot"
-Invoke-ExternalCommand -FilePath "ssh" -ArgumentList ($SshBaseArgs + @($RemoteUserHost, $MkdirCommand))
+Write-Host "检查 Nginx 候选目录：$RemoteRoot"
+Invoke-ExternalCommand -FilePath "ssh" -ArgumentList ($SshBaseArgs + @($RemoteUserHost, $RemotePreflightCommand))
 
 foreach ($item in $ResolvedItems) {
     $remoteTarget = Join-RemotePath -Root $RemoteRoot -RelativePath $item.Target
-    $destination = "${RemoteUserHost}:$(Protect-RemoteShellArg -Value $remoteTarget)"
+    $destination = "${RemoteUserHost}:$remoteTarget"
     Write-Host "Upload: $($item.Target)"
     Invoke-ExternalCommand -FilePath "scp" -ArgumentList ($ScpBaseArgs + @($item.Source, $destination))
 }

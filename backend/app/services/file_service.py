@@ -188,11 +188,70 @@ def _can_read_showcase_file(db: Session, file_id: int, user_id: str | None = Non
         return True
 
     if user_id and role in {"admin", "teacher"}:
-        return db.query(ShowcaseItem.id).filter(
+        owned_cover_exists = db.query(ShowcaseItem.id).filter(
             ShowcaseItem.cover_file_id == file_id,
             ShowcaseItem.created_by == user_id,
         ).first() is not None
-    return False
+        if owned_cover_exists:
+            return True
+
+        owned_image_exists = db.query(ShowcaseItemImage.id).join(
+            ShowcaseItem,
+            ShowcaseItem.id == ShowcaseItemImage.showcase_item_id,
+        ).filter(
+            ShowcaseItemImage.file_id == file_id,
+            ShowcaseItem.created_by == user_id,
+        ).first() is not None
+        if owned_image_exists:
+            return True
+
+    if _showcase_content_block_file_exists(db, file_id, active_only=True):
+        return True
+
+    if not user_id or role not in {"admin", "teacher"}:
+        return False
+    return _showcase_content_block_file_exists(db, file_id, owner_id=user_id)
+
+
+def _content_block_file_ids(content_blocks) -> set[int]:
+    """提取图文混排内容块中引用的图片文件 ID。"""
+    if not isinstance(content_blocks, list):
+        return set()
+
+    file_ids = set()
+    for block in content_blocks:
+        if not isinstance(block, dict) or block.get("type") != "image":
+            continue
+        data = block.get("data")
+        if not isinstance(data, dict):
+            continue
+        file_id = data.get("file_id")
+        if isinstance(file_id, int) and file_id > 0:
+            file_ids.add(file_id)
+    return file_ids
+
+
+def _showcase_content_block_file_exists(
+    db: Session,
+    file_id: int,
+    *,
+    active_only: bool = False,
+    owner_id: str | None = None,
+) -> bool:
+    """判断文件是否被展示内容块引用，必要时只检查激活内容。"""
+    query = db.query(
+        ShowcaseItem.id,
+        ShowcaseItem.created_by,
+        ShowcaseItem.content_blocks,
+    )
+    if active_only:
+        query = query.filter(ShowcaseItem.is_active.is_(True))
+    if owner_id is not None:
+        query = query.filter(ShowcaseItem.created_by == owner_id)
+    return any(
+        file_id in _content_block_file_ids(content_blocks)
+        for _, _, content_blocks in query.yield_per(100)
+    )
 
 
 def _can_read_material_preview_file(db: Session, file_id: int, user_id: str, role: str) -> bool:
@@ -243,7 +302,9 @@ def _has_any_file_reference(db: Session, file_id: int) -> bool:
         db.query(ShowcaseItem.id).filter(ShowcaseItem.cover_file_id == file_id),
         db.query(ShowcaseItemImage.id).filter(ShowcaseItemImage.file_id == file_id),
     )
-    return any(query.first() is not None for query in checks)
+    if any(query.first() is not None for query in checks):
+        return True
+    return _showcase_content_block_file_exists(db, file_id)
 
 
 def _has_active_file_reference(db: Session, file_id: int) -> bool:
@@ -289,22 +350,30 @@ def _has_active_file_reference(db: Session, file_id: int) -> bool:
     if active_project:
         return True
 
-    return db.query(ShowcaseItem.id).outerjoin(
+    active_showcase = db.query(ShowcaseItem.id).outerjoin(
         ShowcaseItemImage,
         ShowcaseItemImage.showcase_item_id == ShowcaseItem.id,
     ).filter(
+        ShowcaseItem.is_active.is_(True),
         or_(
             ShowcaseItem.cover_file_id == file_id,
             ShowcaseItemImage.file_id == file_id,
         ),
     ).first() is not None
+    if active_showcase:
+        return True
+    return _showcase_content_block_file_exists(db, file_id, active_only=True)
 
 
 def can_current_user_read_file(db: Session, record: StoredFile, current_user) -> bool:
     """按现有业务关系判断当前用户是否可读取 StoredFile。"""
     has_business_reference = _has_any_file_reference(db, record.id)
     if current_user.role == "admin":
-        return not has_business_reference or _has_active_file_reference(db, record.id)
+        if not has_business_reference:
+            return True
+        if _has_active_file_reference(db, record.id):
+            return True
+        return _can_read_showcase_file(db, record.id, current_user.id, current_user.role)
     if not has_business_reference:
         return record.created_by == current_user.id
 

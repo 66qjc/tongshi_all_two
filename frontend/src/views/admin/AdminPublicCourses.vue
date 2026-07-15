@@ -10,6 +10,7 @@ import {
   createAdminPublicCourseStage,
   createAdminPublicMaterial,
   createAdminPublicQuestion,
+  batchDeleteAdminPublicQuestions,
   deleteAdminPublicCourse,
   deleteAdminPublicCourseStage,
   deleteAdminPublicMaterial,
@@ -53,6 +54,8 @@ const { uploading, percent: uploadPercent, upload } = useUploadWithProgress()
 
 const materials = ref<Material[]>([])
 const questions = ref<Question[]>([])
+const selectedQuestions = ref<Question[]>([])
+const deletingQuestions = ref(false)
 
 const stages = ref<AdminCourseStage[]>([])
 const stageLoading = ref(false)
@@ -411,19 +414,91 @@ async function saveQuestion() {
   }
 }
 
+function handleQuestionSelectionChange(rows: Question[]) {
+  selectedQuestions.value = rows
+}
+
 async function removeQuestion(question: Question) {
   if (!selectedCourse.value) return
   try {
-    await ElMessageBox.confirm('确定删除该公共题目吗？将从全站共享题库中删除该题目，并清理相关引用和答题记录；教师自行新增题目不受影响。', '删除公共题目', {
-      type: 'warning',
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-    })
+    await ElMessageBox.confirm(
+      '确定删除该题目吗？该题目可能由教师贡献；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。',
+      '删除题目',
+      {
+        type: 'warning',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+      },
+    )
     await deleteAdminPublicQuestion(selectedCourse.value.id, question.id)
-    ElMessage.success('公共题目已删除')
+    ElMessage.success('题目已删除')
+    selectedQuestions.value = selectedQuestions.value.filter(item => item.id !== question.id)
     await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
   } catch (err: any) {
-    if (err !== 'cancel') ElMessage.error(err?.message || '删除公共题目失败')
+    if (err !== 'cancel') ElMessage.error(err?.message || '删除题目失败')
+  }
+}
+
+async function removeSelectedQuestions() {
+  if (!selectedCourse.value) return
+  const ids = selectedQuestions.value.map(item => item.id)
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要删除的题目')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除已选中的 ${ids.length} 道题目吗？其中可能包含教师贡献题目；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。`,
+      '批量删除题目',
+      {
+        type: 'warning',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+      },
+    )
+    deletingQuestions.value = true
+    const result = await batchDeleteAdminPublicQuestions(selectedCourse.value.id, ids)
+    const missing = result.missing_ids?.length || 0
+    ElMessage.success(
+      missing > 0
+        ? `已删除 ${result.deleted_count} 道题目，${missing} 道未找到`
+        : `已删除 ${result.deleted_count} 道题目`,
+    )
+    selectedQuestions.value = []
+    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
+  } catch (err: any) {
+    if (err !== 'cancel') ElMessage.error(err?.message || '批量删除题目失败')
+  } finally {
+    deletingQuestions.value = false
+  }
+}
+
+async function removeAllQuestions() {
+  if (!selectedCourse.value) return
+  const ids = questions.value.map(item => item.id)
+  if (!ids.length) {
+    ElMessage.warning('当前题库没有可删除的题目')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定一键删除当前题库全部 ${ids.length} 道题目吗？其中可能包含教师贡献题目；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。`,
+      '一键删除全部题目',
+      {
+        type: 'warning',
+        confirmButtonText: '确定全部删除',
+        cancelButtonText: '取消',
+      },
+    )
+    deletingQuestions.value = true
+    const result = await batchDeleteAdminPublicQuestions(selectedCourse.value.id, ids)
+    ElMessage.success(`已删除 ${result.deleted_count} 道题目`)
+    selectedQuestions.value = []
+    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
+  } catch (err: any) {
+    if (err !== 'cancel') ElMessage.error(err?.message || '一键删除题目失败')
+  } finally {
+    deletingQuestions.value = false
   }
 }
 
@@ -560,9 +635,10 @@ async function handleImportQuestions() {
   importing.value = true
   try {
     const result = await importAdminPublicQuestions(selectedCourse.value.id, importFile.value)
-    ElMessage.success(`导入完成：成功 ${result.success_count} 题，失败 ${result.fail_count} 题`)
-    if (result.errors && result.errors.length > 0) {
-      importErrors.value = result.errors
+    ElMessage.success(`导入完成：成功 ${result.success_count} 题，跳过 ${result.skip_count} 题，失败 ${result.fail_count} 题`)
+    const importDetails = [...result.skips, ...result.errors]
+    if (importDetails.length > 0) {
+      importErrors.value = importDetails
       importErrorDialogVisible.value = true
     }
     importDialogVisible.value = false
@@ -735,8 +811,37 @@ onMounted(() => fetchCourses())
               <div class="tab-toolbar">
                 <el-button type="primary" size="small" @click="openCreateQuestion()">新增题目</el-button>
                 <el-button size="small" @click="importDialogVisible = true">批量导入</el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  plain
+                  :disabled="!selectedQuestions.length"
+                  :loading="deletingQuestions"
+                  @click="removeSelectedQuestions"
+                >
+                  删除选中{{ selectedQuestions.length ? `（${selectedQuestions.length}）` : '' }}
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  :disabled="!questions.length"
+                  :loading="deletingQuestions"
+                  @click="removeAllQuestions"
+                >
+                  一键删除全部
+                </el-button>
+                <span class="toolbar-tip">当前为全站共享题库，删除会影响所有课程入口</span>
               </div>
-              <el-table :data="questions" v-loading="contentLoading" border stripe style="width: 100%">
+              <el-table
+                :data="questions"
+                v-loading="contentLoading"
+                border
+                stripe
+                style="width: 100%"
+                row-key="id"
+                @selection-change="handleQuestionSelectionChange"
+              >
+                <el-table-column type="selection" width="48" />
                 <el-table-column label="题型" width="100">
                   <template #default="{ row }">
                     <el-tag size="small" :type="row.type === 'choice' ? 'primary' : row.type === 'multi_choice' ? 'warning' : 'info'">
@@ -938,11 +1043,11 @@ onMounted(() => fetchCourses())
       </template>
     </el-dialog>
 
-    <!-- 导入失败详情 -->
-    <el-dialog v-model="importErrorDialogVisible" title="导入失败详情" width="560px">
+    <!-- 导入未写入详情 -->
+    <el-dialog v-model="importErrorDialogVisible" title="导入未写入详情" width="560px">
       <el-table :data="importErrors" stripe max-height="400">
         <el-table-column prop="row" label="行号" width="80" />
-        <el-table-column prop="reason" label="失败原因" />
+        <el-table-column prop="reason" label="未写入原因" />
       </el-table>
       <template #footer>
         <el-button @click="importErrorDialogVisible = false">关闭</el-button>

@@ -274,6 +274,10 @@ class AdminQuestionUpdate(AdminQuestionCreate):
     pass
 
 
+class AdminQuestionBatchDelete(BaseModel):
+    question_ids: List[int] = Field(min_length=1)
+
+
 # ── Quiz ────────────────────────────────────────────────────────────────────
 class QuizSubmitRequest(BaseModel):
     question_id: int

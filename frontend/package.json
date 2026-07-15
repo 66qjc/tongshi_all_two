@@ -8,6 +8,7 @@
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
+    "test:admin-question-batch-delete": "node ./tests/admin-question-batch-delete-static.test.mjs",
     "test:message-refresh": "node ./tests/message-refresh-static.test.mjs",
     "test:no-counter-store": "node ./tests/no-counter-store-static.test.mjs",
     "type-check": "vue-tsc --build"

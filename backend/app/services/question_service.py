@@ -1,19 +1,20 @@
 """题库与课程服务。"""
 from __future__ import annotations
 
-import hashlib
 import re
 
 from sqlalchemy import or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache import cache_result, invalidate_cache
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Course, Material, Question, StudentClassEnrollment
 from app.services.public_course_sync_service import mirror_public_course_content
 from app.services.question_bank_service import (
+    compute_stem_hash,
     count_all_questions,
     find_duplicate_question,
+    find_same_stem_question,
     rehome_questions_before_course_delete,
 )
 from app.services.question_contribution_service import (
@@ -22,9 +23,8 @@ from app.services.question_contribution_service import (
 
 
 def _compute_stem_hash(stem: str) -> str:
-    """计算题干哈希（用于防重复）"""
-    normalized = stem.strip().lower()
-    return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    """兼容旧调用，统一委托共享题库哈希实现。"""
+    return compute_stem_hash(stem)
 
 
 def list_questions(
@@ -38,7 +38,12 @@ def list_questions(
 ):
     # 全站共享题库：所有课程看到的是同一套题，不再按 course_id 过滤。
     # course_id 入参保留兼容旧调用，但不参与过滤。
-    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+    query = (
+        db.query(Question)
+        .options(joinedload(Question.creator), joinedload(Question.course))
+        .join(Course, Course.id == Question.course_id)
+        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+    )
     if type_ is not None:
         query = query.filter(Question.type == type_)
     if keyword:
@@ -99,10 +104,10 @@ def create_question(db: Session, data: dict, teacher_id: str):
 
     # 计算题干哈希用于防重复
     stem = data.get("stem", "").strip()
-    stem_hash = _compute_stem_hash(stem)
+    stem_hash = compute_stem_hash(stem)
 
     # 检查题干是否已存在（全站范围）
-    existing = db.query(Question).filter(Question.stem_hash == stem_hash).first()
+    existing = find_same_stem_question(db, stem)
     if existing:
         raise BusinessException(400, f"题库中已存在相同题目（ID: {existing.id}），请勿重复添加")
 
@@ -149,6 +154,14 @@ def update_question(db: Session, question_id: int, data: dict, teacher_id: str):
         "options": data.get("options", list(q.options or [])),
         "answer": data.get("answer", q.answer),
     }
+    stem_hash = compute_stem_hash(str(merged_data["stem"] or ""))
+    existing = find_same_stem_question(
+        db,
+        str(merged_data["stem"] or ""),
+        exclude_question_id=q.id,
+    )
+    if existing:
+        raise BusinessException(400, f"题库中已存在相同题目（ID: {existing.id}），请勿重复添加")
     duplicate = find_duplicate_question(
         db,
         merged_data["type"],
@@ -162,6 +175,7 @@ def update_question(db: Session, question_id: int, data: dict, teacher_id: str):
     for key, value in data.items():
         if value is not None and hasattr(q, key):
             setattr(q, key, _normalize_tags(value) if key == "tags" else value)
+    q.stem_hash = stem_hash
     db.commit()
     return q
 
@@ -189,29 +203,52 @@ def delete_question(db: Session, question_id: int, teacher_id: str):
     return True
 
 
-def get_course_questions(db: Session, course_id: int):
-    # 全站共享题库：任意课程入口都返回全站同一套题（学生答题/作业按 ids 再过滤）
-    course = db.query(Course).filter(Course.id == course_id).first()
+def get_course_questions(db: Session, course_id: int, student_user_id: str | None = None):
+    """获取课程练习题目。
+
+    - 教师/管理端：活跃课程入口返回全站活跃题（共享题库）
+    - 学生端：仅返回可见题 = 公共课题 + 学生已加入活跃课程下的题
+    """
+    course = db.query(Course).filter(
+        Course.id == course_id,
+        Course.deleted_at.is_(None),
+    ).first()
     if not course:
         return []
-    return db.query(Question).order_by(Question.id).all()
+
+    query = (
+        db.query(Question)
+        .join(Course, Course.id == Question.course_id)
+        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+    )
+    if student_user_id is not None:
+        from app.services.access_control_service import student_has_active_course_enrollment
+        from app.services.quiz_service import _student_active_course_ids
+
+        if not student_has_active_course_enrollment(db, student_user_id):
+            return []
+        student_course_ids = _student_active_course_ids(db, student_user_id)
+        query = query.filter(
+            or_(Course.is_public.is_(True), Question.course_id.in_(student_course_ids))
+        )
+    return query.order_by(Question.id).all()
 
 
 def can_view_course_questions(db: Session, course_id: int, user_id: str, role: str) -> bool:
-    """校验课程题目访问权限：学生限所在课程，教师限自有或公共课程。"""
+    """校验课程题目访问权限：学生限所在活跃课程，教师限自有或公共活跃课程。"""
     if role == "student":
-        return db.query(StudentClassEnrollment).join(
-            Class, Class.id == StudentClassEnrollment.class_id,
-        ).filter(
-            StudentClassEnrollment.user_id == user_id,
-            Class.course_id == course_id,
-        ).first() is not None
+        from app.services.access_control_service import student_can_access_course
+        return student_can_access_course(db, user_id, course_id)
     if role == "teacher":
         return db.query(Course).filter(
             Course.id == course_id,
+            Course.deleted_at.is_(None),
             _course_access_filter(user_id),
         ).first() is not None
-    return db.query(Course).filter(Course.id == course_id).first() is not None
+    return db.query(Course).filter(
+        Course.id == course_id,
+        Course.deleted_at.is_(None),
+    ).first() is not None
 
 
 def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None = None):
@@ -334,7 +371,10 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
     for idx, row in enumerate(rows, start=2):
         try:
             course_name = str(_row_value(row, "课程名称", "课程", "course", "course_name")).strip()
-            query = db.query(Course).filter(Course.name == course_name)
+            query = db.query(Course).filter(
+                Course.name == course_name,
+                Course.deleted_at.is_(None),
+            )
             if role != "admin":
                 query = query.filter(Course.created_by == teacher_id)
             course = query.first()
@@ -353,6 +393,13 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
                 raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
             if q_type in {"choice", "multi_choice"} and not option_list:
                 raise BusinessException(400, "选择题必须填写选项")
+            # 与手工新增一致：先用题干 hash 做全站同题干拦截，再做完整指纹查重。
+            stem_hash = compute_stem_hash(stem)
+            existing = find_same_stem_question(db, stem)
+            if existing:
+                skip_count += 1
+                skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
+                continue
             # 全站共享题库：查重范围为全站所有题目
             duplicate = find_duplicate_question(
                 db,
@@ -375,6 +422,8 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
                 explanation=explanation,
                 tags=tags,
                 created_by=teacher_id,
+                stem_hash=stem_hash,
+                star_rating=3,
             )
             db.add(q)
             db.flush()
