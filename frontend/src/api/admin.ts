@@ -119,13 +119,16 @@ export interface AuditLogItem {
     user_id: string | null
     user_role: string | null
     action: string
+    action_name?: string
     resource_type: string | null
+    resource_type_name?: string
     resource_id: string | null
     resource_name: string | null
     details: Record<string, unknown>
     ip_address: string | null
     user_agent: string | null
     status: string
+    status_name?: string
     error_message: string | null
     created_at: string
 }
@@ -138,15 +141,14 @@ export interface AuditLogPage {
 }
 
 export function getDeletedResources(resourceType: string, page = 1, pageSize = 20) {
-    return http.get<any, DeletedResourcePage>(`/admin/deleted/${resourceType}`, { params: { page, page_size: pageSize } })
+    const type = encodeURIComponent(String(resourceType))
+    return http.get<any, DeletedResourcePage>(`/admin/deleted/${type}`, { params: { page, page_size: pageSize } })
 }
 
 export function restoreDeletedResource(resourceType: string, id: number | string) {
-    return http.post<any, DeletedResourceItem>(`/admin/restore/${resourceType}/${id}`)
-}
-
-export function purgeDeletedResource(resourceType: string, id: number | string) {
-    return http.delete<any, { id: number | string }>(`/admin/purge/${resourceType}/${id}`)
+    const type = encodeURIComponent(String(resourceType))
+    const resourceId = encodeURIComponent(String(id))
+    return http.post<any, DeletedResourceItem>(`/admin/restore/${type}/${resourceId}`)
 }
 
 export interface AuditLogQueryParams {

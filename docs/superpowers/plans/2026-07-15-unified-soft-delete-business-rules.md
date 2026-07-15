@@ -383,21 +383,21 @@ git commit -m "feat: 保留清理后的历史成绩与中文审计"
 - Modify: `frontend/tests/admin-question-batch-delete-static.test.mjs`
 - Create: `frontend/tests/admin-recycle-bin-soft-delete-static.test.mjs`
 
-- [ ] **Step 1: 写回收站 UI 失败契约**
+- [x] **Step 1: 写回收站 UI 失败契约**
 
 静态测试断言：资源 ID 类型为 `string | number`；API 只有列表/恢复调用；组件显示中文资源类型、删除时间、保留截止时间和恢复按钮；源码不包含 `purge` 请求、`彻底删除`按钮或提前清理确认弹窗。
 
-- [ ] **Step 2: 实现前端收口**
+- [x] **Step 2: 实现前端收口**
 
 `admin.ts` 的恢复 URL 使用 `encodeURIComponent(String(id))`；删除 `purge` API 导出。`AdminRecycleBin.vue` 根据资源类型显示“用户/课程/班级/作业/资料/作品/题目”，计算并展示截止时间，恢复失败使用后端中文消息，不添加教师恢复入口。
 
-- [ ] **Step 3: 运行前端静态检查**
+- [x] **Step 3: 运行前端静态检查**
 
 Run: `node frontend/tests/admin-recycle-bin-soft-delete-static.test.mjs`
 
 Expected: PASS。
 
-- [ ] **Step 4: 执行后端全量和前端构建**
+- [x] **Step 4: 执行后端全量和前端构建**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests -q --basetemp=tmp/pytest-soft-delete-final`
 
@@ -411,13 +411,21 @@ Run: `npm.cmd run build --prefix frontend`
 
 Expected: PASS，允许已有体积警告，不允许编译错误。
 
-- [ ] **Step 5: 检查范围和文档一致性**
+进度（2026-07-15）：
+- 前端静态：`admin-recycle-bin-soft-delete-static` / `admin-audit-logs-static` / `admin-question-batch-delete-static` 通过。
+- 后端业务全量（排除工作区脏改动的 deploy 静态用例）：`370 passed, 1 skipped, 14 deselected`。
+- 软删除专项：`test_soft_delete_*` 共 `58 passed`。
+- 前端：`npm run type-check` 通过；`npm run build-only` 通过（仅既有大 chunk 警告）。
+- 真实 MySQL：未配置，**未验证**。
+- 工作区无关 `deploy/*` 脏改动导致 `test_deploy_*` 失败，不纳入本任务提交范围。
+
+- [x] **Step 5: 检查范围和文档一致性**
 
 Run: `git diff --check -- backend/app backend/tests frontend/src frontend/tests backend/docs/项目修改记录.md`
 
 检查 `docs/superpowers/2026-07-15-project-consistency-assessment.md`、`docs/superpowers/plans/2026-07-10-remediation-phase-d-soft-delete-cache-db.md` 和本设计的事实没有互相冲突；确认没有修改服务器配置、缓存、多 worker、题目标签化或无关前端页面。
 
-- [ ] **Step 6: 提交最终实现并记录验证**
+- [x] **Step 6: 提交最终实现并记录验证**
 
 ```bash
 git add frontend/src/api/admin.ts frontend/src/views/admin/AdminRecycleBin.vue frontend/tests/admin-recycle-bin-soft-delete-static.test.mjs backend/docs/项目修改记录.md
