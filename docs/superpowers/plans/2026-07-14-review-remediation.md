@@ -150,7 +150,7 @@
 - [x] 补充 `find_same_stem_question` 对软删除题目和软删除课程的覆盖。
 - [x] 让三个删除确认框分别断言四项风险文案，并将实际使用的 `admin-question-batch-delete-static.test.mjs` 作为本任务的前端回归入口。
 - [x] 将 Nginx 静态测试收紧到目标 location 块；部署说明和脚本明确服务器脏工作区门禁、活动配置安装、`nginx -t`、reload 和失败回退。
-- [ ] 仅在本地验证、提交推送和服务器状态检查均满足安全条件后部署；服务器工作区脏时停止部署，不覆盖文件。
+- [x] 已完成本地验证、提交推送和服务器只读状态检查；因服务器工作区脏而按门禁停止真实部署，未覆盖任何文件。
 
 ## 执行结果
 
@@ -161,11 +161,13 @@
 - 前端生产构建：类型检查和 Vite 构建通过，仅保留既有大分块警告。
 - 部署脚本回归：`14 passed, 1 warning`，覆盖错误 SHA 在 SSH 前失败、CRLF 过滤、提交锁定快进和 Nginx 候选文件上传参数。
 - `git diff --check` 已通过；`.pytest-*` 临时目录仅用于本地测试，不纳入提交。
-- 服务器只读预检：各核心服务、健康检查与 `nginx -t` 均通过；但服务器工作区仍不干净，本轮不执行真实部署。
+- `graphify update .` 已完成增量更新；仅提示 skill/包版本不一致与一条既存置信度拼写警告，图谱已重建。
+- 本地提交 `4bffef1` 已安全推送到 `origin/main`；服务器的 `origin/main` 已指向 `4bffef1`，但工作树 HEAD 仍为旧提交 `6155d70`。
+- 服务器只读预检：各核心服务、健康检查与 `nginx -t` 均通过；但服务器工作区仍不干净、根分区约 92% 已用（约 3.2GB 可用），本轮按门禁不执行真实部署。
 
 ## 服务器部署影响
 
-正式发布需要先将已验证提交推送到 `origin/main`，再由 `redeploy-server.ps1` 以错定 SHA 进行一次无交互 `fetch`、本地快进、后端重启和健康检查。需要重新构建并发布前端；若采用新的 Nginx 配置，需先上传到仓库外候选目录，备份后执行 `nginx -t` 再 reload。不需要数据库迁移或环境变量修改。
+正式发布需要先将已验证提交推送到 `origin/main`，再由 `redeploy-server.ps1` 以锁定 SHA 进行一次无交互 `fetch`、本地快进、后端重启和健康检查。需要重新构建并发布前端；若采用新的 Nginx 配置，需先上传到仓库外候选目录，备份后执行 `nginx -t` 再 reload。不需要数据库迁移或环境变量修改。
 
 服务器已只读检查到 4 个已修改代码文件：`backend/app/api/v1/routes/material_routes.py`、`backend/app/api/v1/routes/public_learning_routes.py`、`backend/app/services/file_service.py`、`backend/app/services/public_learning_service.py`，以及一个未跟踪的 `frontend/.env.production`。它们必须先由服务器维护者核对、备份并提交或人工合并；在 `git status --porcelain=v1 --untracked-files=all` 为空、服务器 `origin/main` 与目标 SHA 一致、根分区留有足够构建余量前，禁止真实部署、强制覆盖、`git clean`、`git reset` 或统一发布脚本的绕过调用。
 
