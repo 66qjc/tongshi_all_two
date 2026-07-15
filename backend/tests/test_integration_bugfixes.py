@@ -336,13 +336,14 @@ class TestTeacherRefactor:
         assert teacher_delete.json()["code"] == 403
         assert "教师不能删除题目" in teacher_delete.json()["message"]
 
-        # 管理员删除 → 题目全站消失
+        # 管理员删除 → 题目软删除，全站正常列表不再可见
         admin_delete = client.delete(
             f"/api/admin/public-courses/{public_course_id}/questions/{source_question_id}",
             headers=auth_header(admin_token),
         )
         assert admin_delete.json()["code"] == 0
-        assert db_session.query(Question).filter(Question.id == source_question_id).first() is None
+        deleted_question = db_session.query(Question).filter(Question.id == source_question_id).one()
+        assert deleted_question.deleted_at is not None
 
     def test_admin_public_question_tags_are_normalized(
         self,
@@ -485,8 +486,10 @@ class TestTeacherRefactor:
 
         delete_resp = client.delete(f"/api/materials/{mirrored.id}", headers=auth_header(teacher_token))
         assert delete_resp.json()["code"] == 0
-        assert db_session.query(Material).filter(Material.id == mirrored.id).first() is None
-        assert db_session.query(Material).filter(Material.id == source_material_id).first() is not None
+        mirrored_after = db_session.query(Material).filter(Material.id == mirrored.id).one()
+        source_after = db_session.query(Material).filter(Material.id == source_material_id).one()
+        assert mirrored_after.deleted_at is not None
+        assert source_after.deleted_at is None
 
     def test_teacher_materials_list_excludes_public_source_materials(self, client, db_session, teacher_token):
         public_course = Course(name="Public Materials List Scope", created_by="admin", is_public=True)
@@ -520,7 +523,7 @@ class TestTeacherRefactor:
         assert matched[0]["source_material_id"] == public_material.id
         assert matched[0]["is_synced"] is True
 
-    def test_delete_public_course_unlinks_teacher_copy_and_preserves_shared_questions(self, client, db_session, teacher_token):
+    def test_delete_public_course_soft_deletes_and_preserves_shared_questions(self, client, db_session, teacher_token):
         admin_token = client.post(
             "/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
         course_resp = client.post(
@@ -550,18 +553,25 @@ class TestTeacherRefactor:
         )
         assert delete_resp.json()["code"] == 0
 
+        public_course = db_session.query(Course).filter(Course.id == public_course_id).one()
+        assert public_course.deleted_at is not None
+
+        # 同步引用保留；课程级联软删只覆盖公共课自身子资源
         copied_course = db_session.query(Course).filter(Course.id == copy_id).one()
-        assert copied_course.source_course_id is None
+        assert copied_course.source_course_id == public_course_id
+        assert copied_course.deleted_at is None
+
+        source_material = db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).one()
+        assert source_material.deleted_at is not None
 
         copied_material = db_session.query(Material).filter(Material.course_id == copy_id).one()
-        assert copied_material.source_material_id is None
+        assert copied_material.source_material_id == source_material.id
+        assert copied_material.deleted_at is None
 
-        # 资料源仍按现状删除（mirror 资料分发未变）
-        assert db_session.query(Material).filter(Material.id == material_resp.json()["data"]["id"]).first() is None
-        # 全站共享题库：公共课名下的题不会被级联删除，而是转挂到其他课程保留在全站
-        surviving = db_session.query(Question).filter(Question.id == question_id).first()
-        assert surviving is not None
-        assert surviving.course_id != public_course_id
+        # 全站共享题库：公共课删除不转挂、不软删题目
+        surviving = db_session.query(Question).filter(Question.id == question_id).one()
+        assert surviving.deleted_at is None
+        assert surviving.course_id == public_course_id
 
     def test_teacher_can_delete_owned_course_copy_without_affecting_public_source(self, client, db_session, teacher_token):
         admin_token = client.post(
@@ -683,15 +693,17 @@ class TestTeacherRefactor:
         resp = client.delete(f"/api/classes/{empty_class_id}", headers=auth_header(teacher_token))
         assert resp.json()["code"] == 0
 
+        assert db_session.get(Class, empty_class_id).deleted_at is not None
         assert db_session.query(Announcement).filter(Announcement.id == task_id).first() is not None
         assert db_session.query(AnnouncementClass).filter(
             AnnouncementClass.announcement_id == task_id,
             AnnouncementClass.class_id == owned_class_id,
         ).first() is not None
+        # 软删除班级保留作业-班级关联事实，不再物理解绑
         assert db_session.query(AnnouncementClass).filter(
             AnnouncementClass.announcement_id == task_id,
             AnnouncementClass.class_id == empty_class_id,
-        ).first() is None
+        ).first() is not None
         assert db_session.query(TaskCompletion).filter(
             TaskCompletion.announcement_id == task_id,
             TaskCompletion.user_id == "2025001",
