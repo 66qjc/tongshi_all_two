@@ -616,3 +616,26 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     user = relationship("User")
+
+
+class HistorySnapshot(Base):
+    """Immutable, foreign-key-free facts retained after resource cleanup."""
+
+    __tablename__ = "history_snapshots"
+    __table_args__ = (
+        Index("ix_history_snapshots_resource", "resource_type", "resource_id"),
+        Index("uq_history_snapshots_fact", "fact_type", "fact_id", unique=True),
+        Index("ix_history_snapshots_cleanup_batch", "cleanup_batch_id"),
+        Index("ix_history_snapshots_captured_at", "captured_at"),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    resource_type = Column(String(32), nullable=False)
+    resource_id = Column(String(64), nullable=False)
+    fact_type = Column(String(64), nullable=False)
+    fact_id = Column(String(64), nullable=False)
+    snapshot_kind = Column(String(64), nullable=False)
+    cleanup_batch_id = Column(String(64), nullable=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    captured_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
