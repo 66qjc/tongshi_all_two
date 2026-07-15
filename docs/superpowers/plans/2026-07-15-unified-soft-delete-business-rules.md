@@ -261,7 +261,10 @@ git commit -m "fix: 补齐软删除正常读取与文件过滤"
 - Test: `backend/tests/test_soft_delete_cleanup.py`
 - Test: `backend/tests/test_soft_delete_snapshots.py`
 
-- [ ] **Step 1: 写到期、失败重试和文件引用失败测试**
+> **进度（2026-07-15）**：到期快照、物理清理与每周命令入口已实现；清理回归与快照回归通过；**未改服务器配置**。
+
+
+- [x] **Step 1: 写到期、失败重试和文件引用失败测试**
 
 测试使用注入的北京时间 `now`，不得修改系统时间：
 
@@ -291,17 +294,17 @@ def test_cleanup_failure_is_audited_and_retryable(db_session, monkeypatch):
 
 同时测试题目/作业/用户的答题、完成、已读、班级关系、点赞、图片和预览都先生成快照。
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_cleanup.py -q`
 
 Expected: FAIL，因为没有到期清理服务、快照批次或失败审计实现。
 
-- [ ] **Step 3: 实现到期判断和独立事务**
+- [x] **Step 3: 实现到期判断和独立事务**
 
 `cleanup_expired_resources(db, now=None)` 先将 `now` 转为 `BEIJING_TZ`，仅在 `weekday() == 6` 且本地时间不早于 03:00 时执行；遍历七类策略，使用 `retention_deadline <= now` 且资源仍 `deleted_at IS NOT NULL`。每个资源创建独立 savepoint/事务批次，失败只回滚当前资源。批次 ID 使用 UUID 字符串，写入快照和审计详情。
 
-- [ ] **Step 4: 实现快照顺序和物理清理顺序**
+- [x] **Step 4: 实现快照顺序和物理清理顺序**
 
 按资源显式编排，不依赖 ORM cascade：
 
@@ -314,11 +317,11 @@ Expected: FAIL，因为没有到期清理服务、快照批次或失败审计实
 
 每个快照不保存 ORM 对象，只保存中文 JSON 字段和必要 ID。物理文件删除前调用 `collect_file_references()`，只有没有活跃资源和历史快照引用时才删除对象存储文件及 `StoredFile` 行。
 
-- [ ] **Step 5: 写中文自动清理审计并提供命令入口**
+- [x] **Step 5: 写中文自动清理审计并提供命令入口**
 
 成功记录“系统自动清理成功”，详情包含 `到期时间`、`历史快照数量`、`文件处理结果`；失败记录“系统自动清理失败”，包含 `失败原因`、`下次重试时间`。`run_soft_delete_cleanup.py` 只负责创建数据库会话、调用服务、输出中文摘要和返回非零退出码，不改服务器配置或启动服务。
 
-- [ ] **Step 6: 运行清理回归并提交**
+- [x] **Step 6: 运行清理回归并提交**
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_soft_delete_cleanup.py backend/tests/test_soft_delete_snapshots.py -q`
 
