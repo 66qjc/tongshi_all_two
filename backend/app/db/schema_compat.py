@@ -1,5 +1,6 @@
 """数据库结构兼容修复。"""
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def ensure_schema_compatibility(engine) -> None:
@@ -921,6 +922,79 @@ def ensure_schema_compatibility(engine) -> None:
                 conn.execute(text("ALTER TABLE audit_logs MODIFY COLUMN resource_id VARCHAR(64) NULL"))
             except Exception:
                 pass
+
+        _ensure_history_snapshot_table(conn)
+
+
+def _ensure_history_snapshot_table(conn) -> None:
+    """Create the foreign-key-free history snapshot store and its indexes."""
+
+    inspector = inspect(conn)
+    if "history_snapshots" not in set(inspector.get_table_names()):
+        if conn.dialect.name == "sqlite":
+            conn.execute(text("""
+                CREATE TABLE history_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    resource_type VARCHAR(32) NOT NULL,
+                    resource_id VARCHAR(64) NOT NULL,
+                    fact_type VARCHAR(64) NOT NULL,
+                    fact_id VARCHAR(64) NOT NULL,
+                    snapshot_kind VARCHAR(64) NOT NULL,
+                    cleanup_batch_id VARCHAR(64),
+                    payload JSON NOT NULL,
+                    captured_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        else:
+            conn.execute(text("""
+                CREATE TABLE history_snapshots (
+                    id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    resource_type VARCHAR(32) NOT NULL,
+                    resource_id VARCHAR(64) NOT NULL,
+                    fact_type VARCHAR(64) NOT NULL,
+                    fact_id VARCHAR(64) NOT NULL,
+                    snapshot_kind VARCHAR(64) NOT NULL,
+                    cleanup_batch_id VARCHAR(64) NULL,
+                    payload JSON NOT NULL,
+                    captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+
+    # Refresh introspection after CREATE TABLE so repeated startup calls are safe.
+    indexes = {index["name"] for index in inspect(conn).get_indexes("history_snapshots")}
+    index_specs = (
+        ("ix_history_snapshots_resource", "resource_type, resource_id", False),
+        ("uq_history_snapshots_fact", "fact_type, fact_id", True),
+        ("ix_history_snapshots_cleanup_batch", "cleanup_batch_id", False),
+        ("ix_history_snapshots_captured_at", "captured_at", False),
+    )
+    for name, columns, unique in index_specs:
+        if name in indexes:
+            continue
+        unique_sql = "UNIQUE " if unique else ""
+        try:
+            conn.execute(text(
+                f"CREATE {unique_sql}INDEX {name} ON history_snapshots ({columns})"
+            ))
+        except SQLAlchemyError as exc:
+            if _is_duplicate_history_snapshot_index_error(exc, name):
+                continue
+            raise
+
+
+def _is_duplicate_history_snapshot_index_error(exc: SQLAlchemyError, index_name: str) -> bool:
+    """Recognize only the SQLite/MySQL duplicate-index races we can safely ignore."""
+
+    original = getattr(exc, "orig", exc)
+    message = " ".join(str(part) for part in getattr(original, "args", ()) or (original,))
+    message = message.lower()
+    expected_name = index_name.lower()
+    return expected_name in message and (
+        ("index" in message and "already exists" in message)
+        or "duplicate key name" in message
+    )
 
 
 def _add_column_if_missing(conn, inspector, table: str, column: str, col_type: str) -> None:

@@ -662,7 +662,8 @@ def test_admin_can_delete_shared_question_from_any_public_course_entry(
         headers=auth_header(admin_token),
     )
     assert delete_resp.json()["code"] == 0
-    assert db_session.query(Question).filter(Question.id == question_id).first() is None
+    deleted = db_session.query(Question).filter(Question.id == question_id).one()
+    assert deleted.deleted_at is not None
 
 
 def test_admin_batch_delete_shared_questions(client, db_session, teacher_token):
@@ -699,4 +700,6 @@ def test_admin_batch_delete_shared_questions(client, db_session, teacher_token):
     assert data["data"]["deleted_count"] == 2
     assert sorted(data["data"]["deleted_ids"]) == sorted(ids)
     assert data["data"]["missing_ids"] == [999999]
-    assert db_session.query(Question).filter(Question.id.in_(ids)).count() == 0
+    rows = db_session.query(Question).filter(Question.id.in_(ids)).all()
+    assert len(rows) == 2
+    assert all(row.deleted_at is not None for row in rows)

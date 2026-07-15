@@ -15,7 +15,6 @@ from app.services.question_bank_service import (
     count_all_questions,
     find_duplicate_question,
     find_same_stem_question,
-    rehome_questions_before_course_delete,
 )
 from app.services.question_contribution_service import (
     record_question_contribution,
@@ -186,19 +185,11 @@ def delete_question(db: Session, question_id: int, teacher_id: str):
         return False
     if q.source_question_id is not None:
         raise BusinessException(400, "公共课程同步内容不能删除")
-    # 先删除关联的答题记录
-    from app.models.entities import QuizAttempt, Announcement
-    from sqlalchemy import func as sa_func
-    db.query(QuizAttempt).filter(QuizAttempt.question_id == question_id).delete()
-    # 清理公告中对被删题目的引用（从 question_ids JSON 数组中移除该 ID）
-    anns = db.query(Announcement).filter(
-        sa_func.json_contains(Announcement.question_ids, str(question_id))
-    ).all()
-    for ann in anns:
-        if ann.question_ids:
-            ann.question_ids = [qid for qid in ann.question_ids if qid != question_id]
-    # 再删除题目
-    db.delete(q)
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
+
+    operator = AuthUser(id=teacher_id, name="", role="teacher")
+    soft_delete(db, q, operator, action="question.delete")
     db.commit()
     return True
 
@@ -336,7 +327,6 @@ def delete_course(db: Session, course_id: int, teacher_id: str):
     from app.services.soft_delete_service import soft_delete
 
     operator = AuthUser(id=teacher_id, name="", role="teacher")
-    rehome_questions_before_course_delete(db, course)
     soft_delete(db, course, operator, action="course.delete")
     db.commit()
     # 清除缓存

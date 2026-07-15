@@ -8,8 +8,10 @@ from app.models.entities import (
     Class,
     Course,
     Material,
+    Project,
     Question,
     StudentClassEnrollment,
+    User,
 )
 from app.services import admin_public_course_service
 from app.services.question_bank_service import (
@@ -511,3 +513,151 @@ def test_admin_question_update_rejects_soft_deleted_question_and_course(db_sessi
         live_question.id,
         {"stem": "课程删除后不应更新"},
     ) is None
+
+
+def test_list_announcements_hides_soft_deleted_assignment(db_session):
+    """作业列表不返回软删除作业。"""
+    from app.schemas.common import AuthUser
+    from app.services.announcement_service import list_announcements
+
+    teacher = AuthUser(id="T001", name="测试教师", role="teacher")
+    before = {item["id"] for item in list_announcements(db_session, teacher)}
+    ann = Announcement(
+        course_id=1,
+        teacher_id="T001",
+        type="quiz",
+        title="软删后应隐藏作业",
+        question_ids=[1],
+    )
+    db_session.add(ann)
+    db_session.commit()
+    after_create = {item["id"] for item in list_announcements(db_session, teacher)}
+    assert ann.id in after_create - before
+
+    ann.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    after_delete = {item["id"] for item in list_announcements(db_session, teacher)}
+    assert ann.id not in after_delete
+
+
+def test_get_announcement_and_unread_count_reject_soft_deleted(db_session):
+    """作业详情与未读数都忽略软删除作业。"""
+    from app.schemas.common import AuthUser
+    from app.services.announcement_service import get_announcement, unread_count
+
+    cls = db_session.query(Class).filter(Class.created_by == "T001").first()
+    ann = Announcement(
+        course_id=cls.course_id,
+        teacher_id="T001",
+        type="quiz",
+        title="未读软删作业",
+        question_ids=[1],
+    )
+    db_session.add(ann)
+    db_session.flush()
+    db_session.add(AnnouncementClass(announcement_id=ann.id, class_id=cls.id))
+    db_session.commit()
+
+    student = AuthUser(id="2025001", name="测试学生", role="student")
+    assert get_announcement(db_session, ann.id, student) is not None
+    assert unread_count(db_session, "2025001") >= 1
+
+    before_unread = unread_count(db_session, "2025001")
+    ann.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    assert get_announcement(db_session, ann.id, student) is None
+    assert get_announcement(db_session, ann.id, AuthUser(id="T001", name="t", role="teacher")) is None
+    assert unread_count(db_session, "2025001") == before_unread - 1
+
+
+def test_project_lists_hide_soft_deleted_projects(db_session):
+    """作品列表/详情不返回软删除作品。"""
+    from app.services.project_service import get_project, list_approved_projects, get_user_projects
+
+    project = Project(
+        title="待软删作品",
+        author_id="2025001",
+        course_id=1,
+        status="approved",
+        date="2026-07-15",
+    )
+    db_session.add(project)
+    db_session.commit()
+    assert get_project(db_session, project.id) is not None
+    approved_ids = {p.id for p in list_approved_projects(db_session)[0]}
+    user_ids = {p.id for p in get_user_projects(db_session, "2025001")[0]}
+    assert project.id in approved_ids
+    assert project.id in user_ids
+
+    project.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    assert get_project(db_session, project.id) is None
+    approved_ids = {p.id for p in list_approved_projects(db_session)[0]}
+    user_ids = {p.id for p in get_user_projects(db_session, "2025001")[0]}
+    assert project.id not in approved_ids
+    assert project.id not in user_ids
+
+
+def test_portfolio_hides_soft_deleted_projects_and_users(db_session):
+    """成长档案不展示软删作品；软删用户返回空。"""
+    from app.services.portfolio_service import get_portfolio
+
+    project = Project(
+        title="档案软删作品",
+        author_id="2025001",
+        course_id=1,
+        status="approved",
+        date="2026-07-15",
+    )
+    db_session.add(project)
+    db_session.commit()
+    data = get_portfolio(db_session, "2025001")
+    assert data is not None
+    assert any(item["id"] == project.id for item in data["projects"])
+
+    project.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    data = get_portfolio(db_session, "2025001")
+    assert all(item["id"] != project.id for item in data["projects"])
+
+    user = db_session.get(User, "2025001")
+    user.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    assert get_portfolio(db_session, "2025001") is None
+
+
+def test_teacher_stats_and_lists_ignore_soft_deleted_resources(db_session):
+    """教师统计与作品列表只统计活跃课程/班级/作品。"""
+    from app.services.teacher_service import get_teacher_stats, list_all_projects
+
+    before = get_teacher_stats(db_session, "T001")
+    course = Course(name="软删统计课", created_by="T001")
+    db_session.add(course)
+    db_session.flush()
+    cls = Class(name="软删统计班", course_id=course.id, created_by="T001")
+    project = Project(
+        title="软删统计作品",
+        author_id="2025001",
+        course_id=course.id,
+        status="pending",
+        date="2026-07-15",
+    )
+    db_session.add_all([cls, project])
+    db_session.commit()
+
+    mid = get_teacher_stats(db_session, "T001")
+    assert mid["my_courses"] == before["my_courses"] + 1
+    assert mid["pending_reviews"] == before["pending_reviews"] + 1
+    project_ids = {p.id for p in list_all_projects(db_session, teacher_id="T001")[0]}
+    assert project.id in project_ids
+
+    course.deleted_at = datetime.now(timezone.utc)
+    cls.deleted_at = datetime.now(timezone.utc)
+    project.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    after = get_teacher_stats(db_session, "T001")
+    assert after["my_courses"] == before["my_courses"]
+    assert after["pending_reviews"] == before["pending_reviews"]
+    project_ids = {p.id for p in list_all_projects(db_session, teacher_id="T001")[0]}
+    assert project.id not in project_ids

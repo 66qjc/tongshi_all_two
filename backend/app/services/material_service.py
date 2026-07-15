@@ -18,7 +18,11 @@ def list_materials(
     page_size: int | None = None,
     include_public_sources: bool = True,
 ):
-    query = db.query(Material).join(Course, Course.id == Material.course_id)
+    # 正常业务列表只返回未软删资料及其所属活跃课程。
+    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    )
     if teacher_id is not None:
         if include_public_sources:
             query = query.filter(
@@ -38,20 +42,20 @@ def list_materials(
 
 
 def can_view_course_materials(db: Session, course_id: int, user_id: str, role: str) -> bool:
-    """校验课程资料访问权限：学生限所在课程，教师限自有或公共课程。"""
+    """校验课程资料访问权限：学生限所在活跃课程，教师限自有或公共活跃课程。"""
     if role == "student":
-        return db.query(StudentClassEnrollment).join(
-            Class, Class.id == StudentClassEnrollment.class_id,
-        ).filter(
-            StudentClassEnrollment.user_id == user_id,
-            Class.course_id == course_id,
-        ).first() is not None
+        from app.services.access_control_service import student_can_access_course
+        return student_can_access_course(db, user_id, course_id)
     if role == "teacher":
         return db.query(Course).filter(
             Course.id == course_id,
+            Course.deleted_at.is_(None),
             or_(Course.created_by == user_id, Course.is_public.is_(True)),
         ).first() is not None
-    return db.query(Course).filter(Course.id == course_id).first() is not None
+    return db.query(Course).filter(
+        Course.id == course_id,
+        Course.deleted_at.is_(None),
+    ).first() is not None
 
 
 def create_material(
@@ -132,13 +136,20 @@ def update_material(
 
 
 def delete_material(db: Session, material_id: int, teacher_id: str | None = None):
-    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(Material.id == material_id)
+    query = db.query(Material).join(Course, Course.id == Material.course_id).filter(
+        Material.id == material_id,
+        Material.deleted_at.is_(None),
+    )
     if teacher_id is not None:
         query = query.filter(Course.created_by == teacher_id)
     m = query.first()
     if not m:
         return False
-    db.delete(m)
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
+
+    operator = AuthUser(id=teacher_id or "", name="", role="teacher")
+    soft_delete(db, m, operator, action="material.delete")
     db.commit()
     return True
 
@@ -160,7 +171,11 @@ def format_material_preview(preview) -> dict | None:
 
 def resolve_material_file_for_user(db: Session, material_id: int, user_id: str, role: str):
     """校验资料访问权限并返回资料、文件记录和 Nginx 内部路径。"""
-    material = db.query(Material).join(Course, Course.id == Material.course_id).filter(Material.id == material_id).first()
+    material = db.query(Material).join(Course, Course.id == Material.course_id).filter(
+        Material.id == material_id,
+        Material.deleted_at.is_(None),
+        Course.deleted_at.is_(None),
+    ).first()
     if not material:
         return None, None, ""
     if not can_view_course_materials(db, material.course_id, user_id, role):

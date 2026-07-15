@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.core.cache import cache_result, invalidate_cache
 from app.core.exceptions import BusinessException
-from app.models.entities import Announcement, Course, CourseStage, Material, Question, QuizAttempt, StoredFile
+from app.models.entities import Course, CourseStage, Material, Question, StoredFile
+from app.schemas.common import AuthUser
 from app.services.question_contribution_service import (
     list_question_contributions,
     record_question_contribution,
@@ -19,13 +20,12 @@ from app.services.question_bank_service import (
     count_all_questions,
     find_duplicate_question,
     find_same_stem_question,
-    rehome_questions_before_course_delete,
 )
 from app.services.public_course_sync_service import (
-    delete_synced_materials,
     sync_course_name_to_copies,
     sync_material_to_course_copies,
 )
+from app.services.soft_delete_service import soft_delete
 
 
 
@@ -151,10 +151,11 @@ def update_public_course(db: Session, course_id: int, name: str, description: st
 
 
 def delete_public_course(db: Session, course_id: int) -> bool:
+    """软删除公共课程，不转挂题目，不破坏阶段/同步引用。"""
     course = _get_public_course(db, course_id)
     if not course:
         return False
-    # 全站共享题库：被删课程若是其他课程的共享根，阻止删除，避免全站题库失效
+    # 全站共享题库：被删课程若是其他活跃课程的共享根，阻止删除，避免题库失效
     is_referenced_root = db.query(Course).filter(
         Course.question_bank_root_course_id == course.id,
         Course.id != course.id,
@@ -162,27 +163,12 @@ def delete_public_course(db: Session, course_id: int) -> bool:
     ).first() is not None
     if is_referenced_root:
         raise BusinessException(400, "该课程是共享题库根课程，请先迁移题库根后再删除")
-    db.query(Course).filter(
-        Course.question_bank_root_course_id == course.id,
-        Course.id != course.id,
-        Course.deleted_at.isnot(None),
-    ).update({Course.question_bank_root_course_id: None}, synchronize_session=False)
-    copies = db.query(Course).filter(Course.source_course_id == course.id).all()
-    source_material_ids = [material.id for material in course.materials]
-    source_stage_ids = [stage.id for stage in course.stages]
-    # 全站共享题库：课程名下的题目需先转挂到共享根，避免随课程级联删除而误删全站共享题
-    rehome_questions_before_course_delete(db, course)
-    for copy in copies:
-        copy.source_course_id = None
-    if source_stage_ids:
-        db.query(CourseStage).filter(
-            CourseStage.source_stage_id.in_(source_stage_ids),
-        ).update({CourseStage.source_stage_id: None}, synchronize_session=False)
-    if source_material_ids:
-        db.query(Material).filter(
-            Material.source_material_id.in_(source_material_ids),
-        ).update({Material.source_material_id: None}, synchronize_session=False)
-    db.delete(course)
+    soft_delete(
+        db,
+        course,
+        AuthUser(id="admin", name="", role="admin"),
+        action="course.delete",
+    )
     db.commit()
     # 清除公共课程列表缓存
     invalidate_cache("course:public:*")
@@ -273,6 +259,7 @@ def update_public_material(db: Session, material_id: int, data: dict) -> Materia
 
 
 def delete_public_material(db: Session, material_id: int) -> bool:
+    """软删除公共资料，保留文件、预览与教师副本引用。"""
     material = db.query(Material).join(Course, Course.id == Material.course_id).filter(
         Material.id == material_id,
         Material.deleted_at.is_(None),
@@ -281,8 +268,12 @@ def delete_public_material(db: Session, material_id: int) -> bool:
     ).first()
     if not material:
         return False
-    delete_synced_materials(db, material.id)
-    db.delete(material)
+    soft_delete(
+        db,
+        material,
+        AuthUser(id="admin", name="", role="admin"),
+        action="material.delete",
+    )
     db.commit()
     return True
 
@@ -387,39 +378,23 @@ def update_public_question(db: Session, question_id: int, data: dict) -> Questio
     return question
 
 
-def _purge_question_references(db: Session, question_ids: list[int]) -> None:
-    """清理答题记录，并从作业 question_ids 中移除被删题目。"""
-    if not question_ids:
-        return
-    id_set = set(question_ids)
-    db.query(QuizAttempt).filter(
-        QuizAttempt.question_id.in_(question_ids),
-    ).delete(synchronize_session=False)
-
-    # 兼容不同数据库：先筛可能命中的公告，再在 Python 中精确剔除。
-    announcements = db.query(Announcement).filter(Announcement.question_ids.isnot(None)).all()
-    for ann in announcements:
-        current_ids = list(ann.question_ids or [])
-        if not current_ids:
-            continue
-        filtered = [qid for qid in current_ids if qid not in id_set]
-        if filtered != current_ids:
-            ann.question_ids = filtered
-
-
 def delete_public_question(db: Session, question_id: int) -> bool:
+    """软删除共享题库题目，保留答题记录与作业题目列表。"""
     question = get_public_question(db, question_id)
     if not question:
         return False
-    # 全站共享题库：直接删题，先清理引用该题的答题记录和作业引用
-    _purge_question_references(db, [question_id])
-    db.delete(question)
+    soft_delete(
+        db,
+        question,
+        AuthUser(id="admin", name="", role="admin"),
+        action="question.delete",
+    )
     db.commit()
     return True
 
 
 def delete_public_questions(db: Session, question_ids: list[int]) -> dict:
-    """批量删除共享题库题目。"""
+    """批量软删除共享题库题目。"""
     unique_ids = []
     seen = set()
     for raw in question_ids or []:
@@ -450,9 +425,9 @@ def delete_public_questions(db: Session, question_ids: list[int]) -> dict:
     if not found_ids:
         raise BusinessException(404, "未找到可删除的题目")
 
-    _purge_question_references(db, found_ids)
+    operator = AuthUser(id="admin", name="", role="admin")
     for question in questions:
-        db.delete(question)
+        soft_delete(db, question, operator, action="question.delete")
     db.commit()
     return {
         "deleted_count": len(found_ids),

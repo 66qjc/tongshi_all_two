@@ -138,7 +138,7 @@ def edit_public_course(
     return success(_format_course(course, total_question_count=count_all_questions(db)))
 
 
-@router.delete("/{course_id}", summary="删除公共课程", description="管理员：删除公共课程")
+@router.delete("/{course_id}", summary="删除公共课程", description="管理员：软删除公共课程，不转挂题目")
 def remove_public_course(
     course_id: int,
     db: Session = Depends(get_db),
@@ -266,7 +266,7 @@ def edit_public_material(
     return success(_format_material(material))
 
 
-@router.delete("/{course_id}/materials/{material_id}", summary="删除公共课程资料", description="管理员：删除资料并同步删除教师副本")
+@router.delete("/{course_id}/materials/{material_id}", summary="删除公共课程资料", description="管理员：软删除公共资料，保留文件与教师副本引用")
 def remove_public_material(
     course_id: int,
     material_id: int,
@@ -428,7 +428,7 @@ def edit_public_question(
     return success(_format_question(question))
 
 
-@router.delete("/{course_id}/questions/{question_id}", summary="删除共享题库题目", description="管理员：从全站共享题库删除指定题目")
+@router.delete("/{course_id}/questions/{question_id}", summary="删除共享题库题目", description="管理员：从全站共享题库软删除指定题目")
 def remove_public_question(
     course_id: int,
     question_id: int,
@@ -447,7 +447,7 @@ def remove_public_question(
 @router.post(
     "/{course_id}/questions/batch-delete",
     summary="批量删除共享题库题目",
-    description="管理员：按题目 ID 列表从全站共享题库批量删除题目",
+    description="管理员：按题目 ID 列表从全站共享题库批量软删除题目",
 )
 def batch_remove_public_questions(
     course_id: int,

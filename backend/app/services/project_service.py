@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.exceptions import BusinessException
@@ -74,9 +74,29 @@ def _teacher_can_review_project(db: Session, teacher_id: str, project: Project) 
 
 def list_approved_projects(db: Session, page: int = None, page_size: int = None):
     query = with_project_eager_load(
-        db.query(Project).filter(Project.status == "approved").order_by(Project.date.desc())
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .outerjoin(User, User.id == Project.author_id)
+        .filter(
+            Project.status == "approved",
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+            or_(Project.author_id.is_(None), User.deleted_at.is_(None)),
+        )
+        .order_by(Project.date.desc())
     )
-    total = db.query(Project).filter(Project.status == "approved").count()
+    total = (
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .outerjoin(User, User.id == Project.author_id)
+        .filter(
+            Project.status == "approved",
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+            or_(Project.author_id.is_(None), User.deleted_at.is_(None)),
+        )
+        .count()
+    )
     if page and page_size:
         projects = query.offset((page - 1) * page_size).limit(page_size).all()
     else:
@@ -86,7 +106,15 @@ def list_approved_projects(db: Session, page: int = None, page_size: int = None)
 
 def get_project(db: Session, project_id: int):
     return with_project_eager_load(
-        db.query(Project).filter(Project.id == project_id)
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .outerjoin(User, User.id == Project.author_id)
+        .filter(
+            Project.id == project_id,
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+            or_(Project.author_id.is_(None), User.deleted_at.is_(None)),
+        )
     ).first()
 
 
@@ -102,9 +130,25 @@ def get_accessible_project(db: Session, project_id: int, user_id: str):
 
 def get_user_projects(db: Session, user_id: str, page: int = None, page_size: int = None):
     query = with_project_eager_load(
-        db.query(Project).filter(Project.author_id == user_id).order_by(Project.date.desc())
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .filter(
+            Project.author_id == user_id,
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+        )
+        .order_by(Project.date.desc())
     )
-    total = db.query(Project).filter(Project.author_id == user_id).count()
+    total = (
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .filter(
+            Project.author_id == user_id,
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+        )
+        .count()
+    )
     if page and page_size:
         projects = query.offset((page - 1) * page_size).limit(page_size).all()
     else:
@@ -243,18 +287,17 @@ def reject_project(db: Session, project_id: int, reason: str, teacher_id: str | 
 
 
 def delete_project(db: Session, project_id: int, teacher_id: str | None = None):
-    """删除作品及其关联数据"""
+    """软删除作品，保留图片与点赞等关联事实。"""
     project = get_project(db, project_id)
-    if not project:
+    if not project or project.deleted_at is not None:
         return None
     if teacher_id and not _teacher_can_review_project(db, teacher_id, project):
         return None
-    # 删除关联的点赞记录
-    db.query(ProjectLike).filter(ProjectLike.project_id == project_id).delete()
-    # 删除关联的图片记录
-    db.query(ProjectImage).filter(ProjectImage.project_id == project_id).delete()
-    # 删除作品
-    db.delete(project)
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
+
+    operator = AuthUser(id=teacher_id or project.author_id, name="", role="teacher")
+    soft_delete(db, project, operator, action="project.delete")
     db.commit()
     logger.info("作品删除: project_id=%s, title=%s", project_id, project.title)
     return project
@@ -330,8 +373,16 @@ def list_liked_projects(db: Session, user_id: str) -> list:
     if not project_ids:
         return []
     projects = with_project_eager_load(
-        db.query(Project).filter(Project.id.in_(project_ids))
+        db.query(Project)
+        .outerjoin(Course, Course.id == Project.course_id)
+        .outerjoin(User, User.id == Project.author_id)
+        .filter(
+            Project.id.in_(project_ids),
+            Project.deleted_at.is_(None),
+            or_(Project.course_id.is_(None), Course.deleted_at.is_(None)),
+            or_(Project.author_id.is_(None), User.deleted_at.is_(None)),
+        )
     ).all()
     # 用户赞过的作品自己一定在 liked_set 中，直接传入避免逐条查询
-    liked_set = set(project_ids)
+    liked_set = {project.id for project in projects}
     return [format_project(db, proj, user_id, liked_set=liked_set) for proj in projects]
