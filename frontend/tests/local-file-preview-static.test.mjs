@@ -16,8 +16,7 @@ const teacherCourseDetail = read('src/views/teacher/TeacherCourseDetail.vue')
 const adminPublicCourses = read('src/views/admin/AdminPublicCourses.vue')
 const teacherReviews = read('src/views/teacher/TeacherReviews.vue')
 const fileUrl = read('src/utils/url.ts')
-const lessonReader = read('src/components/lesson/LessonReader.vue')
-const authenticatedLessonVideo = read('src/components/lesson/AuthenticatedLessonVideo.vue')
+const inlineReader = read('src/components/learn/MaterialInlineReader.vue')
 
 assert.match(fileUrl, /VITE_API_BASE/, '文件 URL 工具应继续把相对地址拼接到 API 基址。')
 assert.doesNotMatch(fileUrl, /localStorage|auth_token|[?&](?:token|access_token)=/, '文件 URL 工具不得把普通登录令牌放进 URL。')
@@ -27,48 +26,19 @@ assert.match(pdfPreview, /openInNewWindow/, '公共 PDF 预览组件应保留新
 assert.match(pdfPreview, /在新窗口打开/, '公共 PDF 预览组件应使用清晰的新窗口打开文案。')
 
 assert.match(courseDetail, /MaterialPreviewDialog/, '学生课程资料应通过站内预览弹窗打开。')
+assert.match(courseDetail, /MaterialInlineReader/, '学生课程详情应通过资料直读器阅读正文。')
+assert.match(courseDetail, /useAuthenticatedFileUrl/, '学生课程详情应解析认证文件地址。')
+assert.match(courseDetail, /getPublicMaterialFileUrl/, '公开资料应使用公开文件接口。')
+assert.doesNotMatch(courseDetail, /AuthenticatedLessonVideo|LessonReader/, '学生课程详情不得再依赖课时视频组件。')
 
 const previewDialog = read('src/components/common/MaterialPreviewDialog.vue')
 assert.match(previewDialog, /resolvedUrl/, '预览弹窗应使用短时解析地址。')
 assert.doesNotMatch(previewDialog, /getMaterialFileUrl|\bblobUrl\b/, '预览弹窗不应再回退旧资料接口或 Blob URL。')
 
-assert.match(lessonReader, /AuthenticatedLessonVideo/, '课时阅读器应使用认证视频组件。')
-assert.doesNotMatch(lessonReader, /<video\b/, '课时阅读器不得把原始私有地址直接绑定到 video。')
-assert.match(authenticatedLessonVideo, /useAuthenticatedFileUrl/, '认证视频组件应申请短时文件地址。')
-assert.match(authenticatedLessonVideo, /:src="resolvedUrl"/, '认证视频组件应把解析地址交给浏览器 Range 播放。')
-assert.match(authenticatedLessonVideo, /retryOnce/, '视频加载失败应只续签重试一次。')
-assert.match(authenticatedLessonVideo, /beforeUrlRenewalPosition/, '签名续期后应优先恢复续期前的播放位置。')
-assert.match(
-  authenticatedLessonVideo,
-  /watch\(\s*\(\)\s*=>\s*props\.sourceUrl[\s\S]*?beforeUrlRenewalPosition\.value\s*=\s*props\.resumePosition\s*\|\|\s*0/,
-  '原始视频源变化时必须重置为新课时的恢复位置，不能继承上一视频进度。',
-)
-assert.match(authenticatedLessonVideo, /let lastResolvedSource\s*=\s*props\.sourceUrl/, '认证视频组件应记录解析地址对应的原始来源。')
-assert.match(
-  authenticatedLessonVideo,
-  /const sourceUnchanged\s*=\s*lastResolvedSource\s*===\s*props\.sourceUrl[\s\S]*?lastResolvedSource\s*=\s*props\.sourceUrl/,
-  '解析地址变化时应先判断原始来源是否仍相同。',
-)
-assert.match(
-  authenticatedLessonVideo,
-  /if\s*\(video\s*&&\s*previousUrl\s*&&\s*sourceUnchanged\)/,
-  '只有同一原始来源的签名续期才能保存旧视频播放位置。',
-)
-assert.match(authenticatedLessonVideo, /mediaFailed/, '认证视频组件应记录媒体重试后的最终失败状态。')
-assert.match(
-  authenticatedLessonVideo,
-  /async function handleVideoError\(event:\s*Event\)[\s\S]*?getAttribute\(['"]src['"]\)[\s\S]*?await retryOnce\(failedUrl\)[\s\S]*?if\s*\(failedUrl\s*!==\s*resolvedUrl\.value\)\s*return[\s\S]*?if\s*\(error\.value\)[\s\S]*?mediaFailed\.value\s*=\s*true/,
-  '视频续签失败或同源第二次错误后应进入可见失败状态。',
-)
-assert.match(authenticatedLessonVideo, /<video[\s\S]*:key="resolvedUrl"/, '签名或原始来源变化时应使用独立视频实例固化错误代次。')
-assert.match(
-  authenticatedLessonVideo,
-  /v-if="mediaFailed"[\s\S]*?\{\{\s*error\s*\|\|\s*['"][^'"]*[\u4e00-\u9fff][^'"]*['"]\s*\}\}/,
-  '最终失败后应显示中文错误，而不是继续保留失效的视频元素。',
-)
-assert.match(authenticatedLessonVideo, /video\.pause\(\)/, '卸载时应暂停视频。')
-assert.match(authenticatedLessonVideo, /video\.removeAttribute\(['"]src['"]\)/, '卸载时应移除旧视频地址。')
-assert.match(authenticatedLessonVideo, /video\.load\(\)/, '卸载时应释放媒体资源。')
+assert.match(inlineReader, /VuePdfEmbed/, '资料直读器应使用 vue-pdf-embed 渲染 PDF。')
+assert.match(inlineReader, /:source="fileUrl"/, '资料直读器应把父级解析地址交给 PDF 渲染。')
+assert.match(inlineReader, /<video[\s\S]*controls/, '资料直读器应支持视频控件播放。')
+assert.doesNotMatch(inlineReader, /useAuthenticatedFileUrl|\bblobUrl\b/, '直读器不得自行申请令牌或 Blob。')
 
 assert.match(teacherCourseDetail, /MaterialPreviewDialog/, '教师课程详情应通过站内预览弹窗打开。')
 

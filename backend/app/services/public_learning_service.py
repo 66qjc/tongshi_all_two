@@ -8,9 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Course, CourseStage, Lesson, Material, StoredFile
+from app.models.entities import Course, Material, StoredFile
 from app.services.file_service import build_x_accel_redirect_path
-from app.services.lesson_service import format_lesson_out
 from app.services.material_service import format_material_preview
 
 
@@ -50,7 +49,6 @@ def _public_course_query(db: Session):
 
 def _format_public_course(
     course: Course,
-    lesson_count: int = 0,
     material_count: int = 0,
 ) -> dict:
     """格式化公开课程输出，游客视角下无归属权限。"""
@@ -63,7 +61,6 @@ def _format_public_course(
         "is_public": True,
         "is_owner": False,
         "material_count": material_count,
-        "lesson_count": lesson_count,
         "question_count": 0,
         "class_count": 0,
     }
@@ -79,12 +76,6 @@ def list_public_courses(db: Session, keyword: str | None = None) -> dict:
     if not course_ids:
         return {"courses": [], "hint": "暂无公开课程"}
 
-    lesson_counts = _count_by_course(
-        db.query(Lesson.course_id, func.count(Lesson.id))
-        .filter(Lesson.course_id.in_(course_ids), Lesson.status == "published")
-        .group_by(Lesson.course_id)
-        .all()
-    )
     material_counts = _count_by_course(
         db.query(Material.course_id, func.count(Material.id))
         .filter(
@@ -98,7 +89,6 @@ def list_public_courses(db: Session, keyword: str | None = None) -> dict:
         "courses": [
             _format_public_course(
                 course,
-                lesson_count=lesson_counts.get(course.id, 0),
                 material_count=material_counts.get(course.id, 0),
             )
             for course in courses
@@ -118,19 +108,13 @@ def get_public_course(db: Session, course_id: int) -> Course:
 def build_public_course_detail(db: Session, course_id: int) -> dict:
     """构建公开课程详情，包含阶段和资料。"""
     course = get_public_course(db, course_id)
-    lesson_count = (
-        db.query(func.count(Lesson.id))
-        .filter(Lesson.course_id == course.id, Lesson.status == "published")
-        .scalar()
-        or 0
-    )
     material_count = (
         db.query(func.count(Material.id))
         .filter(Material.course_id == course.id, Material.deleted_at.is_(None))
         .scalar()
         or 0
     )
-    data = _format_public_course(course, lesson_count=lesson_count, material_count=material_count)
+    data = _format_public_course(course, material_count=material_count)
 
     stages = []
     for stage in sorted(course.stages, key=lambda item: (item.sort_order, item.id)):
@@ -155,18 +139,6 @@ def build_public_course_detail(db: Session, course_id: int) -> dict:
         if material.stage_id is None and getattr(material, "deleted_at", None) is None
     ]
     return data
-
-
-def list_public_lessons(db: Session, course_id: int) -> list[dict]:
-    """游客读取公开课程下已发布课时。"""
-    get_public_course(db, course_id)
-    lessons = (
-        db.query(Lesson)
-        .filter(Lesson.course_id == course_id, Lesson.status == "published")
-        .order_by(Lesson.sort_order, Lesson.id)
-        .all()
-    )
-    return [format_lesson_out(lesson) for lesson in lessons]
 
 
 def list_public_materials(

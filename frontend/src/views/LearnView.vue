@@ -3,17 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { getCourseList, type Course } from '@/api/course'
-import { getLessons } from '@/api/lesson'
-import { getCourseProgress } from '@/api/progress'
 import { getPublicCourses, type PublicCourse } from '@/api/publicLearning'
-
-interface CourseProgressView {
-  lastLessonId: number | null
-  percent: number
-  lessonCount: number
-  completedLessons: number
-  totalDuration: number
-}
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -22,44 +12,8 @@ const courses = ref<(Course | PublicCourse)[]>([])
 const publicCourseIds = ref<Set<number>>(new Set())
 const loading = ref(true)
 const courseHint = ref<string | null>(null)
-const progressMap = ref<Record<number, CourseProgressView>>({})
 const searchInput = ref('')
 const activeKeyword = ref('')
-
-async function loadProgressForCourses(courseList: Course[]) {
-  await Promise.all(
-    courseList.map(async (course) => {
-      try {
-        const [progress, lessons] = await Promise.all([
-          getCourseProgress(course.id),
-          getLessons(course.id),
-        ])
-        const lastLessonId = progress.last_lesson_id
-        const lessonCount = progress.total_lessons || lessons.length
-        let percent = Math.round(progress.completion_rate || 0)
-        if (!percent && lastLessonId && lessons.length > 0) {
-          const index = lessons.findIndex((lesson) => lesson.id === lastLessonId)
-          percent = Math.round(((index >= 0 ? index + 1 : 1) / lessons.length) * 100)
-        }
-        progressMap.value[course.id] = {
-          lastLessonId,
-          percent,
-          lessonCount,
-          completedLessons: progress.completed_lessons || 0,
-          totalDuration: progress.total_duration || 0,
-        }
-      } catch {
-        progressMap.value[course.id] = {
-          lastLessonId: null,
-          percent: 0,
-          lessonCount: 0,
-          completedLessons: 0,
-          totalDuration: 0,
-        }
-      }
-    }),
-  )
-}
 
 function mergeCourses(publicCourses: PublicCourse[], enrolledCourses: Course[]) {
   const merged = new Map<number, Course | PublicCourse>()
@@ -91,57 +45,25 @@ async function loadCourses(keyword = activeKeyword.value) {
 
     mergeCourses(publicResult.courses, enrolledCourses)
     courseHint.value = publicResult.hint || enrolledHint
-    progressMap.value = {}
-    if (authStore.isLoggedIn && authStore.user?.role === 'student' && enrolledCourses.length > 0) {
-      await loadProgressForCourses(enrolledCourses)
-    }
   } finally {
     loading.value = false
   }
-}
-
-function getProgress(courseId: number): CourseProgressView {
-  return (
-    progressMap.value[courseId] ?? {
-      lastLessonId: null,
-      percent: 0,
-      lessonCount: 0,
-      completedLessons: 0,
-      totalDuration: 0,
-    }
-  )
 }
 
 function isPublicCourse(courseId: number) {
   return publicCourseIds.value.has(courseId)
 }
 
-function courseLessonCount(course: Course | PublicCourse) {
-  return 'lesson_count' in course ? course.lesson_count : getProgress(course.id).lessonCount
-}
-
 function courseActionText(course: Course | PublicCourse) {
-  const progress = getProgress(course.id)
-  if (progress.lastLessonId) return '继续学习'
-  if (courseLessonCount(course) > 0) return '开始学习'
-  return '查看资料'
+  return (course.material_count || 0) > 0 ? '查看教程' : '查看资料'
 }
 
 function courseDescription(course: Course | PublicCourse) {
-  return course.description || '这门教程暂未填写简介，可以先进入查看目录、资料和公开课时。'
+  return course.description || '这门教程暂未填写简介，可以先进入查看资料。'
 }
 
 function openCourse(course: Course | PublicCourse) {
-  const progress = getProgress(course.id)
-  if (progress.lastLessonId) {
-    router.push(`/learn/course/${course.id}?lesson_id=${progress.lastLessonId}`)
-    return
-  }
-  router.push(
-    courseLessonCount(course) > 0
-      ? `/learn/course/${course.id}`
-      : `/learn/course/${course.id}?tab=materials`,
-  )
+  router.push(`/learn/course/${course.id}`)
 }
 
 function runSearch() {
@@ -174,7 +96,7 @@ const emptyText = computed(() => {
         <p class="kicker">中国计量大学 · 深度 AI 通识学习平台</p>
         <h1>公开教程</h1>
         <p>
-          游客可直接浏览公开课程与学习资料。选一门教程开始阅读；登录后可保存学习进度。
+          游客可直接浏览公开课程与学习资料。选一门教程开始阅读；登录学生可同时查看已加入的私有课程。
         </p>
       </div>
     </section>
@@ -198,7 +120,7 @@ const emptyText = computed(() => {
         </div>
 
         <p v-if="!authStore.isLoggedIn" class="guest-note">
-          登录后可保存学习进度；未登录也可以阅读公开教程和资料。
+          未登录也可以阅读公开教程和资料；登录后可查看已加入的私有课程。
         </p>
 
         <div v-if="loading" class="library-empty">教程加载中...</div>
@@ -215,14 +137,7 @@ const emptyText = computed(() => {
             <h3>{{ course.name }}</h3>
             <p class="desc">{{ courseDescription(course) }}</p>
             <div class="meta-row">
-              <span>{{ courseLessonCount(course) }} 课时</span>
               <span>{{ course.material_count || 0 }} 份资料</span>
-              <span
-                v-if="getProgress(course.id).percent"
-                class="progress-text"
-              >
-                已学 {{ getProgress(course.id).percent }}%
-              </span>
             </div>
             <span class="cta">{{ courseActionText(course) }}</span>
           </button>
@@ -420,11 +335,6 @@ const emptyText = computed(() => {
   gap: 8px 12px;
   color: var(--color-text-muted);
   font-size: 0.8rem;
-}
-
-.progress-text {
-  color: var(--color-learn);
-  font-weight: 700;
 }
 
 .cta {

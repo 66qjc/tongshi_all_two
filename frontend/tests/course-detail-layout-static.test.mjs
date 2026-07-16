@@ -33,26 +33,31 @@ function mediaBlock(source, query) {
 
 const courseDetail = read('src/views/CourseDetailView.vue')
 
-assert.match(courseDetail, /class="booksite-layout"/, '课程阅读区应使用稳定的书站网格容器。')
-assert.match(courseDetail, /class="reader-sidebar"/, '课程阅读区应包含目录侧栏。')
-assert.match(courseDetail, /class="reader-main"/, '课程阅读区应包含主阅读内容。')
+assert.match(courseDetail, /class="material-doc-shell"/, '课程阅读区应使用资料直读三栏外壳。')
+assert.match(courseDetail, /class="material-doc-sidebar"/, '课程阅读区应包含左侧资料目录。')
+assert.match(courseDetail, /class="material-doc-main"/, '课程阅读区应包含中间资料正文。')
+assert.match(courseDetail, /class="material-doc-guide"/, '课程阅读区应包含右侧导读栏。')
+assert.doesNotMatch(courseDetail, /booksite-layout|reader-sidebar|CourseToc|LessonReader/, '课程阅读区不得再使用课时书站布局。')
 
 const pageStyle = styleBlock(courseDetail, '.course-detail-page')
 assert.match(pageStyle, /--app-header-height:\s*60px;/, '课程详情页应统一声明固定顶栏高度。')
 assert.match(pageStyle, /padding-top:\s*var\(--app-header-height\);/, '课程详情页应为固定顶栏预留顶部空间。')
 
-const desktopLayout = styleBlock(courseDetail, '.booksite-layout')
+const desktopLayout = styleBlock(courseDetail, '.material-doc-shell')
 assert.match(desktopLayout, /display:\s*grid;/, '桌面端课程阅读区应使用网格布局。')
-assert.match(desktopLayout, /grid-template-columns:\s*260px\s+minmax\(0,\s*1fr\)\s+300px;/, '桌面端应稳定保留目录、正文和资料栏三列。')
+assert.match(desktopLayout, /grid-template-columns:\s*292px\s+minmax\(0,\s*1fr\)\s+280px;/, '桌面端应稳定保留目录、正文和导读三列。')
 
-assert.match(courseDetail, /\.reader-sidebar,\s*\.resource-rail\s*\{[\s\S]*?position:\s*sticky;/, '桌面端课程目录应参与布局并使用 sticky 固定。')
+assert.match(
+  courseDetail,
+  /\.material-doc-sidebar,\s*\.material-doc-guide\s*\{[\s\S]*?position:\s*sticky;/,
+  '桌面端资料目录与导读栏应使用 sticky 固定。',
+)
 
-const desktopMainContent = styleBlock(courseDetail, '.reader-main')
+const desktopMainContent = styleBlock(courseDetail, '.material-doc-main')
 assert.doesNotMatch(desktopMainContent, /margin-left:\s*260px;/, '主内容不应依赖固定 margin-left 避让脱流侧栏。')
 
 const mobileStyles = mediaBlock(courseDetail, '@media (max-width: 900px)')
-const mobileSidebar = styleBlock(mobileStyles, '.reader-sidebar')
-assert.match(mobileSidebar, /position:\s*fixed;/, '移动端课程目录仍应作为抽屉 fixed 覆盖显示。')
-assert.match(mobileSidebar, /transform:\s*translateX\(-100%\);/, '移动端课程目录默认应收起在屏幕外。')
+const mobileShell = styleBlock(mobileStyles, '.material-doc-shell')
+assert.match(mobileShell, /display:\s*block;/, '移动端资料阅读外壳应改为纵向堆叠。')
 
 console.log('course detail layout static checks passed')

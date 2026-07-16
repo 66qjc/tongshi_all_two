@@ -16,7 +16,7 @@ const modules = [
         <span class="section-tag">公开学习馆</span>
         <h2 class="section-title">按公开课程进入学习资料</h2>
         <p class="section-desc">
-          课程内容以公开学习馆中的实际资料和课时为准<br />
+          课程内容以公开学习馆中的实际阶段资料为准<br />
         </p>
       </div>
 

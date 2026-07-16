@@ -3,7 +3,7 @@ const loopItems = [
   {
     step: '01',
     title: '学',
-    desc: '浏览公开教程、课时与学习资料。',
+    desc: '浏览公开教程与阶段学习资料。',
   },
   {
     step: '02',

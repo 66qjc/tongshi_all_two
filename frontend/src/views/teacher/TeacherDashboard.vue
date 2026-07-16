@@ -90,7 +90,7 @@ function resolveManageCoursePath() {
 
 const quickActions = [
   { label: '发布作业', desc: '选题、设时间、发到班级', path: '/teacher/publish', icon: 'publish' },
-  { label: '管理课程', desc: '维护资料、课时与学习分析', path: resolveManageCoursePath(), icon: 'upload' },
+  { label: '管理课程', desc: '维护阶段、资料与课程内容', path: resolveManageCoursePath(), icon: 'upload' },
   { label: '管理题库', desc: '新增、编辑或导入题目', path: '/teacher/questions', icon: 'questions' },
   { label: '审核作品', desc: '查看并审核学生提交的作品', path: '/teacher/reviews', icon: 'reviews' },
   { label: '学生成绩', desc: '查看完成率、导出成绩单', path: '/teacher/grades', icon: 'grades' },
