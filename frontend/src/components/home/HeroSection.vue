@@ -64,10 +64,6 @@ const entries = [
             登录保存进度
           </button>
         </div>
-        <div class="suggestion-panel">
-          <strong>今日建议</strong>
-          <span>先浏览一门公开课程，再进入作业与练习检查理解。</span>
-        </div>
       </div>
 
       <div class="entry-grid" aria-label="学生常用入口">
@@ -198,33 +194,6 @@ const entries = [
   gap: 0.75rem;
   margin-top: var(--space-xl);
   flex-wrap: wrap;
-}
-
-.suggestion-panel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  max-width: 560px;
-  margin-top: var(--space-lg);
-  padding: 0.85rem 1rem;
-  color: rgba(255, 253, 248, 0.72);
-  background: rgba(255, 253, 248, 0.06);
-  border: 1px solid rgba(255, 253, 248, 0.11);
-  border-radius: var(--radius-md);
-}
-
-.suggestion-panel strong {
-  flex: 0 0 auto;
-  color: rgba(255, 253, 248, 0.88);
-  font-size: 0.86rem;
-  white-space: nowrap;
-}
-
-.suggestion-panel span {
-  min-width: 0;
-  font-size: var(--text-muted);
-  line-height: var(--leading-compact);
-  text-wrap: pretty;
 }
 
 .btn-primary,
@@ -366,12 +335,6 @@ const entries = [
 
   .entry-card {
     min-height: auto;
-  }
-
-  .suggestion-panel {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--space-xs);
   }
 }
 </style>

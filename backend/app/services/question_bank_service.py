@@ -12,8 +12,8 @@ from app.models.entities import Course, Question
 
 
 def compute_stem_hash(stem: str) -> str:
-    """计算兼容现有数据的题干哈希。"""
-    return hashlib.md5(stem.strip().lower().encode("utf-8")).hexdigest()
+    """计算规范化题干的 SHA-256 哈希。"""
+    return hashlib.sha256(normalize_question_stem(stem).encode("utf-8")).hexdigest()
 
 
 def _active_questions_query(db: Session):
@@ -31,7 +31,7 @@ def find_same_stem_question(
     exclude_question_id: int | None = None,
 ) -> Question | None:
     """按兼容哈希语义查找同题干题目，仅检查活跃题目和活跃课程。"""
-    normalized_stem = stem.strip().lower()
+    normalized_stem = normalize_question_stem(stem)
     stem_hash = compute_stem_hash(stem)
     query = _active_questions_query(db).filter(
         or_(
@@ -111,7 +111,7 @@ def rehome_questions_before_course_delete(db: Session, course: Course) -> Course
 
 
 def normalize_question_stem(stem: str) -> str:
-    return re.sub(r"\s+", " ", str(stem).strip())
+    return re.sub(r"\s+", " ", str(stem).strip()).casefold()
 
 
 def normalize_question_options(options) -> list[str]:

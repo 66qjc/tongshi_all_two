@@ -40,16 +40,10 @@ assert.match(
   '首屏四个入口应使用 entry-grid 组织，便于学生快速选择下一步。',
 )
 
-assert.match(
+assert.doesNotMatch(
   hero,
-  /今日建议/,
-  '首屏应包含“今日建议”内容承接，避免过度简约。',
-)
-
-assert.match(
-  hero,
-  /suggestion-panel/,
-  '首屏应使用 suggestion-panel 展示具体行动建议。',
+  /今日建议|suggestion-panel/,
+  '首屏已去掉“今日建议”，避免额外行动建议块。',
 )
 
 assert.doesNotMatch(
@@ -72,14 +66,20 @@ assert.match(
 
 assert.match(
   stats,
-  /学习闭环/,
-  '统计区应改为学习闭环说明，避免继续展示过期或静态宣传数字。',
+  /学习路径/,
+  '统计区应说明学习路径，避免继续展示过期或静态宣传数字。',
+)
+
+assert.doesNotMatch(
+  stats,
+  /首页只保留稳定路径/,
+  '上线文案不应再使用内部说明式标题。',
 )
 
 assert.match(
   stats,
   /建议学习顺序/,
-  '学习闭环区应包含建议学习顺序，增强内容密度。',
+  '学习路径区应包含建议学习顺序，增强内容密度。',
 )
 
 assert.match(

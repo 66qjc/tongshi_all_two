@@ -16,19 +16,25 @@ from app.services.task_service import mark_completed, completion_report, task_ov
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 
 
-def _format_question(q):
-    return {
+def _format_question(q, *, include_answer: bool = False):
+    """学生作业拉题默认不包含标准答案，避免预泄露。"""
+    data = {
         "id": q.id,
         "type": q.type,
         "course_id": q.course_id,
         "course_name": q.course.name if q.course else "",
         "stem": q.stem,
         "options": q.options or [],
-        "answer": q.answer,
-        "explanation": q.explanation or "",
         "source_question_id": q.source_question_id,
         "is_synced": bool(q.source_question_id),
     }
+    if include_answer:
+        data["answer"] = q.answer
+        data["explanation"] = q.explanation or ""
+    else:
+        data["answer"] = ""
+        data["explanation"] = ""
+    return data
 
 
 @router.get("", summary="获取发布题目列表", description="教师：自己发布的题目；学生：所在班级的题目任务（含已读/未读状态）")

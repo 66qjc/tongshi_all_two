@@ -4,7 +4,7 @@
 
 - 前端：`frontend/`，Vue 3 + TypeScript + Vite + Element Plus
 - 后端：`backend/`，FastAPI + SQLAlchemy
-- 部署：`deploy/nginx.conf` 负责生产 Nginx 示例，代理 `/api/` 和 `/uploads/` 到后端
+- 部署：`deploy/nginx.conf` 负责生产 Nginx 示例，代理 `/api/` 和 `/uploads/` 到后端；`deploy/redeploy-server.ps1` 固化单机代码发布、前端构建同步和后端健康检查流程
 - 存储：第一阶段默认本地上传目录，后续再接入 S3 / SeaweedFS / MinIO
 - 测试：`backend/tests/`，以 SQLite 内存库为主
 
@@ -304,3 +304,80 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - Task 5 使用临时 SQLite + local 存储验收全链路（真实 2.67MB MP4，ftyp 魔数通过）：签名 URL 获取、文件体下载、Range 206（含中段 Range）、无认证拒绝、URL 安全检查全部 26/26 PASS。
 - 回归保护：新增 `protected-file-consumers-static.test.mjs`、`file-access-url-static.test.mjs`；既有 pytest 78 passed。
 - 服务器部署影响：需要服务器拉代码、重启后端、重新构建前端；不需要数据库迁移或环境变量调整。真实 Nginx 文件体传输和 Range 需部署后验收。
+
+### 2026-07-13 自由练习提交范围 + 软删除读路径过滤
+
+- 问题：学生自由练习只要加入任意课程即可对全站任意 `question_id` 提交并拿回标准答案；课程/班级/资料/作业/公开学习等业务读路径未统一排除 `deleted_at`，与文件链软删过滤不一致。
+- 修复：
+  - `quiz_service.submit_answer`：活跃题目 + 私有课限本课选课、公共课题保留共享题库；作业路径继续校验任务与 `question_ids`
+  - `access_control_service.student_can_access_course` 及资料/作业/公开学习/课程题目读路径统一过滤软删班课与资源
+  - 学生拉题接口隐藏 `answer/explanation`，练习页用提交结果回填正确答案/解析
+  - 统计与错题本可见范围与提交规则对齐
+- 本轮不做：正式删除入口统一软删、上传上限、连接池、Redis
+- 回归保护：新增 `backend/tests/test_quiz_submit_scope.py`、`backend/tests/test_soft_delete_read_filters.py`；扩展 `backend/tests/test_access_control_service.py`
+- 验证：相关后端 pytest `33 passed`；`frontend/tests/practice-quiz-flow-static.test.mjs` 通过
+- 实施记录：`docs/superpowers/plans/2026-07-13-quiz-scope-soft-delete-read-filters.md`
+- 服务器部署影响：需要服务器拉代码、**重启后端**、**重新构建并部署前端**；**不需要**数据库迁移、调整 Nginx 或环境变量。
+
+### 2026-07-14 「学」页教程站形态改造
+
+- 背景：书架式 `/learn` 不符合「游客友好教程站」目标；资料目录阶段与资料同宽同色、行高过大；右侧当前资料 facts 冗余。
+- 入口：`LearnView.vue` 去掉书脊/翻开书/页级统计/最新资料条，改为公开教程卡片网格；接通 `getPublicCourses(keyword)` 搜索与空结果；保留公开课 + 已加入课合并与进度「继续学习」。
+- 课程页：`CourseDetailView.vue` 资料 Tab 阶段头单行紧凑可折叠、资料行缩进单行选中态；去掉右侧 `guide-facts`；文案改为公开教程阅读 / 教程目录 / 学习资料 / 返回教程列表。
+- 路由标题：`/learn` meta 改为「学 · 公开教程」。
+- 回归保护：更新 `frontend/tests/public-learning-static.test.mjs`、`copy-consistency-static.test.mjs`。
+- 验证：`npm run build` 通过；上述静态测试通过。
+- Demo / 计划：`docs/superpowers/demos/2026-07-14-learn-tutorial-site-demo.html`、`docs/superpowers/plans/2026-07-14-learn-tutorial-site-ui.md`
+- 服务器部署影响：需要服务器拉代码并**重新构建、部署前端**；**不需要**后端重启、数据库迁移、改 Nginx 或环境变量。首页部分入口仍可能写「公开学习馆」，本轮未全站改首页文案。
+
+### 2026-07-14 共享题库闭环：添加人 / 星级 / 编辑归属
+
+- 问题：题库已是全站共享，但教师端仍显示基于 `source_question_id/is_synced` 的“公共/私有”标签，容易误解；列表也未完整展示添加人与星级，编辑归属曾误用课程创建人。
+- 修复：
+  - 列表接口补齐 `created_by`、`creator_name`、`star_rating`，`is_owner` 改为 `Question.created_by == 当前用户`
+  - 教师端列表增加“添加人”“星级”，新增/编辑弹窗支持 1-5 星；移除误导性公共/私有标签
+  - 编辑与 Excel 导入补齐 `stem_hash` 同题干拦截，并与手工新增一致写入默认星级
+- 本轮不做：题目删除入口、评分/收藏审核流、数据库迁移、学生端答题改动
+- 回归保护：扩展 `backend/tests/test_public_question_contribution.py`、`backend/tests/test_question_import_skip.py`；新增 `frontend/tests/teacher-question-bank-static.test.mjs`
+- 实施计划：`docs/superpowers/plans/2026-07-14-shared-question-bank-closure.md`
+- 服务器部署影响：需要服务器拉代码、**重启后端**、**重新构建并部署前端**；**不需要**数据库迁移、调整 Nginx 或环境变量。
+
+### 2026-07-14 管理员共享题库一键/批量删除
+
+- 问题：管理员题库页展示全站共享题，但单题删除仍要求 `question.course_id == 当前公共课`，跨课挂载题无法删；缺少批量/一键删除。
+- 修复：
+  - 单题删除改为共享题库语义，仅校验管理入口公共课存在
+  - 新增 `POST /api/admin/public-courses/{course_id}/questions/batch-delete`
+- 删除共享题目前检查作业引用；有引用时拒绝删除并保留答题记录与 `question_ids`，无引用时进入回收站
+  - 管理端题库增加多选、删除选中、一键删除全部
+- 回归保护：扩展 `backend/tests/test_public_question_contribution.py`；新增 `frontend/tests/admin-question-batch-delete-static.test.mjs`
+- 服务器部署影响：需要服务器拉代码、**重启后端**、**重新构建并部署前端**；**不需要**数据库迁移、调整 Nginx 或环境变量。
+
+### 2026-07-14 代码审查修复后的稳定事实
+
+- 共享题库管理入口：管理员通过任一未软删除公共课程入口管理全站活跃共享题库；编辑教师贡献题时不要求题目原始课程等于入口课程，但题目及所属课程必须均未软删除。
+- 共享题库去重：`question_bank_service.compute_stem_hash` 是教师端和管理员端新增、编辑、导入的统一规范化 SHA-256 题干哈希实现；同题干判断覆盖活跃题目与活跃课程，兼容初始化会回填历史空值、MD5 和异常长度哈希。
+- 正式删除入口：班级、作业、资料、作品、教师账号、公共课程、公共资料和共享题目均保留主记录及必要关联，写入 `deleted_at/deleted_by`；普通读取、统计和文件授权排除软删除资源，回收站恢复和最终清理是专用入口。
+- 管理端软删除边界：公共课程、公共资料、共享题目及题库计数/指纹/重复查询的正常入口都排除软删除资源和所属软删除课程。
+- 展示文件权限：已发布展示项的封面、图库、内容块图片可匿名访问；未发布展示项仅创建者管理员或教师可预览，普通用户和非创建者按不存在处理。
+- 展示内容块图片授权扫描只读取必要列并使用 `yield_per(100)` 分批迭代，不再 `.all()` 一次加载全表内容块 JSON。
+- Nginx `.mjs` 规则只匹配 `/assets/` 下构建产物；正式部署需同步配置并执行 `nginx -t` 后 reload。
+- 部署安全门禁：`redeploy-server.ps1` 先检查脏工作区，以一次无交互 `git fetch` 锁定提交并校验可快进关系，只对已验证对象执行本地 `git merge --ff-only`；`upload-local-storage-deploy.ps1` 仅能上传仓库外的 Nginx 候选文件。
+- 验证基线：后端全量 `342 passed, 1 skipped, 1 warning`，前端 42 个静态测试与生产构建通过；部署脚本回归 `14 passed, 1 warning`。
+- 实施记录：`docs/superpowers/plans/2026-07-14-review-remediation.md`。
+- 服务器部署影响：需要同步代码、重启后端、重新构建并发布前端、更新并 reload Nginx；不需要数据库迁移或环境变量修改。服务器只读预检已发现未提交后端文件和未跟踪的 `frontend/.env.production`，必须由维护者先核对处理；在工作区干净前禁止真实部署。
+
+### 2026-07-15 总体治理路线图与第一阶段实现状态
+
+- 设计：`docs/superpowers/specs/2026-07-15-overall-governance-roadmap-design.md`
+- 实施计划：`docs/superpowers/plans/2026-07-15-overall-governance-roadmap.md`
+- 一致性评估：`docs/superpowers/2026-07-15-project-consistency-assessment.md`
+- **Task 0（基线复核）已完成（条件性通过）：** 前置分任务（共享题库闭环、自由练习/读路径过滤）代码侧可视为完成；工作区差异已分类；未覆盖用户改动。
+- **第一阶段（业务数据规则）代码主体已在工作区（修改记录第 58 轮），验收门未全部签字：**
+  - 正式删除入口统一调用 `soft_delete`；课程恢复按 `deleted_at + deleted_by` 同批次级联；`purge_resource` 仅处理已软删记录；删除/恢复/清理写审计。
+  - 题干哈希统一为 `question_bank_service` 规范化 SHA-256；`schema_compat` 回填空值/旧 MD5/异常长度；**未**单独拆 `question_hash_service.py`。
+  - 定向回归（软删关系/文件访问/读过滤/题库）曾记 **53 passed**；后端用例收集 **356**；前端静态 **42 passed**。
+  - **未验证：** 真实 MySQL 哈希回填；完整七类“正式入口 → 回收站可见 → 恢复”矩阵是否 100% 对齐路线图验收门 1–6；本轮文档同步未重跑全量 pytest 与 `npm run build`。
+- **阶段 D 剩余：** Task 3–5（缓存边界、忘记密码跨进程限流、启动锁与索引）仍未实施，归总体治理第三阶段。
+- **第二阶段及以后：** 可恢复发布、并发扩容、工程结构收口均未开始。
+- 服务器部署影响：**本条为文档同步，不需要服务器修改。** 第一阶段代码若将来上线，须先过第二阶段备份/回退/健康检查门，不得直接部署脏工作区。

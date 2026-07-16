@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const currentYear = new Date().getFullYear()
 </script>
 
 <template>
@@ -48,7 +47,7 @@ const currentYear = new Date().getFullYear()
       </div>
 
       <div class="footer-bottom">
-        <p>&copy; {{ currentYear }} 深度学思践行 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
+        <p>深度学思践行 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
       </div>
     </div>
   </footer>

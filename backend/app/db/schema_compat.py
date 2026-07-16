@@ -2,6 +2,8 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.services.question_bank_service import compute_stem_hash
+
 
 def ensure_schema_compatibility(engine) -> None:
     """补齐旧数据库缺失的业务字段和关联表。"""
@@ -314,6 +316,19 @@ def ensure_schema_compatibility(engine) -> None:
             conn, inspector, "questions", "star_rating", "INTEGER NOT NULL DEFAULT 3")
         _add_column_if_missing(
             conn, inspector, "questions", "stem_hash", "VARCHAR(64) NULL")
+
+        # 旧库可能保存 MD5、空值或异常长度哈希，按当前规范分批回填。
+        inspector = inspect(conn)
+        if "questions" in set(inspector.get_table_names()):
+            legacy_hashes = conn.execute(text(
+                "SELECT id, stem FROM questions "
+                "WHERE stem_hash IS NULL OR LENGTH(stem_hash) <> 64"
+            )).mappings().all()
+            for row in legacy_hashes:
+                conn.execute(
+                    text("UPDATE questions SET stem_hash = :stem_hash WHERE id = :id"),
+                    {"id": row["id"], "stem_hash": compute_stem_hash(row["stem"])},
+                )
 
         # ── users 表新增 needs_password_change / token_version 列 ──────────
         _add_column_if_missing(

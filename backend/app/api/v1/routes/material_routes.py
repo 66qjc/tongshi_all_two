@@ -125,9 +125,14 @@ def open_material_file(
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, max-age=0",
     }
-    if stored.size_bytes:
-        headers["Content-Length"] = str(stored.size_bytes)
-    return Response(content=b"", media_type=stored.content_type or "application/octet-stream", headers=headers)
+    response = Response(
+        content=b"",
+        media_type=stored.content_type or "application/octet-stream",
+        headers=headers,
+    )
+    if "content-length" in response.headers:
+        del response.headers["content-length"]
+    return response
 
 
 @router.post("/materials/{material_id}/preview/rebuild", summary="重新生成资料预览")

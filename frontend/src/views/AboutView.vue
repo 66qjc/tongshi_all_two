@@ -1,11 +1,11 @@
 <script setup lang="ts">
 const modules = [
-  { num: '01', title: '人工智能概述', desc: '从图灵测试到深度学习，AI 发展全景扫描', tag: '基础' },
-  { num: '02', title: '计算机基础知识', desc: '办公软件使用基础与计算思维入门', tag: '入门' },
-  { num: '03', title: 'AI 理论基础', desc: '深度学习、大模型原理与核心算法', tag: '核心' },
-  { num: '04', title: 'AI 工具使用', desc: '大模型、智能体应用及简单开发实践', tag: '实践' },
-  { num: '05', title: 'AI 前沿与应用', desc: '结合专业的前沿应用场景探索', tag: '前沿' },
-  { num: '06', title: 'AI 伦理与未来', desc: '技术向善，负责任的人工智能发展之路', tag: '思辨' },
+  { num: '01', title: '人工智能概述', desc: '了解 AI 的基本概念、发展脉络与常见应用', tag: '基础' },
+  { num: '02', title: '计算机基础知识', desc: '建立必要的信息素养与计算思维基础', tag: '入门' },
+  { num: '03', title: 'AI 理论基础', desc: '理解常见 AI 方法与大模型相关通识内容', tag: '核心' },
+  { num: '04', title: 'AI 工具使用', desc: '学习常用 AI 工具的规范使用与实践方法', tag: '实践' },
+  { num: '05', title: 'AI 前沿与应用', desc: '结合专业场景了解 AI 应用方向', tag: '前沿' },
+  { num: '06', title: 'AI 伦理与未来', desc: '认识 AI 使用中的责任、风险与价值边界', tag: '思辨' },
 ]
 </script>
 
@@ -15,7 +15,7 @@ const modules = [
       <div class="container">
         <div class="hero-inner">
           <h1>关于平台</h1>
-          <p>探 · 练 · 创 · 行 — AI 通识课教学平台</p>
+          <p>中国计量大学 · 深度 AI 通识教育课程平台</p>
         </div>
       </div>
     </section>
@@ -23,42 +23,51 @@ const modules = [
     <section class="content-section">
       <div class="container">
         <div class="about-block">
-          <h2>平台理念</h2>
-          <p>本平台致力于为中国计量大学理工科大一学生提供系统的人工智能通识教育。我们相信 AI 教育不应止于知识传授，更应在实践中培养学生的综合能力。</p>
+          <h2>平台简介</h2>
+          <p>
+            本平台面向中国计量大学 AI 通识课程教学，提供公开教程阅读、练习作业、作品提交与行动实践等功能。
+            游客可浏览公开学习内容；学生登录后可保存进度、完成练习与提交作品；教师与管理员负责课程、班级与内容运营。
+          </p>
+        </div>
+
+        <div class="about-block">
+          <h2>学习路径</h2>
+          <p>平台围绕「学 · 思 · 践 · 悟」组织学习流程：</p>
           <div class="philosophy-grid">
             <div class="phil-card">
               <div class="phil-icon">
                 <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
               </div>
               <h3>学</h3>
-              <p>六大核心模块，从 AI 概述到伦理思辨，系统构建知识体系</p>
+              <p>阅读公开教程、课时与学习资料，建立系统认知</p>
             </div>
             <div class="phil-card">
               <div class="phil-icon">
                 <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
               </div>
-              <h3>练</h3>
-              <p>在线练习即练即批，选择题与填空题巩固核心知识点</p>
+              <h3>思</h3>
+              <p>完成练习与作业，通过答题与错题巩固理解</p>
             </div>
             <div class="phil-card">
               <div class="phil-icon">
                 <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
               </div>
-              <h3>创</h3>
-              <p>AI + 硬件创意实践，打破"AI 只是聊天框"的思维局限</p>
+              <h3>践</h3>
+              <p>提交课程作品与实践报告，展示学习成果</p>
             </div>
             <div class="phil-card">
               <div class="phil-icon">
                 <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
               </div>
-              <h3>行</h3>
-              <p>走进社区和中小学，用 AI 温暖社会，锻炼综合软实力</p>
+              <h3>悟</h3>
+              <p>参与公益课、读书会等行动，拓展应用与价值理解</p>
             </div>
           </div>
         </div>
 
         <div class="about-block">
-          <h2>课程概览</h2>
+          <h2>课程内容</h2>
+          <p>课程与资料由教师和管理员在后台维护，会随教学安排更新。常见主题包括：</p>
           <div class="modules-grid">
             <div v-for="ch in modules" :key="ch.num" class="module-item">
               <span class="ch-num">{{ ch.num }}</span>
@@ -75,7 +84,10 @@ const modules = [
 
         <div class="about-block">
           <h2>适用对象</h2>
-          <p>本平台面向中国计量大学理工科大一学生，无需 AI 基础。无论你是自动化、机械工程、测控技术还是其他理工科专业，都能在这里找到适合自己的 AI 学习路径。</p>
+          <p>
+            主要服务中国计量大学参与 AI 通识课程的学生，同时支持游客浏览公开教程与资料。
+            无需预先具备 AI 专业背景，可按课程安排逐步学习。
+          </p>
         </div>
       </div>
     </section>
@@ -199,6 +211,7 @@ const modules = [
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  margin-top: var(--space-lg);
 }
 
 .module-item {

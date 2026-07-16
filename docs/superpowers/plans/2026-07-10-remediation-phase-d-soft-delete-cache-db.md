@@ -10,6 +10,16 @@
 
 **Design:** `docs/superpowers/specs/2026-07-10-code-review-remediation-design.md`
 
+**进度快照（2026-07-15 文档同步）：**
+
+| 任务 | 状态 | 说明 |
+|---|---|---|
+| Task 1 软删除入口 | **工作区主体已实现，验收未全部签字** | 见修改记录第 58 轮；总体治理路线图第一阶段验收门未闭合 |
+| Task 2 题干 SHA-256 | **工作区主体已实现，真实 MySQL 未验证** | 实现落在 `question_bank_service`，未新建 `question_hash_service.py` |
+| Task 3–5 缓存/限流/启动锁 | **未实施** | 归总体治理第三阶段准入后执行 |
+
+后续若继续 Task 1/2，只允许差距验收与补测，禁止再引入第二套软删除或哈希 helper。
+
 ---
 
 ### Task 1: 七类资源统一软删除并保留关联完整性
@@ -31,21 +41,21 @@
 - Create: `backend/tests/test_soft_delete_relationships.py`
 - Create: `backend/tests/test_soft_deleted_file_access.py`
 
-- [ ] **Step 1: 写主记录、关联记录和文件权限失败测试**
+- [x] **Step 1: 写主记录、关联记录和文件权限失败测试**（部分完成）
 
-新增 `test_user_soft_delete_and_restore`、`test_course_soft_delete_and_restore`、`test_class_soft_delete_and_restore`、`test_announcement_soft_delete_and_restore`、`test_project_soft_delete_and_restore`、`test_material_soft_delete_and_restore`、`test_question_soft_delete_and_restore`，全部通过真实正式删除入口执行。每个用例都断言主记录仍存在且 `deleted_at` 非空、普通列表不可见、回收站可见、恢复后重新可见。用户使用字符串 ID `T900`，恢复和彻底删除不得返回 422。
+已有 `test_soft_delete_relationships.py`（班级/作业/资料/作品/教师/公共课/公共资料/题目引用拒绝）与 `test_soft_deleted_file_access.py`。**缺口：** 尚未按原文完整矩阵覆盖“七类资源均经真实正式入口断言回收站可见 + 恢复后重可见 + 用户字符串 ID `T900` 不 422”的全部用例命名与路径。
 
 关联完整性测试在删除前记录数量和 ID：班级的 `AnnouncementClass/AnnouncementRead/TaskCompletion`，作品的 `ProjectImage/ProjectLike`，资料的 `StoredFile/MaterialPreview`，用户的作品/答题/班级关系。软删除和恢复后这些记录必须保持不变，不能只恢复主表。文件测试断言资料/作品软删除后原签名 URL 和新申请均不可访问，恢复后重新可访问。
 
 题目测试创建引用该题的未删除作业，管理员删除必须返回 400“题目已被作业引用，无法删除”；不得清理 `Announcement.question_ids` 或历史 `QuizAttempt`。无作业引用时才可软删除并恢复。
 
-- [ ] **Step 2: 运行并确认当前物理删除关联**
+- [x] **Step 2: 运行并确认当前物理删除关联**（历史步骤，已越过）
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_030405_management_systems.py backend/tests/test_soft_delete_relationships.py backend/tests/test_soft_deleted_file_access.py -q`
 
-Expected: FAIL，班级、公告、资料、作品、用户或题目仍被物理删除，且软删除文件仍可访问。
+原 Expected: FAIL。当前工作区相关 soft-delete 关系/文件测试已通过；不得再以“期望失败”作为完成证据。
 
-- [ ] **Step 3: 增加安全主键转换**
+- [x] **Step 3: 增加安全主键转换**
 
 ```python
 def _coerce_resource_id(model, resource_id: str):
@@ -58,7 +68,7 @@ def _coerce_resource_id(model, resource_id: str):
 
 恢复和彻底删除路由的 `resource_id` 改为 `str`，服务查询前转换；前端 `DeletedResourceItem.id` 使用 `string | number`，构建 URL 时编码字符串值。
 
-- [ ] **Step 4: 各正式入口只做软删除**
+- [x] **Step 4: 各正式入口只做软删除**
 
 每个服务先执行现有归属与业务约束，再调用 `soft_delete(db, item, operator, cascade=False, action=动作名)` 并只提交一次；动作名精确使用 `user.delete`、`course.delete`、`class.delete`、`announcement.delete`、`project.delete`、`material.delete`、`question.delete`。禁止在调用软删除前执行关联表 `delete()`：
 
@@ -68,15 +78,15 @@ def _coerce_resource_id(model, resource_id: str):
 - 题目删除前查询所有未删除公告的 `question_ids`，存在引用即拒绝；教师端删除继续固定返回 403，只有管理员可删除。
 - 管理员“彻底删除”只允许回收站中的记录，继续执行物理删除。
 
-- [ ] **Step 5: 恢复只恢复同一删除批次**
+- [x] **Step 5: 恢复只恢复同一删除批次**
 
 课程恢复只恢复 `deleted_at/deleted_by` 与课程删除批次相同的班级、资料和公告，不恢复阶段 A 已转挂的共享题目。单资源恢复只清理自身删除标记，因为关联数据从未物理删除。审计日志记录恢复的子资源数量。
 
-- [ ] **Step 6: 补齐活跃过滤和文件权限过滤**
+- [x] **Step 6: 补齐活跃过滤和文件权限过滤**（主体完成）
 
-本轮涉及的登录、课程、班级、公告、资料、作品、题目、通知目标、进度分析和管理员列表统一过滤 `deleted_at IS NULL`。`file_service.py` 中项目、资料、课程和预览权限查询也必须过滤软删除；回收站/恢复/彻底删除是唯一允许读取已删除资源的业务入口。
+本轮涉及的登录、课程、班级、公告、资料、作品、题目、通知目标、进度分析和管理员列表统一过滤 `deleted_at IS NULL`。`file_service.py` 中项目、资料、课程和预览权限查询也必须过滤软删除；回收站/恢复/彻底删除是唯一允许读取已删除资源的业务入口。读路径过滤另见 `2026-07-13-quiz-scope-soft-delete-read-filters.md`。
 
-- [ ] **Step 7: 运行软删除回归和前端构建**
+- [ ] **Step 7: 运行软删除回归和前端构建**（未全部闭合）
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_030405_management_systems.py backend/tests/test_soft_delete_relationships.py backend/tests/test_soft_deleted_file_access.py backend/tests/test_teacher_student_delete_scope.py backend/tests/test_project_course_scope.py backend/tests/test_public_course_delete.py -q`
 
@@ -84,10 +94,12 @@ Run: `npm run build --prefix frontend`
 
 Expected: PASS。
 
+**剩余缺口：** 完整回归清单与前端构建需在总体治理第一阶段差距验收时重跑并记录；不得因主体代码已存在而跳过本步。
+
 ### Task 2: 统一题干 SHA-256 并升级全部旧 MD5
 
 **Files:**
-- Create: `backend/app/services/question_hash_service.py`
+- ~~Create: `backend/app/services/question_hash_service.py`~~（未拆文件；实现位于 `backend/app/services/question_bank_service.py`）
 - Modify: `backend/app/models/entities.py:257`
 - Modify: `backend/app/services/question_service.py:20-175,341-430`
 - Modify: `backend/app/services/admin_public_course_service.py`
@@ -96,17 +108,17 @@ Expected: PASS。
 - Modify: `backend/tests/test_question_import_skip.py`
 - Modify: `backend/tests/test_schema_compat.py`
 
-- [ ] **Step 1: 写编辑、导入、MD5 升级和候选规则失败测试**
+- [x] **Step 1: 写编辑、导入、MD5 升级和候选规则失败测试**（主体完成）
 
 断言编辑题干后哈希同步；教师创建、管理员创建和 Excel 导入使用相同哈希；旧库夹具同时包含 NULL、空字符串和 32 位 MD5，升级后全部变成与当前题干匹配的 64 位 SHA-256；同题干不同答案仍进入现有候选比较，不被哈希唯一约束提前拒绝。
 
-- [ ] **Step 2: 运行并确认当前 MD5/空值不一致**
+- [x] **Step 2: 运行并确认当前 MD5/空值不一致**（历史步骤，已越过）
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_question_duplicate_candidates.py backend/tests/test_question_import_skip.py backend/tests/test_schema_compat.py -q`
 
-Expected: FAIL，编辑后保留旧哈希，或旧 MD5 不会被升级。
+原 Expected: FAIL。当前工作区相关哈希/导入测试已纳入定向回归通过集。
 
-- [ ] **Step 3: 提取唯一规范化函数**
+- [x] **Step 3: 提取唯一规范化函数**
 
 ```python
 def normalize_question_stem(stem: str) -> str:
@@ -117,17 +129,17 @@ def compute_stem_hash(stem: str) -> str:
     return hashlib.sha256(normalize_question_stem(stem).encode("utf-8")).hexdigest()
 ```
 
-创建、编辑、管理员创建和导入全部调用该函数；模型注释改为 SHA-256。哈希只作为候选索引，最终重复判断继续比较题型、选项和答案。
+创建、编辑、管理员创建和导入全部调用该函数；模型注释改为 SHA-256。哈希只作为候选索引，最终重复判断继续比较题型、选项和答案。**落点：** `question_bank_service.normalize_question_stem` / `compute_stem_hash`。
 
-- [ ] **Step 4: 分批重算旧哈希**
+- [x] **Step 4: 分批重算旧哈希**（兼容层已实现；真实 MySQL 未验证）
 
 兼容层补列后按主键分批读取 `id, stem, stem_hash`，对 NULL、空值或长度不为 64 的旧记录重算；首次部署会覆盖现有 32 位 MD5，后续启动跳过已升级行。使用绑定参数批量更新，不拼接题干；SQLite 与 MySQL 使用同一 Python 函数。
 
-- [ ] **Step 5: 运行题库和兼容回归**
+- [ ] **Step 5: 运行题库和兼容回归**（本地部分通过，未全部签字）
 
 Run: `backend\.venv\Scripts\python.exe -m pytest backend/tests/test_question_duplicate_candidates.py backend/tests/test_question_import_skip.py backend/tests/test_schema_compat.py backend/tests/test_public_question_contribution.py -q`
 
-Expected: PASS。
+Expected: PASS。真实 MySQL 回填不得用 SQLite 结果替代。
 
 ### Task 3: 重写 Redis 缓存边界并保持权限隔离
 

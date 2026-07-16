@@ -11,6 +11,7 @@ const router = useRouter()
 const loading = ref(false)
 const loadError = ref(false)
 const item = ref<ShowcaseItemOut | null>(null)
+const failedBlockImages = ref<Record<number, boolean>>({})
 
 const sectionLabels: Record<string, string> = {
   welfare: '公益课',
@@ -34,6 +35,14 @@ const hasContentBlocks = computed(() =>
 
 const getBlockImageUrl = (fileId?: number) => fileId ? resolveFileUrl(`/api/files/${fileId}`) : ''
 
+function blockImageFailed(fileId?: number) {
+  return !fileId || Boolean(failedBlockImages.value[fileId])
+}
+
+function handleBlockImageError(fileId?: number) {
+  if (fileId) failedBlockImages.value[fileId] = true
+}
+
 const renderableBlocks = computed(() => {
   if (!item.value?.content_blocks) return []
   return item.value.content_blocks.filter((b: ContentBlock) => {
@@ -46,6 +55,7 @@ const renderableBlocks = computed(() => {
 onMounted(async () => {
   loading.value = true
   loadError.value = false
+  failedBlockImages.value = {}
   try {
     const data = await getShowcase()
     const targetId = Number(route.params.id)
@@ -92,17 +102,21 @@ onMounted(async () => {
             >
               <p v-if="block.type === 'text'" class="block-text">{{ block.data.text }}</p>
               <figure v-else-if="block.type === 'image'" class="block-figure">
-                <a
-                  :href="getBlockImageUrl(block.data.file_id)"
-                  target="_blank"
-                  rel="noopener"
-                  class="block-image-link"
-                >
-                  <img
-                    :src="getBlockImageUrl(block.data.file_id)"
-                    :alt="block.data.caption || `${item.title} 图片 ${index + 1}`"
-                  />
-                </a>
+                <template v-if="!blockImageFailed(block.data.file_id)">
+                  <a
+                    :href="getBlockImageUrl(block.data.file_id)"
+                    target="_blank"
+                    rel="noopener"
+                    class="block-image-link"
+                  >
+                    <img
+                      :src="getBlockImageUrl(block.data.file_id)"
+                      :alt="block.data.caption || `${item.title} 图片 ${index + 1}`"
+                      @error="handleBlockImageError(block.data.file_id)"
+                    />
+                  </a>
+                </template>
+                <div v-else class="block-image-fallback">图片暂时无法加载</div>
                 <figcaption v-if="block.data.caption">{{ block.data.caption }}</figcaption>
               </figure>
             </div>
@@ -403,6 +417,17 @@ onMounted(async () => {
   height: auto;
   max-height: 560px;
   object-fit: contain;
+}
+
+.block-image-fallback {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  padding: var(--space-lg);
+  color: var(--color-text-muted);
+  background: var(--color-act-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
 }
 
 .block-figure figcaption {

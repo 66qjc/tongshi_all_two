@@ -92,6 +92,9 @@ const fillAnswer = ref('')
 const submitted = ref(false)
 const answers = ref<(string | null)[]>([])
 const results = ref<(boolean | null)[]>([])
+/** 提交后由接口回填的正确答案/解析，避免拉题时预下发答案 */
+const revealAnswers = ref<(string | null)[]>([])
+const revealExplanations = ref<(string | null)[]>([])
 const practiceFinished = ref(false)
 
 // 加载题目后尝试恢复草稿（作业入口跳过）
@@ -102,6 +105,8 @@ watch(mockQuestions, (qs) => {
   if (isAssignmentMode.value) {
     answers.value = qs.map(() => null)
     results.value = qs.map(() => null)
+    revealAnswers.value = qs.map(() => null)
+    revealExplanations.value = qs.map(() => null)
     currentIndex.value = 0
     resetState()
     return
@@ -111,14 +116,19 @@ watch(mockQuestions, (qs) => {
     // 恢复已答状态
     const restoredAnswers: (string | null)[] = qs.map(() => null)
     const restoredResults: (boolean | null)[] = qs.map(() => null)
+    const restoredRevealAnswers: (string | null)[] = qs.map(() => null)
+    const restoredRevealExplanations: (string | null)[] = qs.map(() => null)
     qs.forEach((q, idx) => {
       if (draft.answeredQuestionIds.includes(q.id) && draft.answers[q.id] !== undefined) {
         restoredAnswers[idx] = draft.answers[q.id] ?? null
         restoredResults[idx] = draft.results?.[q.id] ?? null
+        // 草稿仅恢复作答状态；正确答案需重新提交后由接口回填
       }
     })
     answers.value = restoredAnswers
     results.value = restoredResults
+    revealAnswers.value = restoredRevealAnswers
+    revealExplanations.value = restoredRevealExplanations
     // 恢复到上次题目位置
     if (draft.currentQuestionId) {
       const idx = qs.findIndex(q => q.id === draft.currentQuestionId)
@@ -128,6 +138,8 @@ watch(mockQuestions, (qs) => {
   } else {
     answers.value = qs.map(() => null)
     results.value = qs.map(() => null)
+    revealAnswers.value = qs.map(() => null)
+    revealExplanations.value = qs.map(() => null)
     currentIndex.value = 0
     resetState()
   }
@@ -168,6 +180,8 @@ async function submitAnswer() {
   const result = await apiSubmitAnswer(q.id, userAnswer, announcementId.value)
   answers.value[currentIndex.value] = userAnswer
   results.value[currentIndex.value] = result.is_correct
+  revealAnswers.value[currentIndex.value] = result.correct_answer ?? ''
+  revealExplanations.value[currentIndex.value] = result.explanation ?? ''
   persistDraft()
   if (result.is_correct) {
     if (currentIndex.value < totalQuestions.value - 1) {
@@ -417,8 +431,8 @@ async function backToPrevious() {
               class="option-item"
               :class="{
                 selected: selectedOptions.has(item.label),
-                correct: submitted && currentQuestion.answer.includes(item.label),
-                wrong: submitted && selectedOptions.has(item.label) && !currentQuestion.answer.includes(item.label),
+                correct: submitted && (revealAnswers[currentIndex] || '').includes(item.label),
+                wrong: submitted && selectedOptions.has(item.label) && !(revealAnswers[currentIndex] || '').includes(item.label),
               }"
               @click="toggleMultiOption(item.label)"
             >
@@ -437,8 +451,8 @@ async function backToPrevious() {
               class="option-item"
               :class="{
                 selected: selectedOption === item.label,
-                correct: submitted && item.label === currentQuestion.answer,
-                wrong: submitted && selectedOption === item.label && item.label !== currentQuestion.answer,
+                correct: submitted && item.label === revealAnswers[currentIndex],
+                wrong: submitted && selectedOption === item.label && item.label !== revealAnswers[currentIndex],
               }"
               @click="selectOption(item.label)"
             >
@@ -476,11 +490,11 @@ async function backToPrevious() {
               </svg>
               <span>{{ results[currentIndex] ? '回答正确' : '回答错误' }}</span>
             </div>
-            <div v-if="!results[currentIndex]" class="result-answer">
-              正确答案：<strong>{{ currentQuestion.answer }}</strong>
+            <div v-if="!results[currentIndex] && revealAnswers[currentIndex]" class="result-answer">
+              正确答案：<strong>{{ revealAnswers[currentIndex] }}</strong>
             </div>
-            <div class="result-explanation">
-              <span class="explanation-label">解析：</span>{{ currentQuestion.explanation }}
+            <div v-if="revealExplanations[currentIndex]" class="result-explanation">
+              <span class="explanation-label">解析：</span>{{ revealExplanations[currentIndex] }}
             </div>
           </div>
 

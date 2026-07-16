@@ -46,4 +46,11 @@ def get_public_materials(
 @router.get("/materials/{material_id}/file", summary="公开资料预览", description="游客预览公开课程下的资料文件。")
 def open_public_material_file(material_id: int, db: Session = Depends(get_db)):
     _, stored, headers = resolve_public_material_file(db, material_id)
-    return Response(content=b"", media_type=stored.content_type or "application/octet-stream", headers=headers)
+    response = Response(
+        content=b"",
+        media_type=stored.content_type or "application/octet-stream",
+        headers=headers,
+    )
+    if "content-length" in response.headers:
+        del response.headers["content-length"]
+    return response

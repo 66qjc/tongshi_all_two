@@ -92,6 +92,26 @@ class TestImportDuplicateDetection:
         assert result["skip_count"] == 1
         assert "已存在相同题目" in result["skips"][0]["reason"]
 
+    def test_import_skips_same_stem_hash_even_if_options_differ(self, db_session):
+        """已有 stem_hash 时，导入同题干但不同选项/答案也应跳过。"""
+        from app.services.question_service import _compute_stem_hash
+
+        existing = db_session.query(Question).filter(Question.stem == "1+1=?").one()
+        existing.stem_hash = _compute_stem_hash(existing.stem)
+        db_session.commit()
+
+        rows = [
+            {"题型": "choice", "课程名称": "测试课程", "题干": "1+1=?",
+             "选项": "A. 一|B. 二|C. 三|D. 四", "答案": "A", "解析": "不同选项也应跳过"},
+        ]
+        before = db_session.query(Question).count()
+        result = import_questions_from_excel(db_session, rows, "T001")
+        assert result["success_count"] == 0
+        assert result["skip_count"] == 1
+        assert result["fail_count"] == 0
+        assert "已存在相同题目" in result["skips"][0]["reason"]
+        assert db_session.query(Question).count() == before
+
     def test_import_via_api_skips_duplicates(self, client, teacher_token):
         """通过 API 上传 Excel，重复题目应返回 skip_count。"""
         from tests.conftest import auth_header

@@ -50,8 +50,6 @@ const outcomeCards = [
     title: 'AI 公益课',
     subtitle: '走进社区与中小学',
     desc: '面向青少年和社区居民开展 AI 启蒙，练习把知识讲清楚。',
-    count: '20+',
-    label: '场公益课',
   },
   {
     id: 'reading-club',
@@ -59,8 +57,6 @@ const outcomeCards = [
     title: '读书会',
     subtitle: '围绕 AI 主题开展共读',
     desc: '通过阅读、分享和讨论，训练学生提问、表达和形成观点的能力。',
-    count: '12',
-    label: '期读书会',
   },
   {
     id: 'field-project',
@@ -68,8 +64,6 @@ const outcomeCards = [
     title: '落地项目',
     subtitle: '完成项目实践与展示',
     desc: '把课堂知识转化为调研报告、活动方案、工具原型和展示材料。',
-    count: '8',
-    label: '个落地项目',
   },
 ]
 
@@ -128,8 +122,8 @@ function scrollToOutcomes() {
       <div class="container">
         <div class="section-header">
           <span class="section-kicker">行动成果</span>
-          <h2>三类成果在同一页查看</h2>
-          <p>点击任意成果卡片，跳转至对应的介绍、数据和案例。</p>
+          <h2>公益课 · 读书会 · 项目实践</h2>
+          <p>点击下方卡片，即可定位到对应板块，浏览活动介绍与实践案例。</p>
         </div>
 
         <div class="outcome-card-grid">
@@ -145,10 +139,6 @@ function scrollToOutcomes() {
               <span class="outcome-title">{{ outcome.title }}</span>
               <span class="outcome-subtitle">{{ outcome.subtitle }}</span>
               <span class="outcome-desc">{{ outcome.desc }}</span>
-              <span class="outcome-stat">
-                <strong>{{ outcome.count }}</strong>
-                <span>{{ outcome.label }}</span>
-              </span>
             </span>
           </button>
         </div>
@@ -228,17 +218,17 @@ function scrollToOutcomes() {
       <div class="container">
         <div class="section-header">
           <span class="section-kicker">落地项目</span>
-          <h2>同学们的实践成果</h2>
-          <p>完成大作业的同学，他们的作品在这里展示。</p>
+          <h2>课程作品展示</h2>
+          <p>浏览同学提交的课程作品与实践报告，了解课堂所学如何落到具体项目中。</p>
         </div>
         <div v-if="loading" class="dynamic-state">加载中...</div>
         <div v-else-if="loadError" class="dynamic-state dynamic-error">加载失败，请刷新页面重试</div>
         <div v-else-if="!authStore.isLoggedIn" class="dynamic-state guest-project-state">
-          <p>登录后查看同学们的实践成果</p>
+          <p>登录后可查看同学作品</p>
           <el-button type="success" round @click="router.push('/login')">去登录</el-button>
         </div>
         <div v-else-if="projectLoadError" class="dynamic-state dynamic-error">作品加载失败，请稍后重试</div>
-        <div v-else-if="studentProjects.length === 0" class="dynamic-state">暂无作品，快去提交你的大作业吧！</div>
+        <div v-else-if="studentProjects.length === 0" class="dynamic-state">暂无已审核作品，完成课程作业后可在此展示。</div>
         <div v-else class="project-grid">
           <div
             v-for="project in studentProjects"
@@ -447,25 +437,6 @@ function scrollToOutcomes() {
   font-size: var(--text-muted);
   line-height: var(--leading-body);
   text-wrap: pretty;
-}
-
-.outcome-stat {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-xs);
-  margin-top: var(--space-sm);
-}
-
-.outcome-stat strong {
-  color: var(--color-act);
-  font-family: var(--font-mono);
-  font-size: 1.4rem;
-  font-weight: 900;
-}
-
-.outcome-stat span {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
 }
 
 .outcome-details-section {

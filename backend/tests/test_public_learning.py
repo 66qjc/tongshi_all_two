@@ -115,5 +115,6 @@ def test_guest_can_preview_public_material_file_only(client: TestClient, db_sess
     assert public_resp.status_code == 200
     assert public_resp.headers["x-accel-redirect"] == "/_protected_uploads/materials/public.pdf"
     assert public_resp.headers["content-disposition"].startswith("inline;")
+    assert "content-length" not in public_resp.headers
     assert private_resp.status_code == 200
     assert private_resp.json()["code"] == 404

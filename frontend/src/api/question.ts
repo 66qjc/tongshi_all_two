@@ -17,11 +17,14 @@ export interface Question {
   explanation: string
   tags: string[]
   source_question_id?: number | null
+  /** 历史同步痕迹；全站共享后不再表示公共/私有题库 */
   is_synced?: boolean
-  /** 全站共享题库：当前教师是否是该题的归属人（题所在课程的 created_by 即创建者） */
+  /** 全站共享题库：题目创建人是否为当前教师 */
   is_owner?: boolean
   /** 题目创建人（教师ID） */
   created_by?: string | null
+  /** 题目创建人姓名 */
+  creator_name?: string | null
   /** 星级评分 1-5 星 */
   star_rating: number
 }

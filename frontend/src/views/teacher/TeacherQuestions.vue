@@ -261,9 +261,6 @@ onMounted(async () => {
         <template #default="{ row }">
           <span>{{ row.stem.length > 48 ? row.stem.slice(0, 48) + '…' : row.stem }}</span>
           <span v-if="row.type === 'multi_choice'" class="multi-tag">（多选题）</span>
-          <el-tag class="scope-tag" :type="row.is_synced ? 'info' : 'success'" size="small" effect="plain">
-            {{ row.is_synced ? '公共' : '私有' }}
-          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="题型" width="100">
@@ -274,6 +271,16 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column prop="course_name" label="所属课程" min-width="160" />
+      <el-table-column label="添加人" min-width="120">
+        <template #default="{ row }">
+          {{ row.creator_name || row.created_by || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="星级" width="140">
+        <template #default="{ row }">
+          <el-rate :model-value="row.star_rating || 3" disabled :max="5" />
+        </template>
+      </el-table-column>
       <el-table-column label="课程标签" min-width="150">
         <template #default="{ row }">
           <div class="tag-list">
@@ -354,6 +361,10 @@ onMounted(async () => {
       <div class="form-group">
         <label>答案</label>
         <el-input v-model="form.answer" :placeholder="form.type === 'multi_choice' ? '多选题填 AB、ACD 等（排序的字母组合）' : '选择题填 A/B/C/D，填空题填关键词'" size="large" />
+      </div>
+      <div class="form-group">
+        <label>题目星级</label>
+        <el-rate v-model="form.star_rating" :max="5" show-score />
       </div>
       <div class="form-group">
         <label>解析</label>
@@ -504,7 +515,6 @@ onMounted(async () => {
   text-align: center;
 }
 
-.scope-tag,
 .multi-tag {
   margin-left: var(--space-sm);
 }

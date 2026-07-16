@@ -14,7 +14,7 @@ assert.match(nginxConfig, /proxy_set_header\s+If-Range\s+\$http_if_range/, 'Ngin
 assert.match(nginxConfig, /client_max_body_size\s+1024m/, 'Nginx 上传限制应覆盖当前视频上传上限。')
 
 assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*internal;/, 'Nginx 应配置内部受保护上传目录。')
-assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*alias\s+\/var\/www\/tongshi\/uploads\//, 'Nginx 内部上传目录应映射到生产上传目录。')
+assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*alias\s+\/data\/tongshi\/uploads\//, 'Nginx 内部上传目录应映射到生产上传目录。')
 assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*sendfile\s+on;/, 'Nginx 内部文件传输应启用 sendfile。')
 
 console.log('nginx local file preview static checks passed')

@@ -24,6 +24,7 @@ from app.services.question_bank_service import (
 from app.services.question_service import import_questions_from_excel
 from app.services.access_control_service import student_can_access_course
 from app.services.material_service import can_view_course_materials, list_materials
+from app.services.announcement_service import list_announcements, unread_count
 from app.services.public_learning_service import list_public_courses, list_public_materials, get_public_course
 from app.services.task_service import get_accessible_assignment
 from app.api.v1.routes import admin_public_course_routes
@@ -124,6 +125,35 @@ def test_get_accessible_assignment_rejects_soft_deleted_class(db_session):
     cls.deleted_at = datetime.now(timezone.utc)
     db_session.commit()
     assert get_accessible_assignment(db_session, "2025001", ann.id) is None
+
+
+def test_announcement_lists_and_unread_count_hide_soft_deleted_resources(db_session):
+    """作业、目标班级或所属课程软删后，列表和未读数都不可见。"""
+    course = db_session.query(Course).filter(Course.name == "测试课程").first()
+    cls = db_session.query(Class).filter(Class.course_id == course.id).first()
+    ann = Announcement(
+        course_id=course.id,
+        teacher_id="T001",
+        type="task",
+        title="列表软删作业",
+        question_ids=[],
+    )
+    db_session.add(ann)
+    db_session.flush()
+    db_session.add(AnnouncementClass(announcement_id=ann.id, class_id=cls.id))
+    db_session.commit()
+
+    assert [item["id"] for item in list_announcements(
+        db_session, type("Student", (), {"id": "2025001", "role": "student"})()
+    )] == [ann.id]
+    assert unread_count(db_session, "2025001") == 1
+
+    ann.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+    assert list_announcements(
+        db_session, type("Student", (), {"id": "2025001", "role": "student"})()
+    ) == []
+    assert unread_count(db_session, "2025001") == 0
 
 
 def test_public_learning_hides_soft_deleted_course_and_material(db_session):

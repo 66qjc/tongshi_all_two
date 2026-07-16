@@ -57,7 +57,7 @@ const router = createRouter({
       path: '/learn',
       name: 'learn',
       component: () => import('../views/LearnView.vue'),
-      meta: { title: '学 · AI 通识公开学习馆', public: true },
+      meta: { title: '学 · 公开教程', public: true },
     },
     {
       path: '/learn/course/:courseId',

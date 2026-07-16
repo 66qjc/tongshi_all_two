@@ -61,8 +61,8 @@ assert.doesNotMatch(
 
 assert.match(
   actView,
-  /登录后查看同学们的实践成果/,
-  '游客项目区应展示登录后查看实践成果的中文提示',
+  /登录后可查看同学作品/,
+  '游客项目区应展示登录后查看同学作品的中文提示',
 )
 
 assert.match(

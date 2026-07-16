@@ -203,7 +203,9 @@ class QuestionOut(BaseModel):
     source_question_id: Optional[int] = None
     is_synced: bool = False
     created_by: Optional[str] = None
+    creator_name: Optional[str] = None
     star_rating: int = 3
+    is_owner: bool = False
 
 
 class QuestionCreate(BaseModel):

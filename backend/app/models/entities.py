@@ -254,7 +254,7 @@ class Question(Base):
     # 题库优化字段
     created_by = Column(String(32), ForeignKey("users.id"), nullable=True, index=True)
     star_rating = Column(Integer, nullable=False, default=3)  # 1-5星，默认3星
-    stem_hash = Column(String(64), nullable=True, index=True)  # 题干MD5，用于防重复
+    stem_hash = Column(String(64), nullable=True, index=True)  # 规范化题干 SHA-256，用于防重复
     deleted_at = Column(DateTime, nullable=True, index=True)
     deleted_by = Column(String(32), nullable=True, index=True)
 

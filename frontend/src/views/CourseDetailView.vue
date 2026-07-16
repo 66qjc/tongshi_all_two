@@ -49,6 +49,8 @@ const sidebarOpen = ref(false)
 const previewVisible = ref(false)
 const selectedMaterial = ref<Material | null>(null)
 const activeMaterialId = ref<number | null>(null)
+/** 资料目录中折叠的阶段 key，默认全部展开 */
+const collapsedStageKeys = ref<Set<string>>(new Set())
 const courseProgress = ref<CourseProgress | null>(null)
 const videoPosition = ref(0)
 const videoDuration = ref(0)
@@ -406,6 +408,26 @@ function selectMaterial(material: Material | null) {
   activeTab.value = 'materials'
 }
 
+function isStageCollapsed(sectionKey: string) {
+  return collapsedStageKeys.value.has(sectionKey)
+}
+
+function toggleStage(sectionKey: string) {
+  const next = new Set(collapsedStageKeys.value)
+  if (next.has(sectionKey)) next.delete(sectionKey)
+  else next.add(sectionKey)
+  collapsedStageKeys.value = next
+}
+
+function materialRowMeta(material: Material) {
+  return material.size || materialMetaText(material) || ''
+}
+
+function materialRowTitle(material: Material) {
+  const meta = materialMetaText(material)
+  return meta ? `${material.title} · ${meta}` : material.title
+}
+
 function syncActiveMaterial(materialList: Material[]) {
   const currentActive = materialList.find((material) => material.id === activeMaterialId.value)
   if (currentActive) return
@@ -594,30 +616,30 @@ onBeforeUnmount(() => {
       <div class="container hero-container">
         <button class="back-btn" type="button" @click="router.push('/learn')">
           <span aria-hidden="true">←</span>
-          <span>返回学习馆</span>
+          <span>返回教程列表</span>
         </button>
 
         <div v-if="course" class="course-heading">
-          <p class="course-kicker">公开课程阅读</p>
+          <p class="course-kicker">公开教程阅读</p>
           <h1>{{ course.name }}</h1>
-          <p class="course-desc">{{ course.description || '本课程暂无详细介绍。' }}</p>
+          <p class="course-desc">{{ course.description || '本教程暂无详细介绍。' }}</p>
         </div>
 
         <div class="hero-bottom">
-          <div class="tab-bar" aria-label="课程视图">
+          <div class="tab-bar" aria-label="教程视图">
             <button
               :class="['tab-btn', { active: activeTab === 'lessons' }]"
               type="button"
               @click="activeTab = 'lessons'"
             >
-              课程目录
+              教程目录
             </button>
             <button
               :class="['tab-btn', { active: activeTab === 'materials' }]"
               type="button"
               @click="activeTab = 'materials'"
             >
-              学习资料库
+              学习资料
             </button>
           </div>
 
@@ -658,7 +680,7 @@ onBeforeUnmount(() => {
         <div class="booksite-layout">
           <aside class="reader-sidebar" :class="{ open: sidebarOpen }">
             <div class="mobile-sidebar-header">
-              <span>课程目录</span>
+              <span>教程目录</span>
               <button type="button" class="close-sidebar" @click="sidebarOpen = false">关闭</button>
             </div>
             <CourseToc
@@ -749,7 +771,7 @@ onBeforeUnmount(() => {
 
             <section v-if="contentSource === 'public' && !canSaveProgress" class="rail-section">
               <h2>学习提示</h2>
-              <p class="rail-note">登录后可保存学习进度，后续可以从学习馆继续阅读。</p>
+              <p class="rail-note">登录后可保存学习进度，后续可以从教程列表继续阅读。</p>
             </section>
           </aside>
         </div>
@@ -769,24 +791,34 @@ onBeforeUnmount(() => {
                 >
                   <button
                     type="button"
-                    class="doc-section-title"
-                    @click="selectMaterial(section.materials[0] || null)"
+                    class="stage-head"
+                    :class="{ collapsed: isStageCollapsed(section.key) }"
+                    :aria-expanded="!isStageCollapsed(section.key)"
+                    @click="toggleStage(section.key)"
                   >
-                    <span>{{ section.label }}</span>
-                    <strong>{{ section.title }}</strong>
-                    <small>{{ section.materials.length }} 份资料</small>
+                    <span class="chev" aria-hidden="true">▾</span>
+                    <span class="stage-badge">{{ section.label }}</span>
+                    <span class="stage-title">{{ section.title }}</span>
+                    <span class="stage-count">{{ section.materials.length }}</span>
                   </button>
-                  <button
-                    v-for="material in section.materials"
-                    :key="material.id"
-                    type="button"
-                    :class="['doc-material-link', { active: activeMaterial?.id === material.id }]"
-                    @click="selectMaterial(material)"
+                  <div
+                    v-show="!isStageCollapsed(section.key)"
+                    class="stage-materials"
                   >
-                    <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
-                    <strong>{{ material.title }}</strong>
-                    <small>{{ materialMetaText(material) || materialSummary(material) }}</small>
-                  </button>
+                    <button
+                      v-for="material in section.materials"
+                      :key="material.id"
+                      type="button"
+                      class="doc-material-link"
+                      :class="{ active: activeMaterial?.id === material.id }"
+                      :title="materialRowTitle(material)"
+                      @click="selectMaterial(material)"
+                    >
+                      <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
+                      <strong>{{ material.title }}</strong>
+                      <small v-if="materialRowMeta(material)">{{ materialRowMeta(material) }}</small>
+                    </button>
+                  </div>
                 </section>
               </div>
               <div v-if="!materialSections.length" class="materials-empty-small">暂无资料目录</div>
@@ -810,30 +842,6 @@ onBeforeUnmount(() => {
               <p class="guide-summary">
                 {{ activeMaterial ? materialSummary(activeMaterial) : '请选择左侧目录中的资料开始阅读。' }}
               </p>
-              <dl v-if="activeMaterial" class="guide-facts">
-                <div>
-                  <dt>类型</dt>
-                  <dd>{{ materialTypeLabel(activeMaterial.type) }}</dd>
-                </div>
-                <div v-if="activeMaterial.size">
-                  <dt>大小</dt>
-                  <dd>{{ activeMaterial.size }}</dd>
-                </div>
-                <div v-if="activeMaterial.preview?.page_count || activeMaterial.pages">
-                  <dt>页数</dt>
-                  <dd>{{ activeMaterial.preview?.page_count || activeMaterial.pages }} 页</dd>
-                </div>
-                <div v-if="activeMaterial.preview?.duration_seconds || activeMaterial.duration">
-                  <dt>时长</dt>
-                  <dd>
-                    {{
-                      activeMaterial.preview?.duration_seconds
-                        ? `${Math.max(1, Math.round(activeMaterial.preview.duration_seconds / 60))} 分钟`
-                        : activeMaterial.duration
-                    }}
-                  </dd>
-                </div>
-              </dl>
               <a
                 v-if="activeMaterialResolvedUrl"
                 class="guide-open-link"
@@ -1258,79 +1266,166 @@ onBeforeUnmount(() => {
 
 .doc-section-list {
   display: grid;
-  gap: 14px;
+  gap: 6px;
 }
 
 .doc-section-group {
   display: grid;
-  gap: 6px;
+  gap: 1px;
 }
 
-.doc-section-title,
 .doc-material-link,
-.guide-nav {
+.guide-nav,
+.stage-head {
   width: 100%;
   text-align: left;
 }
 
-.doc-section-title {
-  display: grid;
-  gap: 3px;
-  padding: 8px 4px;
-  color: var(--color-text);
-  background: transparent;
-}
-
-.doc-section-title span {
-  color: var(--color-learn);
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.doc-section-title strong {
-  font-size: 0.92rem;
-}
-
-.doc-section-title small {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-.doc-material-link {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out);
-}
-
-.doc-material-link:hover,
-.doc-material-link.active {
+/* 阶段分组头：单行紧凑 */
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  border-left: 3px solid var(--color-learn);
   background: var(--color-bg-alt);
-  border-color: rgba(45, 106, 122, 0.22);
+  color: var(--color-text);
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.stage-head:hover {
+  background: #ebe4d4;
+}
+
+.stage-head .chev {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  line-height: 1;
+  transition: transform 140ms var(--ease-out);
+}
+
+.stage-head.collapsed .chev {
+  transform: rotate(-90deg);
+}
+
+.stage-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(45, 106, 122, 0.12);
+  color: var(--color-learn);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.stage-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stage-count {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stage-materials {
+  display: grid;
+  gap: 1px;
+  padding: 1px 0 2px 10px;
+}
+
+/* 资料条目：单行缩进 */
+.doc-material-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  background: transparent;
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.doc-material-link:hover {
+  background: rgba(45, 106, 122, 0.05);
+  border-left-color: rgba(45, 106, 122, 0.22);
 }
 
 .doc-material-link.active {
-  box-shadow: inset 0 0 0 1px rgba(45, 106, 122, 0.18);
+  background: var(--color-learn-bg);
+  border-left-color: var(--color-learn);
+}
+
+.doc-material-link .material-type {
+  flex: 0 0 auto;
+  min-width: 28px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ece7db;
+  color: var(--color-text-muted);
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.doc-material-link.active .material-type {
+  background: rgba(45, 106, 122, 0.14);
+  color: var(--color-learn);
 }
 
 .doc-material-link strong {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--color-text);
-  font-size: 0.88rem;
-  line-height: 1.45;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.doc-material-link small,
+.doc-material-link.active strong {
+  color: var(--color-learn);
+  font-weight: 700;
+}
+
+.doc-material-link small {
+  flex: 0 0 auto;
+  max-width: 42%;
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .materials-empty-small {
   color: var(--color-text-muted);
   font-size: 0.78rem;
   line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .stage-section {
@@ -1393,39 +1488,11 @@ onBeforeUnmount(() => {
   text-wrap: pretty;
 }
 
-.guide-facts {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-}
-
-.guide-facts div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.guide-facts div:last-child {
-  border-bottom: 0;
-}
-
-.guide-facts dt {
-  color: var(--color-text-muted);
-}
-
-.guide-facts dd {
-  margin: 0;
-  color: var(--color-text);
-  font-weight: 800;
-}
-
 .guide-open-link {
   display: inline-flex;
   justify-content: center;
   width: 100%;
-  margin-top: 12px;
+  margin-top: 4px;
   padding: 9px 12px;
   color: var(--color-bg-card);
   background: var(--color-learn);

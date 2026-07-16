@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import VuePdfEmbed, { GlobalWorkerOptions } from 'vue-pdf-embed/dist/index.essential.mjs'
 // vue-pdf-embed 内部使用的是 pdfjs-dist 的 legacy 构建，worker 必须同样使用 legacy 版本，
 // 否则主程序与 worker 构建不匹配，会导致 PDF 在浏览器里无法打开或一直卡在渲染中。
@@ -24,6 +24,8 @@ const pdfStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const pdfErrorText = ref('')
 const pdfPageTotal = ref(0)
 const visiblePdfPageCount = ref(2)
+const pdfLoadSentinel = ref<HTMLElement | null>(null)
+let pdfObserver: IntersectionObserver | null = null
 
 const metaText = computed(() => {
   if (!props.material) return ''
@@ -70,17 +72,6 @@ const pdfFailureHandler = computed(() => {
   return (error: unknown) => handlePdfFailed(error, failedUrl)
 })
 
-watch(
-  () => [props.material?.id, props.material?.type, props.fileUrl],
-  () => {
-    pdfErrorText.value = ''
-    pdfPageTotal.value = 0
-    visiblePdfPageCount.value = 2
-    pdfStatus.value = props.material?.type === 'pdf' && props.fileUrl ? 'loading' : 'ready'
-  },
-  { immediate: true },
-)
-
 function describePdfError(error: unknown) {
   if (error instanceof Error && error.message) return error.message
   return '当前 PDF 暂时无法渲染。'
@@ -95,6 +86,7 @@ function handlePdfLoaded(doc: { numPages?: number }) {
 function handlePdfRendered() {
   pdfErrorText.value = ''
   pdfStatus.value = 'ready'
+  void nextTick(setupPdfObserver)
 }
 
 function handlePdfFailed(error: unknown, failedUrl: string) {
@@ -114,13 +106,62 @@ function emitFileError(failedUrl: string) {
   emit('file-error', failedUrl)
 }
 
+function stopPdfObserver() {
+  pdfObserver?.disconnect()
+  pdfObserver = null
+}
+
+function setupPdfObserver() {
+  stopPdfObserver()
+  if (
+    typeof IntersectionObserver === 'undefined' ||
+    !pdfLoadSentinel.value ||
+    props.material?.type !== 'pdf' ||
+    !props.fileUrl ||
+    props.fileLoading ||
+    props.fileError ||
+    pdfStatus.value === 'error' ||
+    !hasMorePdfPages.value
+  ) return
+
+  pdfObserver = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) loadMorePdfPages()
+    },
+    { rootMargin: '0px 0px 400px 0px' },
+  )
+  pdfObserver.observe(pdfLoadSentinel.value)
+}
+
 function loadMorePdfPages() {
+  if (pdfStatus.value === 'loading' || !hasMorePdfPages.value) return
+  stopPdfObserver()
   const nextPageCount = visiblePdfPageCount.value + 2
   visiblePdfPageCount.value = pdfPageTotal.value
     ? Math.min(pdfPageTotal.value, nextPageCount)
     : nextPageCount
   pdfStatus.value = 'loading'
 }
+
+watch(
+  () => [props.material?.id, props.material?.type, props.fileUrl],
+  () => {
+    stopPdfObserver()
+    pdfErrorText.value = ''
+    pdfPageTotal.value = 0
+    visiblePdfPageCount.value = 2
+    pdfStatus.value = props.material?.type === 'pdf' && props.fileUrl ? 'loading' : 'ready'
+    void nextTick(setupPdfObserver)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [pdfStatus.value, hasMorePdfPages.value, props.fileLoading, props.fileError],
+  () => void nextTick(setupPdfObserver),
+)
+
+onBeforeUnmount(stopPdfObserver)
 </script>
 
 <template>
@@ -142,7 +183,9 @@ function loadMorePdfPages() {
 
       <section v-if="type === 'pdf'" class="reader-frame pdf-frame">
         <div class="pdf-document">
-          <div v-if="fileLoading || pdfStatus === 'loading'" class="pdf-status">PDF 渲染中，请稍候。</div>
+          <div v-if="fileLoading || pdfStatus === 'loading'" class="pdf-status">
+            {{ visiblePdfPageCount > 2 ? '正在加载后续页面，请稍候。' : 'PDF 渲染中，请稍候。' }}
+          </div>
           <div v-if="fileError" class="reader-fallback pdf-error">
             <h3>浏览器无法直接显示 PDF</h3>
             <p>{{ fileError || pdfErrorText || '可以使用下方按钮在新窗口打开原资料。' }}</p>
@@ -173,18 +216,12 @@ function loadMorePdfPages() {
               <a :href="fileUrl" target="_blank" rel="noopener" class="open-link">打开原资料</a>
             </div>
           </object>
-          <button
-            v-if="hasMorePdfPages"
-            type="button"
-            class="pdf-more-button"
-            @click="loadMorePdfPages"
-          >
-            加载更多页面
-          </button>
-        </div>
-        <div class="pdf-open-row">
-          <span>浏览器无法直接显示 PDF 时，可以在新窗口打开原资料。</span>
-          <a v-if="fileUrl" :href="fileUrl" target="_blank" rel="noopener" class="open-link">打开原资料</a>
+          <div
+            v-if="hasMorePdfPages && !fileLoading && !fileError && pdfStatus !== 'error'"
+            ref="pdfLoadSentinel"
+            class="pdf-load-sentinel"
+            aria-hidden="true"
+          ></div>
         </div>
       </section>
 
@@ -289,19 +326,9 @@ function loadMorePdfPages() {
   text-align: center;
 }
 
-.pdf-more-button {
-  justify-self: center;
-  padding: 10px 18px;
-  color: var(--color-learn);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  font-weight: 800;
-}
-
-.pdf-more-button:hover {
-  border-color: rgba(45, 106, 122, 0.38);
-  background: rgba(45, 106, 122, 0.08);
+.pdf-load-sentinel {
+  width: 100%;
+  height: 1px;
 }
 
 .pdf-object-fallback {
@@ -322,19 +349,6 @@ function loadMorePdfPages() {
 .video-player {
   height: auto;
   min-height: 420px;
-}
-
-.pdf-open-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 18px;
-  padding: 12px 14px;
-  color: var(--color-text-secondary);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
 }
 
 .link-frame,
@@ -393,10 +407,6 @@ function loadMorePdfPages() {
 
   .pdf-frame {
     padding: 12px;
-  }
-
-  .pdf-open-row {
-    display: grid;
   }
 
   .link-frame,
