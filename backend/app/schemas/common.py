@@ -263,6 +263,7 @@ class AdminQuestionCreate(BaseModel):
     answer: str
     explanation: str = ""
     tags: List[str] = []
+    star_rating: int = Field(default=3, ge=1, le=5)
 
     @field_validator("type")
     @classmethod

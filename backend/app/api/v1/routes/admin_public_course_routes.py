@@ -84,6 +84,7 @@ def _format_question(question) -> dict:
         "tags": question.tags or [],
         "source_question_id": question.source_question_id,
         "is_synced": bool(question.source_question_id),
+        "star_rating": question.star_rating if question.star_rating is not None else 3,
     }
 
 

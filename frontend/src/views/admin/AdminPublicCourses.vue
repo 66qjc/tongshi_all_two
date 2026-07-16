@@ -96,6 +96,7 @@ const questionForm = ref({
   answer: '',
   explanation: '',
   tags: [] as string[],
+  star_rating: 3,
 })
 
 const previewVisible = ref(false)
@@ -357,7 +358,7 @@ async function removeMaterial(material: Material) {
 function openCreateQuestion() {
   if (!selectedCourse.value) return
   editingQuestionId.value = null
-  questionForm.value = { type: 'choice', stem: '', optionsText: '', answer: '', explanation: '', tags: [] }
+  questionForm.value = { type: 'choice', stem: '', optionsText: '', answer: '', explanation: '', tags: [], star_rating: 3 }
   showQuestionDialog.value = true
 }
 
@@ -370,6 +371,7 @@ function openEditQuestion(question: Question) {
     answer: question.answer,
     explanation: question.explanation || '',
     tags: [...(question.tags || [])],
+    star_rating: question.star_rating || 3,
   }
   showQuestionDialog.value = true
 }
@@ -397,6 +399,7 @@ async function saveQuestion() {
       answer: questionForm.value.answer.trim(),
       explanation: questionForm.value.explanation.trim(),
       tags: questionForm.value.tags.map(item => item.trim()).filter(Boolean),
+      star_rating: questionForm.value.star_rating || 3,
     }
     if (editingQuestionId.value) {
       await updateAdminPublicQuestion(selectedCourse.value.id, editingQuestionId.value, payload)
@@ -851,6 +854,11 @@ onMounted(() => fetchCourses())
                 </el-table-column>
                 <el-table-column prop="stem" label="题干" min-width="240" show-overflow-tooltip />
                 <el-table-column prop="answer" label="答案" width="140" show-overflow-tooltip />
+                <el-table-column label="星级" width="140">
+                  <template #default="{ row }">
+                    <el-rate :model-value="row.star_rating || 3" disabled :max="5" />
+                  </template>
+                </el-table-column>
                 <el-table-column label="标签" min-width="160">
                   <template #default="{ row }">
                     <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">{{ tag }}</el-tag>
@@ -988,6 +996,9 @@ onMounted(() => fetchCourses())
             placeholder="输入标签后回车"
             style="width: 100%"
           />
+        </el-form-item>
+        <el-form-item label="题目星级">
+          <el-rate v-model="questionForm.star_rating" :max="5" show-score />
         </el-form-item>
         <el-form-item label="解析">
           <el-input v-model="questionForm.explanation" type="textarea" :rows="3" placeholder="选填" />
