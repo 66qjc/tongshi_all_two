@@ -1,17 +1,14 @@
 import http from './http'
 import type { CourseDetail, CourseListResult, Course } from './course'
-import type { Lesson } from './lesson'
 import type { Material } from './material'
 
-export interface PublicCourse extends Course {
-  lesson_count: number
-}
+export interface PublicCourse extends Course {}
 
 export type PublicCourseListResult = Omit<CourseListResult, 'courses'> & {
   courses: PublicCourse[]
 }
 
-type PublicCourseDetail = CourseDetail & { lesson_count: number }
+type PublicCourseDetail = CourseDetail
 
 const mojibakePattern =
   /[\u00c0-\u00ff\u8119\u8117\u76f2\u6c13\u732b\u8305\u951a\u5192\u5e3d\u8c8c\u8d38\u4e48\u73ab\u679a\u9709\u7164\u6ca1\u7709]/
@@ -52,15 +49,10 @@ export function normalizeMaterial(material: Material): Material {
   return normalizeTextFields(material)
 }
 
-export function normalizeLesson(lesson: Lesson): Lesson {
-  return normalizeTextFields(lesson)
-}
-
 export function normalizePublicCourse(course: PublicCourse): PublicCourse {
   const normalized = normalizeTextFields(course)
   return {
     ...normalized,
-    lesson_count: Number(normalized.lesson_count ?? 0),
     material_count: Number(normalized.material_count ?? 0),
     question_count: Number(normalized.question_count ?? 0),
     class_count: Number(normalized.class_count ?? 0),
@@ -71,7 +63,6 @@ function normalizePublicCourseDetail(detail: PublicCourseDetail): PublicCourseDe
   const normalized = normalizeTextFields(detail)
   return {
     ...normalized,
-    lesson_count: Number(normalized.lesson_count ?? 0),
     material_count: Number(normalized.material_count ?? 0),
     question_count: Number(normalized.question_count ?? 0),
     class_count: Number(normalized.class_count ?? 0),
@@ -101,12 +92,6 @@ export function getPublicCourseDetail(courseId: number, silentError = false) {
       silentError,
     })
     .then(normalizePublicCourseDetail)
-}
-
-export function getPublicLessons(courseId: number) {
-  return http
-    .get<any, Lesson[]>(`/public/learning/courses/${courseId}/lessons`)
-    .then((lessons) => lessons.map(normalizeLesson))
 }
 
 export function getPublicMaterials(params?: {

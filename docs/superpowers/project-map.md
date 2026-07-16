@@ -12,14 +12,13 @@
 
 ```text
 User(teacher) -> Course -> Class -> StudentClassEnrollment -> User(student)
-User(teacher) -> Course -> Material
+User(teacher) -> Course -> CourseStage -> Material
 User(teacher) -> Course -> Question -> QuizAttempt
 User(teacher) -> Course -> Project
-User(teacher) -> Course -> Lesson
-User(student) -> CourseProgress -> Course / Lesson
-User(student) -> LessonProgress -> Course / Lesson
 Announcement -> AnnouncementClass -> Class
 Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
+# 历史保留（产品与 API 已下线，表/ORM/迁移仍在）：
+# Lesson / LessonProgress / CourseProgress
 ```
 
 ## 后端主要文件
@@ -30,8 +29,7 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 班级服务：`backend/app/services/class_service.py`
 - 资料服务：`backend/app/services/material_service.py`
 - 资料预览服务：`backend/app/services/material_preview_service.py`
-- 课时服务：`backend/app/services/lesson_service.py`
-- 学习进度服务：`backend/app/services/progress_service.py`
+- 公开学习服务：`backend/app/services/public_learning_service.py`
 - 题库服务：`backend/app/services/question_service.py`
 - 公共课程题库贡献记录：`backend/app/services/question_contribution_service.py`
 - 公告服务：`backend/app/services/announcement_service.py`
@@ -41,20 +39,21 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ## 教师端页面
 
 - `/teacher`
-- `/teacher/courses`
+- `/teacher/courses`（课程列表）
+- `/teacher/courses/:courseId`（课程详情：课程信息 + 阶段与资料管理；无课时/学习分析）
 - `/teacher/classes`
 - `/teacher/publish`
 - `/teacher/grades`
 - `/teacher/task-report`
 - `/teacher/reviews`
-- `/teacher/materials`
 - `/teacher/student-admin`
 - `/teacher/questions`
+- `/teacher/materials`（若仍注册，仅作兼容入口；资料维护主路径为课程详情）
 
 ## 学生端页面
 
-- `/learn`
-- `/learn/course/:courseId`
+- `/learn`（公开教程卡片；只展示资料数，进入课程资料）
+- `/learn/course/:courseId`（资料直读唯一主路径；旧 `lesson_id`/`tab=lessons` 查询参数忽略）
 - `/practice`
 - `/practice/quiz/:courseId`
 - `/practice/announcement/:announcementId`
@@ -63,7 +62,10 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ## 长期约定
 
 - 不再使用独立章节表、章节 API 或章节页面
-- 资料、题目和作品都直接挂在课程下
+- **课程「课时」产品与 API 已全链路下线（2026-07-16）**：前端无课时 CRUD/阅读/进度；后端课时与课时进度路由返回 HTTP 404 且不在 OpenAPI 中；公开课程响应不再返回 `lesson_count`
+- **历史数据只读保留**：`lessons`、`lesson_progress`、`course_progress` 表、ORM、`schema_compat` 兼容建表与历史迁移文件仍保留；本轮不做 DROP/清表/迁移
+- 课程学习统一围绕阶段化资料（PDF、视频、链接）与 `MaterialInlineReader` 直读；不新增资料级进度/完成率
+- 资料、题目和作品都直接挂在课程下（资料可归入 `CourseStage`）
 - 答题统计以 `QuizAttempt` 为事实来源
 - 新上传文件统一通过 `file_id` 访问 `/api/files/{id}`
 - 生产环境预览 PDF / 视频优先走 Nginx 代理
@@ -85,16 +87,26 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 课程搜索使用 `ilike()`（大小写不敏感 + 中文子串），不再使用 `contains()`。
 - 教师课程页“已添加课程”和“公共课程”均通过 `/api/courses` 分页接口携带关键词搜索。
 - 教师学生列表分页直接在数据库层完成，不再全量查询到 Python 内存去重再切片。
-- 回归保护：`frontend/tests/course-detail-layout-static.test.mjs` 用于验证课程详情页面布局不退化。
+- 回归保护：`frontend/tests/course-detail-layout-static.test.mjs`、`frontend/tests/material-only-learning-static.test.mjs`、`backend/tests/test_removed_lesson_endpoints.py` 锁定资料唯一学习主路径与课时 API 退役契约。
 - 课程资料大文件打开优先走 `/api/materials/{material_id}/file`，后端鉴权后由 Nginx 内部目录传输
 - 学生端和教师端资料展示统一使用图文资料卡片和站内预览；旧 `/api/files/{id}` 保留给图片、作品报告等通用文件访问
-- 学生端“学”页面课时内容只能展示学生已加入课程下的已发布课时；草稿课时对学生不可见
-- 课时富文本在创建、更新和读取时都必须经过后端白名单清洗；前端 `v-html` 仅渲染后端清洗后的内容
-- 删除课时时必须清空 `course_progress.last_lesson_id` 引用，并删除对应 `lesson_progress` 记录，避免学习进度指向已删除课时
+- ~~学生端“学”页面课时内容只能展示学生已加入课程下的已发布课时~~（已被 2026-07-16 课时下线决策取代）
+- ~~课时富文本白名单清洗 / 删除课时时清理进度引用~~（已被 2026-07-16 课时下线决策取代；历史表仍保留）
 
 ## 修改记录
 
+### 2026-07-16 移除课程「课时」产品与 API
+
+- 决策：产品界面、前端调用和后端公开接口全链路下线「课时」及课时级学习进度；学习统一围绕阶段化资料直读。
+- 后端：注销 `lessons`/`progress` 路由与服务；公开学习删除 `list_public_lessons` 与 `lesson_count`；删除课时/进度 Schema 与专用测试；新增 `test_removed_lesson_endpoints.py` 锁定 HTTP 404 与 OpenAPI 缺席。
+- 前端：删除 `api/lesson.ts`、`api/progress.ts` 与 `components/lesson/*`；`LearnView`/`CourseDetailView` 仅资料路径；教师课程详情去掉课时与学习分析；卸载 `@wangeditor` 与专用分包。
+- 保留：`Lesson`/`LessonProgress`/`CourseProgress` ORM、`schema_compat` 兼容建表、历史迁移文件；不清空历史行。
+- 实施计划：`docs/superpowers/plans/2026-07-16-remove-course-lessons.md`
+- 服务器部署影响：需要拉代码、前端 `npm ci` 后重新构建部署、重启后端；**不需要**数据库迁移/清表；不需要改 Nginx/Redis/环境变量。
+
 ### 2026-07-09 课程课时级进度追踪第一版
+
+> **状态标注（2026-07-16）：** 下列“课时进度产品能力”已被本文件上方「移除课程课时」决策取代。历史表与 ORM 仍保留，产品与 API 已下线。
 
 - 数据：新增 `lesson_progress` 课时进度表与 `LessonProgress` ORM，记录状态、完成百分比、断点位置、累计学习时长、访问次数和关键时间戳；`schema_compat.py` 会在旧库启动时补表。
 - 接口：`progress_service.py` 新增课时进度上报、课程进度汇总、班级学生进度、课程学习统计；`/api/courses/{course_id}/progress` 保留 `last_lesson_id` 并增加 `total_lessons`、`completed_lessons`、`total_duration`、`completion_rate`、`lessons`。

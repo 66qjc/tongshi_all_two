@@ -21,7 +21,6 @@ PREFERENCE_BY_TYPE = {
     "grade_published": "enable_grade_published",
     "grade_changed": "enable_grade_published",
     "course_material_added": "enable_course_update",
-    "course_lesson_published": "enable_course_update",
     "course_announcement": "enable_course_update",
     "project_approved": "enable_project_review",
     "project_rejected": "enable_project_review",

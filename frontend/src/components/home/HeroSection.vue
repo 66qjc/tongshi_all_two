@@ -8,7 +8,7 @@ const entries = [
     key: 'learn',
     mark: '学',
     title: '公开学习',
-    desc: '浏览 AI 通识课程、图文课时与精选资料。',
+    desc: '浏览 AI 通识教程与阶段化学习资料。',
     route: '/learn',
     tone: 'learn',
   },

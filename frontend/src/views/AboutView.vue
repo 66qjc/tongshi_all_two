@@ -39,7 +39,7 @@ const modules = [
                 <img src="/cjlu-xuesijianxing-favicon-sharp-20260606-190113.png" alt="AI 通识课平台标识" />
               </div>
               <h3>学</h3>
-              <p>阅读公开教程、课时与学习资料，建立系统认知</p>
+              <p>阅读公开教程与阶段学习资料，建立系统认知</p>
             </div>
             <div class="phil-card">
               <div class="phil-icon">

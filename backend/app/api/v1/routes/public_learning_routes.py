@@ -10,7 +10,6 @@ from app.db.session import get_db
 from app.services.public_learning_service import (
     build_public_course_detail,
     list_public_courses,
-    list_public_lessons,
     list_public_materials,
     resolve_public_material_file,
 )
@@ -26,11 +25,6 @@ def get_public_courses(keyword: Optional[str] = None, db: Session = Depends(get_
 @router.get("/courses/{course_id}", summary="公开课程详情", description="游客读取公开课程详情和资料。")
 def get_public_course(course_id: int, db: Session = Depends(get_db)):
     return success(build_public_course_detail(db, course_id))
-
-
-@router.get("/courses/{course_id}/lessons", summary="公开课时列表", description="游客读取公开课程下已发布课时。")
-def get_public_course_lessons(course_id: int, db: Session = Depends(get_db)):
-    return success(list_public_lessons(db, course_id))
 
 
 @router.get("/materials", summary="公开资料列表", description="游客读取公开课程资料。")

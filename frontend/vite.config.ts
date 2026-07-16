@@ -21,11 +21,6 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             {
-              name: 'vendor-wangeditor',
-              test: /node_modules[\\/](@wangeditor)[\\/]/,
-              priority: 40,
-            },
-            {
               name: 'vendor-vue',
               test: /node_modules[\\/](vue|vue-router|pinia|@vue)[\\/]/,
               priority: 30,
@@ -48,11 +43,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8050',
+        target: 'http://127.0.0.1:8051',
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://127.0.0.1:8050',
+        target: 'http://127.0.0.1:8051',
         changeOrigin: true,
       },
     },

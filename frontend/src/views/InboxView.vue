@@ -403,7 +403,7 @@ function formatDate(dateStr?: string | null) {
         <div class="preference-item">
           <div>
             <strong>课程更新</strong>
-            <p>新增资料、课时和课程公告。</p>
+            <p>新增资料和课程公告。</p>
           </div>
           <el-switch v-model="preferences.enable_course_update" />
         </div>

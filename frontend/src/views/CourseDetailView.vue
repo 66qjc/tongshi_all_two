@@ -2,25 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Check } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getCourseDetail, type CourseDetail } from '@/api/course'
 import { getCourseContents, type Material } from '@/api/material'
-import { getLessons, type Lesson } from '@/api/lesson'
-import {
-  getCourseProgress,
-  reportLessonProgress,
-  reportLessonProgressKeepalive,
-  type CourseProgress,
-} from '@/api/progress'
 import {
   getPublicCourseDetail,
-  getPublicLessons,
   getPublicMaterialFileUrl,
 } from '@/api/publicLearning'
-import CourseToc from '@/components/lesson/CourseToc.vue'
-import LessonReader from '@/components/lesson/LessonReader.vue'
-import PrevNextNav from '@/components/lesson/PrevNextNav.vue'
 import MaterialInlineReader from '@/components/learn/MaterialInlineReader.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
@@ -39,73 +27,14 @@ const authStore = useAuthStore()
 const courseId = computed(() => Number(route.params.courseId))
 
 const course = ref<CourseDetail | null>(null)
-const lessons = ref<Lesson[]>([])
 const materials = ref<Material[]>([])
 const loading = ref(true)
-const currentLessonId = ref<number | null>(null)
 const contentSource = ref<'authenticated' | 'public'>('public')
-const activeTab = ref<'lessons' | 'materials'>(route.query.tab === 'materials' ? 'materials' : 'lessons')
-const sidebarOpen = ref(false)
 const previewVisible = ref(false)
 const selectedMaterial = ref<Material | null>(null)
 const activeMaterialId = ref<number | null>(null)
 /** 资料目录中折叠的阶段 key，默认全部展开 */
 const collapsedStageKeys = ref<Set<string>>(new Set())
-const courseProgress = ref<CourseProgress | null>(null)
-const videoPosition = ref(0)
-const videoDuration = ref(0)
-const currentLessonHasVideo = ref(true)
-const completingLesson = ref(false)
-
-const isTeacherOrAdmin = computed(() =>
-  ['teacher', 'admin'].includes(authStore.user?.role || ''),
-)
-
-const canSaveProgress = computed(() =>
-  authStore.isLoggedIn &&
-  authStore.user?.role === 'student' &&
-  contentSource.value === 'authenticated',
-)
-
-const visibleLessons = computed(() => {
-  if (isTeacherOrAdmin.value) return lessons.value
-  return lessons.value.filter((lesson) => lesson.status === 'published')
-})
-
-const currentLesson = computed(
-  () => visibleLessons.value.find((lesson) => lesson.id === currentLessonId.value) || null,
-)
-
-const currentLessonIndex = computed(() =>
-  visibleLessons.value.findIndex((lesson) => lesson.id === currentLessonId.value),
-)
-
-const prevLesson = computed<Lesson | null>(() => {
-  const index = currentLessonIndex.value
-  return index > 0 ? (visibleLessons.value[index - 1] ?? null) : null
-})
-
-const nextLesson = computed<Lesson | null>(() => {
-  const index = currentLessonIndex.value
-  return index >= 0 && index < visibleLessons.value.length - 1
-    ? (visibleLessons.value[index + 1] ?? null)
-    : null
-})
-
-const progressPercent = computed(() => {
-  if (canSaveProgress.value && courseProgress.value) return Math.round(courseProgress.value.completion_rate || 0)
-  if (!visibleLessons.value.length || currentLessonIndex.value < 0) return 0
-  return Math.round(((currentLessonIndex.value + 1) / visibleLessons.value.length) * 100)
-})
-
-const currentLessonProgress = computed(() => {
-  if (!currentLessonId.value) return null
-  return courseProgress.value?.lessons.find((item) => item.lesson_id === currentLessonId.value) ?? null
-})
-
-const resumePosition = computed(() => currentLessonProgress.value?.last_position || 0)
-
-const railMaterials = computed(() => materials.value.slice(0, 5))
 
 const materialSections = computed<MaterialSection[]>(() => {
   const sections: MaterialSection[] = (course.value?.stages ?? []).map((stage, index) => ({
@@ -167,7 +96,7 @@ const activeMaterialFileUrl = computed(() => {
 })
 
 const activeMaterialFileEnabled = computed(() =>
-  activeTab.value === 'materials' && Boolean(activeMaterial.value && activeMaterialFileUrl.value),
+  Boolean(activeMaterial.value && activeMaterialFileUrl.value),
 )
 
 const {
@@ -182,167 +111,37 @@ function handleActiveMaterialFileError(failedUrl: string) {
 }
 
 const hasRefreshingMaterialPreview = computed(() =>
-  activeTab.value === 'materials' &&
   materials.value.some((material) =>
     ['pending', 'processing'].includes(material.preview?.status || ''),
   ),
 )
 
 let materialRefreshTimer: number | undefined
-let lessonProgressTimer: number | undefined
-let lastProgressReportedAt = Date.now()
-let finalReportSent = false
-
-function selectLesson(lesson: Lesson) {
-  if (lesson.id === currentLessonId.value) {
-    sidebarOpen.value = false
-    return
-  }
-  if (canSaveProgress.value) {
-    void reportCurrentLessonProgress(takeUnreportedDuration())
-  }
-  currentLessonId.value = lesson.id
-  activeTab.value = 'lessons'
-  sidebarOpen.value = false
-  saveProgressAndUrl(lesson.id)
-}
-
-function goPrev() {
-  if (prevLesson.value) selectLesson(prevLesson.value)
-}
-
-function goNext() {
-  if (nextLesson.value) selectLesson(nextLesson.value)
-}
-
-function takeUnreportedDuration() {
-  const now = Date.now()
-  const seconds = Math.max(0, Math.round((now - lastProgressReportedAt) / 1000))
-  lastProgressReportedAt = now
-  return Math.min(seconds, 120)
-}
-
-function calculatedLessonPercent() {
-  if (videoDuration.value > 0) {
-    return Math.min(100, Math.max(0, Math.round((videoPosition.value / videoDuration.value) * 100)))
-  }
-  return Math.max(currentLessonProgress.value?.progress_percent || 0, 10)
-}
-
-async function refreshCourseProgress() {
-  if (!canSaveProgress.value) return
-  try {
-    courseProgress.value = await getCourseProgress(courseId.value)
-  } catch {
-    // 进度刷新失败不影响当前阅读。
-  }
-}
-
-async function reportCurrentLessonProgress(
-  durationSeconds = 0,
-  visitStarted = false,
-  progressPercentOverride?: number,
-) {
-  if (!canSaveProgress.value || !currentLessonId.value) return
-  try {
-    const progress = await reportLessonProgress(courseId.value, currentLessonId.value, {
-      progress_percent: progressPercentOverride ?? calculatedLessonPercent(),
-      last_position: videoPosition.value,
-      duration_seconds: durationSeconds,
-      visit_started: visitStarted,
-    })
-    if (courseProgress.value) {
-      const index = courseProgress.value.lessons.findIndex((item) => item.lesson_id === progress.lesson_id)
-      if (index >= 0) courseProgress.value.lessons[index] = progress
-      courseProgress.value.last_lesson_id = progress.lesson_id
-      courseProgress.value.completed_lessons = courseProgress.value.lessons.filter((item) => item.status === 'completed').length
-      courseProgress.value.total_duration = courseProgress.value.lessons.reduce((sum, item) => sum + item.duration_seconds, 0)
-      courseProgress.value.completion_rate = courseProgress.value.total_lessons
-        ? Math.round((courseProgress.value.completed_lessons / courseProgress.value.total_lessons) * 1000) / 10
-        : 0
-    }
-    return progress
-  } catch {
-    // 进度上报失败不影响阅读流程。
-    return null
-  }
-}
-
-function handleLessonContentKind(hasVideo: boolean) {
-  currentLessonHasVideo.value = hasVideo
-}
-
-async function completeCurrentLesson() {
-  if (completingLesson.value) return
-  completingLesson.value = true
-  try {
-    const progress = await reportCurrentLessonProgress(takeUnreportedDuration(), false, 100)
-    if (progress?.status === 'completed') {
-      ElMessage.success('本课已完成')
-      return
-    }
-    ElMessage.error('完成本课失败，请稍后重试')
-  } finally {
-    completingLesson.value = false
-  }
-}
-
-function stopLessonProgressTimer() {
-  if (lessonProgressTimer !== undefined) {
-    window.clearInterval(lessonProgressTimer)
-    lessonProgressTimer = undefined
-  }
-}
-
-function startLessonProgressTimer() {
-  stopLessonProgressTimer()
-  if (!canSaveProgress.value || !currentLessonId.value) return
-  lastProgressReportedAt = Date.now()
-  lessonProgressTimer = window.setInterval(() => {
-    if (document.hidden) return
-    void reportCurrentLessonProgress(takeUnreportedDuration())
-  }, 30000)
-}
-
-function resetLessonTracking() {
-  videoPosition.value = resumePosition.value
-  videoDuration.value = 0
-  startLessonProgressTimer()
-}
-
-function saveProgressAndUrl(lessonId: number) {
-  router.replace({ query: { ...route.query, tab: 'lessons', lesson_id: String(lessonId) } })
-}
 
 async function loadAuthenticatedData() {
-  const [detail, lessonList, materialList] = await Promise.all([
+  const [detail, materialList] = await Promise.all([
     getCourseDetail(courseId.value, true),
-    getLessons(courseId.value),
     getCourseContents(courseId.value),
   ])
   contentSource.value = 'authenticated'
-  return { detail, lessonList, materialList }
+  return { detail, materialList }
 }
 
 async function loadPublicData() {
-  const [detail, lessonList] = await Promise.all([
-    getPublicCourseDetail(courseId.value, true),
-    getPublicLessons(courseId.value),
-  ])
+  const detail = await getPublicCourseDetail(courseId.value, true)
   const stageMaterials = (detail.stages ?? []).flatMap((stage) => stage.materials ?? [])
   const materialList: Material[] = [
     ...stageMaterials,
     ...(detail.uncategorized_materials ?? []),
   ]
   contentSource.value = 'public'
-  return { detail, lessonList, materialList }
+  return { detail, materialList }
 }
 
 async function loadData() {
   loading.value = true
-  courseProgress.value = null
   try {
-    let loaded: { detail: CourseDetail; lessonList: Lesson[]; materialList: Material[] }
+    let loaded: { detail: CourseDetail; materialList: Material[] }
     if (authStore.isLoggedIn && authStore.user?.role === 'student') {
       try {
         loaded = await loadAuthenticatedData()
@@ -358,38 +157,8 @@ async function loadData() {
       stages: loaded.detail.stages ?? [],
       uncategorized_materials: loaded.detail.uncategorized_materials ?? [],
     }
-    lessons.value = loaded.lessonList
     materials.value = loaded.materialList
     syncActiveMaterial(loaded.materialList)
-
-    if (!visibleLessons.value.length && loaded.materialList.length > 0) {
-      activeTab.value = 'materials'
-    }
-
-    const queryLessonId = route.query.lesson_id ? Number(route.query.lesson_id) : null
-    const targetFromQuery = queryLessonId
-      ? visibleLessons.value.find((lesson) => lesson.id === queryLessonId)
-      : null
-
-    if (targetFromQuery) {
-      currentLessonId.value = targetFromQuery.id
-    } else if (canSaveProgress.value) {
-      try {
-        const progress = await getCourseProgress(courseId.value)
-        courseProgress.value = progress
-        const targetFromProgress = progress.last_lesson_id
-          ? visibleLessons.value.find((lesson) => lesson.id === progress.last_lesson_id)
-          : null
-        currentLessonId.value = targetFromProgress?.id ?? visibleLessons.value[0]?.id ?? null
-      } catch {
-        currentLessonId.value = visibleLessons.value[0]?.id ?? null
-      }
-    } else {
-      currentLessonId.value = visibleLessons.value[0]?.id ?? null
-    }
-    if (canSaveProgress.value && !courseProgress.value) {
-      await refreshCourseProgress()
-    }
   } catch {
     ElMessage.error('课程加载失败，请检查该课程是否公开，或登录后刷新重试。')
   } finally {
@@ -405,7 +174,6 @@ function previewMaterial(material: Material) {
 function selectMaterial(material: Material | null) {
   if (!material) return
   activeMaterialId.value = material.id
-  activeTab.value = 'materials'
 }
 
 function isStageCollapsed(sectionKey: string) {
@@ -496,12 +264,7 @@ function materialFileUrl(material: Material) {
   return material.url
 }
 
-function readerFileUrl(material: Material) {
-  return materialFileUrl(material)
-}
-
 async function refreshMaterialsForInlineReader() {
-  if (activeTab.value !== 'materials') return
   try {
     if (contentSource.value === 'authenticated') {
       const materialList = await getCourseContents(courseId.value)
@@ -544,69 +307,22 @@ function syncMaterialRefreshTimer() {
 function handleVisibilityChange() {
   if (document.hidden) {
     stopMaterialRefreshTimer()
-    reportFinalProgressOnce()
     return
   }
-  finalReportSent = false
-  lastProgressReportedAt = Date.now()
-  if (activeTab.value === 'materials') {
-    void refreshMaterialsForInlineReader()
-  }
+  void refreshMaterialsForInlineReader()
   syncMaterialRefreshTimer()
-}
-
-function reportFinalProgressOnce() {
-  if (!canSaveProgress.value || !currentLessonId.value) return
-  if (finalReportSent) return
-  finalReportSent = true
-  void reportLessonProgressKeepalive(courseId.value, currentLessonId.value, {
-    progress_percent: calculatedLessonPercent(),
-    last_position: videoPosition.value,
-    duration_seconds: takeUnreportedDuration(),
-    visit_started: false,
-  })
-}
-
-function handlePageHide() {
-  reportFinalProgressOnce()
-}
-
-function handleLessonVideoProgress(payload: { currentTime: number; duration: number; ended: boolean }) {
-  videoPosition.value = payload.currentTime
-  videoDuration.value = payload.duration
-  if (payload.ended) {
-    void reportCurrentLessonProgress(takeUnreportedDuration())
-  }
 }
 
 watch(hasRefreshingMaterialPreview, syncMaterialRefreshTimer)
-watch(activeTab, () => {
-  if (activeTab.value === 'materials') {
-    void refreshMaterialsForInlineReader()
-  }
-  syncMaterialRefreshTimer()
-})
-
-watch(currentLessonId, () => {
-  currentLessonHasVideo.value = true
-  completingLesson.value = false
-  finalReportSent = false
-  resetLessonTracking()
-  void reportCurrentLessonProgress(0, true)
-})
 
 onMounted(() => {
   void loadData()
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  window.addEventListener('pagehide', handlePageHide)
 })
 
 onBeforeUnmount(() => {
-  reportFinalProgressOnce()
-  stopLessonProgressTimer()
   stopMaterialRefreshTimer()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
-  window.removeEventListener('pagehide', handlePageHide)
 })
 </script>
 
@@ -626,33 +342,10 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="hero-bottom">
-          <div class="tab-bar" aria-label="教程视图">
-            <button
-              :class="['tab-btn', { active: activeTab === 'lessons' }]"
-              type="button"
-              @click="activeTab = 'lessons'"
-            >
-              教程目录
-            </button>
-            <button
-              :class="['tab-btn', { active: activeTab === 'materials' }]"
-              type="button"
-              @click="activeTab = 'materials'"
-            >
-              学习资料
-            </button>
-          </div>
-
-          <div v-if="activeTab === 'lessons' && visibleLessons.length && canSaveProgress" class="progress-badge">
-            <span>学习进度</span>
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-            </div>
-            <span>{{ progressPercent }}%</span>
-          </div>
-          <div v-if="contentSource === 'public' && !canSaveProgress" class="guest-progress-note">
-            登录后可保存学习进度
-          </div>
+          <p class="hero-meta">
+            学习资料 {{ materials.length }} 份
+            <span v-if="contentSource === 'public' && !authStore.isLoggedIn"> · 游客可直接阅读公开资料</span>
+          </p>
         </div>
       </div>
     </section>
@@ -661,228 +354,118 @@ onBeforeUnmount(() => {
       <el-skeleton :rows="10" animated />
     </div>
 
-    <template v-else>
-      <template v-if="activeTab === 'lessons'">
-        <button
-          v-if="!sidebarOpen"
-          class="mobile-toc-button"
-          type="button"
-          @click="sidebarOpen = true"
-        >
-          目录
-        </button>
-        <div
-          class="sidebar-overlay"
-          :class="{ open: sidebarOpen }"
-          @click="sidebarOpen = false"
-        ></div>
+    <main v-else-if="!materials.length" class="materials-content">
+      <div class="empty-state">
+        <p>本教程暂无学习资料</p>
+        <p class="empty-state-hint">请稍后再来，或返回教程列表选择其他课程。</p>
+      </div>
+    </main>
 
-        <div class="booksite-layout">
-          <aside class="reader-sidebar" :class="{ open: sidebarOpen }">
-            <div class="mobile-sidebar-header">
-              <span>教程目录</span>
-              <button type="button" class="close-sidebar" @click="sidebarOpen = false">关闭</button>
-            </div>
-            <CourseToc
-              :lessons="visibleLessons"
-              :active-lesson-id="currentLessonId"
-              @select="selectLesson"
-            />
-          </aside>
-
-          <main class="reader-main">
-            <LessonReader
-              :lesson="currentLesson"
-              :materials="materials"
-              :file-url-resolver="readerFileUrl"
-              :resume-position="resumePosition"
-              @preview="previewMaterial"
-              @video-progress="handleLessonVideoProgress"
-              @content-kind="handleLessonContentKind"
-            />
-            <div
-              v-if="canSaveProgress && currentLesson && !currentLessonHasVideo && currentLessonProgress?.status !== 'completed'"
-              class="lesson-completion-actions"
-            >
-              <el-button
-                type="primary"
-                :icon="Check"
-                :loading="completingLesson"
-                @click="completeCurrentLesson"
+    <main v-else class="materials-content">
+      <div class="material-doc-shell">
+        <aside class="material-doc-sidebar">
+          <section class="doc-panel">
+            <p class="doc-panel-kicker">资料目录</p>
+            <h2>{{ course?.name || '学习资料' }}</h2>
+            <div v-if="materialSections.length" class="doc-section-list">
+              <section
+                v-for="section in materialSections"
+                :key="section.key"
+                class="doc-section-group"
               >
-                完成本课
-              </el-button>
-            </div>
-            <PrevNextNav
-              :prev-lesson="prevLesson"
-              :next-lesson="nextLesson"
-              @prev="goPrev"
-              @next="goNext"
-            />
-          </main>
-
-          <aside class="resource-rail">
-            <section class="rail-section">
-              <div class="rail-heading">
-                <h2>本课学习资料</h2>
-                <span>{{ materials.length }} 份</span>
-              </div>
-              <div v-if="railMaterials.length" class="rail-material-list">
                 <button
-                  v-for="material in railMaterials"
-                  :key="material.id"
                   type="button"
-                  class="rail-material"
-                  @click="previewMaterial(material)"
+                  class="stage-head"
+                  :class="{ collapsed: isStageCollapsed(section.key) }"
+                  :aria-expanded="!isStageCollapsed(section.key)"
+                  @click="toggleStage(section.key)"
                 >
-                  <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
-                  <strong>{{ material.title }}</strong>
-                  <small>{{ materialSummary(material) }}</small>
+                  <span class="chev" aria-hidden="true">▾</span>
+                  <span class="stage-badge">{{ section.label }}</span>
+                  <span class="stage-title">{{ section.title }}</span>
+                  <span class="stage-count">{{ section.materials.length }}</span>
                 </button>
-              </div>
-              <div v-else class="rail-empty">本课暂未配置配套资料。</div>
-              <button
-                v-if="materials.length > railMaterials.length"
-                type="button"
-                class="rail-link"
-                @click="activeTab = 'materials'"
-              >
-                查看全部学习资料
-              </button>
-            </section>
-
-            <section class="rail-section">
-              <h2>课程信息</h2>
-              <dl class="course-facts">
-                <div>
-                  <dt>公开课时</dt>
-                  <dd>{{ visibleLessons.length }}</dd>
-                </div>
-                <div>
-                  <dt>学习资料</dt>
-                  <dd>{{ materials.length }}</dd>
-                </div>
-                <div>
-                  <dt>阅读状态</dt>
-                  <dd>{{ currentLesson ? `第 ${currentLessonIndex + 1} 课` : '未选择' }}</dd>
-                </div>
-              </dl>
-            </section>
-
-            <section v-if="contentSource === 'public' && !canSaveProgress" class="rail-section">
-              <h2>学习提示</h2>
-              <p class="rail-note">登录后可保存学习进度，后续可以从教程列表继续阅读。</p>
-            </section>
-          </aside>
-        </div>
-      </template>
-
-      <main v-else class="materials-content">
-        <div class="material-doc-shell">
-          <aside class="material-doc-sidebar">
-            <section class="doc-panel">
-              <p class="doc-panel-kicker">资料目录</p>
-              <h2>{{ course?.name || '学习资料' }}</h2>
-              <div v-if="materialSections.length" class="doc-section-list">
-                <section
-                  v-for="section in materialSections"
-                  :key="section.key"
-                  class="doc-section-group"
+                <div
+                  v-show="!isStageCollapsed(section.key)"
+                  class="stage-materials"
                 >
                   <button
+                    v-for="material in section.materials"
+                    :key="material.id"
                     type="button"
-                    class="stage-head"
-                    :class="{ collapsed: isStageCollapsed(section.key) }"
-                    :aria-expanded="!isStageCollapsed(section.key)"
-                    @click="toggleStage(section.key)"
+                    class="doc-material-link"
+                    :class="{ active: activeMaterial?.id === material.id }"
+                    :title="materialRowTitle(material)"
+                    @click="selectMaterial(material)"
                   >
-                    <span class="chev" aria-hidden="true">▾</span>
-                    <span class="stage-badge">{{ section.label }}</span>
-                    <span class="stage-title">{{ section.title }}</span>
-                    <span class="stage-count">{{ section.materials.length }}</span>
+                    <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
+                    <strong>{{ material.title }}</strong>
+                    <small v-if="materialRowMeta(material)">{{ materialRowMeta(material) }}</small>
                   </button>
-                  <div
-                    v-show="!isStageCollapsed(section.key)"
-                    class="stage-materials"
-                  >
-                    <button
-                      v-for="material in section.materials"
-                      :key="material.id"
-                      type="button"
-                      class="doc-material-link"
-                      :class="{ active: activeMaterial?.id === material.id }"
-                      :title="materialRowTitle(material)"
-                      @click="selectMaterial(material)"
-                    >
-                      <span class="material-type">{{ materialTypeLabel(material.type) }}</span>
-                      <strong>{{ material.title }}</strong>
-                      <small v-if="materialRowMeta(material)">{{ materialRowMeta(material) }}</small>
-                    </button>
-                  </div>
-                </section>
-              </div>
-              <div v-if="!materialSections.length" class="materials-empty-small">暂无资料目录</div>
-            </section>
-          </aside>
+                </div>
+              </section>
+            </div>
+            <div v-if="!materialSections.length" class="materials-empty-small">暂无资料目录</div>
+          </section>
+        </aside>
 
-          <section class="material-doc-main">
-            <MaterialInlineReader
-              :material="activeMaterial"
-              :file-url="activeMaterialResolvedUrl"
-              :file-loading="activeMaterialFileLoading"
-              :file-error="activeMaterialFileError"
-              @file-error="handleActiveMaterialFileError"
-            />
+        <section class="material-doc-main">
+          <MaterialInlineReader
+            :material="activeMaterial"
+            :file-url="activeMaterialResolvedUrl"
+            :file-loading="activeMaterialFileLoading"
+            :file-error="activeMaterialFileError"
+            @file-error="handleActiveMaterialFileError"
+          />
+        </section>
+
+        <aside class="material-doc-guide">
+          <section class="guide-panel">
+            <p class="doc-panel-kicker">当前资料</p>
+            <h2>{{ activeMaterial?.title || '未选择资料' }}</h2>
+            <p class="guide-summary">
+              {{ activeMaterial ? materialSummary(activeMaterial) : '请选择左侧目录中的资料开始阅读。' }}
+            </p>
+            <a
+              v-if="activeMaterialResolvedUrl"
+              class="guide-open-link"
+              :href="activeMaterialResolvedUrl"
+              target="_blank"
+              rel="noopener"
+            >
+              打开原资料
+            </a>
           </section>
 
-          <aside class="material-doc-guide">
-            <section class="guide-panel">
-              <p class="doc-panel-kicker">当前资料</p>
-              <h2>{{ activeMaterial?.title || '未选择资料' }}</h2>
-              <p class="guide-summary">
-                {{ activeMaterial ? materialSummary(activeMaterial) : '请选择左侧目录中的资料开始阅读。' }}
-              </p>
-              <a
-                v-if="activeMaterialResolvedUrl"
-                class="guide-open-link"
-                :href="activeMaterialResolvedUrl"
-                target="_blank"
-                rel="noopener"
-              >
-                打开原资料
-              </a>
-            </section>
+          <section class="guide-panel">
+            <p class="doc-panel-kicker">阅读顺序</p>
+            <button
+              type="button"
+              class="guide-nav"
+              :disabled="!prevMaterial"
+              @click="selectMaterial(prevMaterial)"
+            >
+              <span>上一份资料</span>
+              <strong>{{ prevMaterial?.title || '已经是第一份' }}</strong>
+            </button>
+            <button
+              type="button"
+              class="guide-nav"
+              :disabled="!nextMaterial"
+              @click="selectMaterial(nextMaterial)"
+            >
+              <span>下一份资料</span>
+              <strong>{{ nextMaterial?.title || '已经是最后一份' }}</strong>
+            </button>
+          </section>
 
-            <section class="guide-panel">
-              <p class="doc-panel-kicker">阅读顺序</p>
-              <button
-                type="button"
-                class="guide-nav"
-                :disabled="!prevMaterial"
-                @click="selectMaterial(prevMaterial)"
-              >
-                <span>上一份资料</span>
-                <strong>{{ prevMaterial?.title || '已经是第一份' }}</strong>
-              </button>
-              <button
-                type="button"
-                class="guide-nav"
-                :disabled="!nextMaterial"
-                @click="selectMaterial(nextMaterial)"
-              >
-                <span>下一份资料</span>
-                <strong>{{ nextMaterial?.title || '已经是最后一份' }}</strong>
-              </button>
-            </section>
-
-            <section v-if="contentSource === 'public' && !canSaveProgress" class="guide-panel">
-              <p class="doc-panel-kicker">学习提示</p>
-              <p class="rail-note">游客可以浏览公开资料；登录后可保存学习进度。</p>
-            </section>
-          </aside>
-        </div>
-      </main>
-    </template>
+          <section v-if="contentSource === 'public' && !authStore.isLoggedIn" class="guide-panel">
+            <p class="doc-panel-kicker">学习提示</p>
+            <p class="rail-note">游客可以浏览公开资料；登录后可查看已加入的私有课程资料。</p>
+          </section>
+        </aside>
+      </div>
+    </main>
 
     <MaterialPreviewDialog
       v-model:visible="previewVisible"
@@ -961,261 +544,19 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  padding-bottom: 1rem;
 }
 
-.tab-bar {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.tab-btn {
-  padding: 0.75rem 1.25rem;
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 160ms var(--ease-out), border-color 160ms var(--ease-out);
-}
-
-.tab-btn:hover {
-  color: var(--color-text);
-}
-
-.tab-btn.active {
-  color: var(--color-learn);
-  border-bottom-color: var(--color-learn);
-}
-
-.progress-badge {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: var(--color-primary-light);
-  border-radius: var(--radius-full);
-  font-size: 0.8rem;
-  color: var(--color-primary);
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-}
-
-.guest-progress-note {
-  margin-bottom: 0.5rem;
+.hero-meta {
+  margin: 0;
   color: var(--color-text-muted);
-  font-size: 0.84rem;
-}
-
-.progress-bar {
-  width: 80px;
-  height: 6px;
-  background: rgba(45, 106, 122, 0.2);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: 3px;
-  transition: width 0.4s ease;
+  font-size: 0.88rem;
 }
 
 .loading-state {
   max-width: 820px;
   margin: 0 auto;
   padding: 3rem 1.5rem;
-}
-
-.booksite-layout {
-  max-width: 1480px;
-  margin: 0 auto;
-  padding: 24px 24px 80px;
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 300px;
-  gap: 24px;
-  align-items: flex-start;
-}
-
-.reader-sidebar,
-.resource-rail {
-  position: sticky;
-  top: calc(var(--app-header-height) + 16px);
-  max-height: calc(100vh - var(--app-header-height) - 32px);
-  overflow-y: auto;
-}
-
-.reader-sidebar {
-  min-height: 420px;
-}
-
-.reader-main {
-  min-width: 0;
-  max-width: 860px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.lesson-completion-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 16px 0 4px;
-}
-
-@media (max-width: 640px) {
-  .lesson-completion-actions :deep(.el-button) {
-    width: 100%;
-  }
-}
-
-.resource-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.rail-section {
-  padding: 16px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-}
-
-.rail-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.rail-section h2 {
-  margin: 0 0 12px;
-  color: var(--color-text);
-  font-size: 1rem;
-  font-weight: 900;
-}
-
-.rail-heading h2 {
-  margin-bottom: 0;
-}
-
-.rail-heading span {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.rail-material-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.rail-material {
-  display: grid;
-  gap: 5px;
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-alt);
-  text-align: left;
-  transition: background 160ms var(--ease-out), border-color 160ms var(--ease-out);
-}
-
-.rail-material:hover {
-  background: var(--color-bg-card);
-  border-color: rgba(45, 106, 122, 0.24);
-}
-
-.material-type {
-  color: var(--color-learn);
-  font-size: 0.72rem;
-  font-weight: 900;
-}
-
-.rail-material strong {
-  color: var(--color-text);
-  line-height: 1.45;
-}
-
-.rail-material small {
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.rail-link {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px 10px;
-  color: var(--color-learn);
-  background: rgba(45, 106, 122, 0.08);
-  border-radius: var(--radius-sm);
-  font-weight: 800;
-}
-
-.rail-empty,
-.rail-note {
-  margin: 0;
-  color: var(--color-text-muted);
-  line-height: 1.7;
-  font-size: 0.88rem;
-  text-wrap: pretty;
-}
-
-.course-facts {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-}
-
-.course-facts div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--color-border-light);
-}
-
-.course-facts div:last-child {
-  border-bottom: 0;
-}
-
-.course-facts dt {
-  color: var(--color-text-muted);
-}
-
-.course-facts dd {
-  margin: 0;
-  color: var(--color-text);
-  font-weight: 800;
-}
-
-.mobile-sidebar-header {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--color-border-light);
-  font-weight: 800;
-  color: var(--color-text);
-}
-
-.close-sidebar {
-  padding: 6px 10px;
-  background: var(--color-bg-alt);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
-}
-
-.sidebar-overlay,
-.mobile-toc-button {
-  display: none;
 }
 
 .materials-content {
@@ -1428,48 +769,38 @@ onBeforeUnmount(() => {
   line-height: 1.45;
 }
 
-.stage-section {
-  margin-bottom: 2.5rem;
-  scroll-margin-top: calc(var(--app-header-height) + 20px);
-}
-
-.stage-section h2 {
-  font-size: 1.25rem;
-  font-weight: 800;
-  color: var(--color-text);
-  margin-bottom: 1rem;
-}
-
-.stage-badge {
+.material-type {
+  color: var(--color-learn);
   font-size: 0.72rem;
-  font-weight: 800;
-  padding: 0.2rem 0.6rem;
-  background: var(--color-learn);
-  color: var(--color-bg-card);
-  border-radius: var(--radius-full);
-  margin-right: 0.5rem;
+  font-weight: 900;
 }
 
-.material-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem;
-}
-
-.stage-empty {
+.rail-note {
+  margin: 0;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
-  padding: 2rem 0;
-  text-align: center;
-  background: var(--color-bg-alt);
-  border-radius: var(--radius-md);
-  border: 1px dashed var(--color-border);
+  line-height: 1.7;
+  font-size: 0.88rem;
+  text-wrap: pretty;
 }
 
 .empty-state {
   text-align: center;
-  padding: 4rem 0;
+  padding: 4rem 1.5rem;
   color: var(--color-text-muted);
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.empty-state-hint {
+  margin-top: 8px !important;
+  font-size: 0.88rem !important;
+  font-weight: 400 !important;
+  color: var(--color-text-muted) !important;
 }
 
 .material-doc-main {
@@ -1526,16 +857,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
-  .booksite-layout {
-    grid-template-columns: 240px minmax(0, 1fr);
-  }
-
-  .resource-rail {
-    grid-column: 2;
-    position: static;
-    max-height: none;
-  }
-
   .material-doc-shell {
     grid-template-columns: 260px minmax(0, 1fr);
   }
@@ -1559,69 +880,6 @@ onBeforeUnmount(() => {
   .hero-bottom {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .tab-bar {
-    width: 100%;
-  }
-
-  .booksite-layout {
-    display: block;
-    padding: 18px 16px 60px;
-  }
-
-  .reader-sidebar {
-    position: fixed;
-    top: var(--app-header-height);
-    left: 0;
-    z-index: 90;
-    width: min(86vw, 320px);
-    height: calc(100vh - var(--app-header-height));
-    max-height: none;
-    transform: translateX(-100%);
-    transition: transform 220ms var(--ease-out);
-    background: var(--color-bg-card);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .reader-sidebar.open {
-    transform: translateX(0);
-  }
-
-  .mobile-sidebar-header {
-    display: flex;
-  }
-
-  .mobile-toc-button {
-    display: inline-flex;
-    position: fixed;
-    left: 16px;
-    top: 86px;
-    z-index: 70;
-    padding: 8px 12px;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-sm);
-    color: var(--color-text-secondary);
-    font-weight: 800;
-  }
-
-  .sidebar-overlay.open {
-    display: block;
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    background: rgba(12, 18, 24, 0.46);
-  }
-
-  .reader-main {
-    max-width: none;
-    padding-top: 48px;
-  }
-
-  .resource-rail {
-    margin-top: 18px;
   }
 
   .material-doc-shell {
@@ -1652,10 +910,6 @@ onBeforeUnmount(() => {
 
   .material-doc-guide {
     margin-top: 18px;
-  }
-
-  .material-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

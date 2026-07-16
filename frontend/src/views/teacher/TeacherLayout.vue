@@ -10,6 +10,7 @@ const authStore = useAuthStore()
 const pendingReviewCount = ref(0)
 let reviewTimer: number | undefined
 
+// 侧栏：课程列表 + 阶段/资料管理等入口
 const navItems = [
   { name: '概述', path: '/teacher', icon: '&#9673;' },
   { name: '课程管理', path: '/teacher/courses', icon: '&#9670;' },

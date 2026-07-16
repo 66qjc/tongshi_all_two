@@ -15,13 +15,8 @@ const main = read('src/main.ts')
 
 assert.doesNotMatch(
   teacherCourseDetail,
-  /import\s+LessonEditor\s+from/,
-  '教师课程详情页不能静态引入富文本编辑器',
-)
-assert.match(
-  teacherCourseDetail,
-  /defineAsyncComponent\(\s*\(\)\s*=>\s*import\(['"]@\/components\/lesson\/LessonEditor\.vue['"]\)/,
-  '教师课程详情页应动态加载富文本编辑器',
+  /LessonEditor|@\/api\/lesson|@\/api\/progress|getCourseAnalytics|课时|学习分析/,
+  '教师课程详情不得再依赖课时、学习分析或富文本编辑器',
 )
 
 assert.doesNotMatch(portfolioView, /from ['"]vue-echarts['"]/, '成长档案页不能静态引入 vue-echarts')
