@@ -34,6 +34,7 @@ export interface AdminQuestionPayload {
   answer: string
   explanation: string
   tags: string[]
+  star_rating: number
 }
 
 export interface AdminQuestionContributionLog {

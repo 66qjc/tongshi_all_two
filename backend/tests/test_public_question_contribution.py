@@ -85,6 +85,66 @@ def test_admin_can_edit_teacher_question_from_public_course_entry(client, teache
     assert data["data"]["course_id"] == teacher_course_id
 
 
+def test_admin_can_create_edit_and_list_question_star_rating(client):
+    """管理员应能维护共享题目的 1-5 星级，并在列表中读取同一值。"""
+    admin_token = _admin_token(client)
+    public_course_id = _create_public_course(client, admin_token, "管理员星级维护公共课")
+    created = client.post(
+        f"/api/admin/public-courses/{public_course_id}/questions",
+        json={
+            "type": "fill",
+            "stem": "管理员星级创建题",
+            "options": [],
+            "answer": "答案",
+            "explanation": "",
+            "tags": [],
+            "star_rating": 5,
+        },
+        headers=auth_header(admin_token),
+    ).json()
+    assert created["code"] == 0
+    assert created["data"]["star_rating"] == 5
+    question_id = created["data"]["id"]
+
+    updated = client.put(
+        f"/api/admin/public-courses/{public_course_id}/questions/{question_id}",
+        json={
+            "type": "fill",
+            "stem": "管理员星级创建题",
+            "options": [],
+            "answer": "答案",
+            "explanation": "",
+            "tags": [],
+            "star_rating": 1,
+        },
+        headers=auth_header(admin_token),
+    ).json()
+    assert updated["code"] == 0
+    assert updated["data"]["star_rating"] == 1
+
+    listed = client.get(
+        f"/api/admin/public-courses/{public_course_id}/questions",
+        headers=auth_header(admin_token),
+    ).json()
+    assert listed["code"] == 0
+    assert next(item for item in listed["data"] if item["id"] == question_id)["star_rating"] == 1
+
+    invalid = client.post(
+        f"/api/admin/public-courses/{public_course_id}/questions",
+        json={
+            "type": "fill",
+            "stem": "管理员无效星级题",
+            "options": [],
+            "answer": "答案",
+            "explanation": "",
+            "tags": [],
+            "star_rating": 6,
+        },
+        headers=auth_header(admin_token),
+    )
+    assert invalid.status_code == 422
+
+
 def test_admin_create_rejects_same_stem_and_writes_hash(client, db_session):
     """管理员新增题目应写入统一题干哈希，并拦截同题干不同答案。"""
     admin_token = _admin_token(client)
