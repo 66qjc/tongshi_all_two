@@ -187,6 +187,42 @@ def _can_read_showcase_file(db: Session, file_id: int, user_id: str | None = Non
     if image_exists:
         return True
 
+    return _showcase_content_block_file_exists(db, file_id, active_only=True)
+
+
+def _content_block_file_ids(content_blocks) -> set[int]:
+    """提取图文混排内容块中引用的图片文件 ID。"""
+    if not isinstance(content_blocks, list):
+        return set()
+
+    file_ids = set()
+    for block in content_blocks:
+        if not isinstance(block, dict) or block.get("type") != "image":
+            continue
+        data = block.get("data")
+        if not isinstance(data, dict):
+            continue
+        file_id = data.get("file_id")
+        if isinstance(file_id, int) and file_id > 0:
+            file_ids.add(file_id)
+    return file_ids
+
+
+def _showcase_content_block_file_exists(
+    db: Session,
+    file_id: int,
+    *,
+    active_only: bool = False,
+) -> bool:
+    """判断文件是否被展示内容块引用，必要时只检查激活内容。"""
+    query = db.query(ShowcaseItem.content_blocks)
+    if active_only:
+        query = query.filter(ShowcaseItem.is_active.is_(True))
+    return any(
+        file_id in _content_block_file_ids(content_blocks)
+        for (content_blocks,) in query.all()
+    )
+
     if user_id and role in {"admin", "teacher"}:
         return db.query(ShowcaseItem.id).filter(
             ShowcaseItem.cover_file_id == file_id,
@@ -233,6 +269,9 @@ def can_anonymous_read_file(db: Session, record: StoredFile) -> bool:
 
 def _has_any_file_reference(db: Session, file_id: int) -> bool:
     """判断文件是否已绑定任一业务记录，包括已删除记录。"""
+    if _showcase_content_block_file_exists(db, file_id):
+        return True
+
     checks = (
         db.query(Material.id).filter(Material.file_id == file_id),
         db.query(MaterialPreview.id).filter(MaterialPreview.cover_file_id == file_id),
@@ -271,6 +310,9 @@ def _has_active_file_reference(db: Session, file_id: int) -> bool:
         Course.deleted_at.is_(None),
     ).first()
     if active_preview:
+        return True
+
+    if _showcase_content_block_file_exists(db, file_id, active_only=True):
         return True
 
     image_project_ids = db.query(ProjectImage.project_id).filter(ProjectImage.file_id == file_id)
