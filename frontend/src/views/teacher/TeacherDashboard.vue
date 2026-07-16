@@ -77,9 +77,20 @@ onMounted(async () => {
 })
 
 // ── 快捷操作 ──
+// 「管理课程」与侧栏、列表操作一致：优先进入最近管理的课程详情
+function resolveManageCoursePath() {
+  try {
+    const id = Number(sessionStorage.getItem('teacher_last_managed_course_id') || 0)
+    if (Number.isFinite(id) && id > 0) return `/teacher/courses/${id}`
+  } catch {
+    // ignore
+  }
+  return '/teacher/courses'
+}
+
 const quickActions = [
   { label: '发布作业', desc: '选题、设时间、发到班级', path: '/teacher/publish', icon: 'publish' },
-  { label: '上传资料', desc: '视频课件或 PDF 讲义', path: '/teacher/materials', icon: 'upload' },
+  { label: '管理课程', desc: '维护资料、课时与学习分析', path: resolveManageCoursePath(), icon: 'upload' },
   { label: '管理题库', desc: '新增、编辑或导入题目', path: '/teacher/questions', icon: 'questions' },
   { label: '审核作品', desc: '查看并审核学生提交的作品', path: '/teacher/reviews', icon: 'reviews' },
   { label: '学生成绩', desc: '查看完成率、导出成绩单', path: '/teacher/grades', icon: 'grades' },

@@ -568,12 +568,13 @@ onMounted(() => {
           </div>
             <div v-for="stage in sortedStages" :key="`m-${stage.id}`" class="stage-materials">
             <h3><span class="stage-tag">阶段</span>{{ stage.name }}</h3>
-            <div v-if="stage.materials.length" class="material-grid">
+            <div v-if="stage.materials.length" class="material-flat-list">
               <MaterialRichCard
                 v-for="material in stage.materials"
                 :key="material.id"
                 :material="material"
                 manage
+                compact
                 @preview="previewMaterial"
                 @edit="openEditMaterial"
                 @delete="handleDeleteMaterial"
@@ -585,12 +586,13 @@ onMounted(() => {
 
           <div v-if="course && course.uncategorized_materials.length" class="stage-materials">
             <h3><span class="stage-tag other">其他</span>未分类资料</h3>
-            <div class="material-grid">
+            <div class="material-flat-list">
               <MaterialRichCard
                 v-for="material in course.uncategorized_materials"
                 :key="material.id"
                 :material="material"
                 manage
+                compact
                 @preview="previewMaterial"
                 @edit="openEditMaterial"
                 @delete="handleDeleteMaterial"
@@ -860,11 +862,24 @@ onMounted(() => {
 .stage-row { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-sm); background: var(--color-bg-alt); border-radius: var(--radius-sm); }
 .stage-meta { color: var(--color-text-muted); font-size: 0.85rem; flex: 1; }
 .materials-section { min-height: 200px; }
-.stage-materials { margin-bottom: var(--space-xl); }
-.stage-materials h3 { font-size: 1rem; font-weight: 700; color: var(--color-text); margin-bottom: var(--space-md); }
+.stage-materials { margin-bottom: var(--space-lg); }
+.stage-materials h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 var(--space-sm);
+  display: flex;
+  align-items: center;
+}
 .stage-tag { font-size: 0.65rem; padding: 0.15rem 0.5rem; background: var(--color-learn); color: #fff; border-radius: var(--radius-full); margin-right: var(--space-sm); }
 .stage-tag.other { background: var(--color-text-muted); }
 .scope-tag { margin-left: var(--space-sm); }
+/* 阶段资料扁平列表：单列紧凑行，避免大卡片 + 长摘要把页面撑得过高 */
+.material-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--space-md); }
 .material-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); background: var(--color-bg-card); transition: all 0.2s; }
 .material-card:hover { box-shadow: var(--shadow-md); border-color: rgba(45, 106, 122, 0.2); }

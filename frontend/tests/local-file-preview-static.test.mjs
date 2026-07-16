@@ -12,7 +12,7 @@ function read(relativePath) {
 
 const pdfPreview = read('src/components/common/PdfPreviewDialog.vue')
 const courseDetail = read('src/views/CourseDetailView.vue')
-const teacherMaterials = read('src/views/teacher/TeacherMaterials.vue')
+const teacherCourseDetail = read('src/views/teacher/TeacherCourseDetail.vue')
 const adminPublicCourses = read('src/views/admin/AdminPublicCourses.vue')
 const teacherReviews = read('src/views/teacher/TeacherReviews.vue')
 const fileUrl = read('src/utils/url.ts')
@@ -70,7 +70,7 @@ assert.match(authenticatedLessonVideo, /video\.pause\(\)/, '卸载时应暂停�
 assert.match(authenticatedLessonVideo, /video\.removeAttribute\(['"]src['"]\)/, '卸载时应移除旧视频地址。')
 assert.match(authenticatedLessonVideo, /video\.load\(\)/, '卸载时应释放媒体资源。')
 
-assert.match(teacherMaterials, /MaterialPreviewDialog/, '教师资料管理应通过站内预览弹窗打开。')
+assert.match(teacherCourseDetail, /MaterialPreviewDialog/, '教师课程详情应通过站内预览弹窗打开。')
 
 assert.match(adminPublicCourses, /PdfPreviewDialog/, '管理员公共课程资料应复用公共预览入口。')
 assert.match(adminPublicCourses, /previewFileId\.value\s*=\s*row\.file_id/, '管理员公共课程资料应优先传入 file_id。')

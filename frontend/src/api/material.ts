@@ -1,5 +1,4 @@
 ﻿import http from './http'
-import type { PaginatedResult } from './question'
 
 export interface MaterialPreview {
   status: 'pending' | 'processing' | 'ready' | 'failed'
@@ -37,15 +36,6 @@ export interface MaterialCreatePayload {
   size: string
   file_id?: number
   stage_id?: number | null
-}
-
-export function getAllMaterials(params?: {
-  course_id?: number
-  keyword?: string
-  page?: number
-  page_size?: number
-}) {
-  return http.get<any, PaginatedResult<Material>>('/materials', { params })
 }
 
 export function getCourseContents(courseId: number, keyword?: string) {

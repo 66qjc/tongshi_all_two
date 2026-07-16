@@ -230,10 +230,6 @@ async function handleDelete(course: Course) {
   }
 }
 
-function openMaterials(course: Course) {
-  router.push({ path: '/teacher/materials', query: { course_id: course.id } })
-}
-
 function formatDate(dateStr: string) {
   if (!dateStr) return '-'
   return dateStr.slice(0, 10)
@@ -286,10 +282,9 @@ function formatDate(dateStr: string) {
           {{ formatDate(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button text size="small" @click="openCourseDetail(row)">管理课程</el-button>
-          <el-button text size="small" @click="openMaterials(row)">查看资料</el-button>
           <el-button text size="small" @click="openEdit(row)">编辑</el-button>
           <el-button type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -346,11 +341,6 @@ function formatDate(dateStr: string) {
       <el-table-column label="创建时间" width="140">
         <template #default="{ row }">
           {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <el-button text size="small" @click="openMaterials(row)">查看资料</el-button>
         </template>
       </el-table-column>
     </el-table>

@@ -30,7 +30,6 @@ const materialApi = read('src/api/material.ts')
 const card = read('src/components/common/MaterialRichCard.vue')
 const dialog = read('src/components/common/MaterialPreviewDialog.vue')
 const courseDetail = read('src/views/CourseDetailView.vue')
-const teacherMaterials = read('src/views/teacher/TeacherMaterials.vue')
 const teacherCourseDetail = read('src/views/teacher/TeacherCourseDetail.vue')
 
 assert.match(materialApi, /interface MaterialPreview/, '资料 API 应定义 MaterialPreview 类型。')
@@ -98,9 +97,11 @@ assert.match(courseDetail, /@file-error="handleActiveMaterialFileError"/, '直�
 
 assert.match(courseDetail, /MaterialInlineReader/, '学生课程详情应使用直读式资料阅读器。')
 assert.match(courseDetail, /MaterialPreviewDialog/, '学生课程详情应使用统一预览弹窗。')
-assert.match(teacherMaterials, /MaterialRichCard/, '教师资料管理应使用图文资料卡片或混合列表。')
-assert.match(teacherMaterials, /rebuildMaterialPreview/, '教师资料管理应提供重建预览入口。')
 assert.match(teacherCourseDetail, /MaterialRichCard/, '教师课程详情应使用图文资料卡片。')
+assert.match(teacherCourseDetail, /compact/, '教师课程详情阶段资料应使用紧凑扁平展示。')
+assert.match(teacherCourseDetail, /material-flat-list/, '教师课程详情阶段资料应使用扁平列表容器。')
 assert.match(teacherCourseDetail, /MaterialPreviewDialog/, '教师课程详情应使用统一预览弹窗。')
+assert.match(teacherCourseDetail, /rebuildMaterialPreview/, '教师课程详情应提供重建预览入口。')
+assert.match(card, /compact\?:/, '图文资料卡片应支持 compact 紧凑模式。')
 
 console.log('material preview static checks passed')

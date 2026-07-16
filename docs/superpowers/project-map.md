@@ -41,13 +41,13 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ## 教师端页面
 
 - `/teacher`
-- `/teacher/courses`
+- `/teacher/courses`（课程列表：添加/新建/切换课程；详情页「返回课程管理」进入）
+- `/teacher/courses/:courseId`（管理课程详情：资料 / 课时 / 学习分析；教师维护课程资料的唯一入口；左侧导航「管理课程」默认直达此页）
 - `/teacher/classes`
 - `/teacher/publish`
 - `/teacher/grades`
 - `/teacher/task-report`
 - `/teacher/reviews`
-- `/teacher/materials`
 - `/teacher/student-admin`
 - `/teacher/questions`
 

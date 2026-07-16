@@ -32,12 +32,6 @@ assertContains(
 )
 
 assertContains(
-  'src/views/teacher/TeacherMaterials.vue',
-  /@media\s*\(max-width:\s*640px\)[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
-  '教师资料管理移动端资料卡片不能保留 360px 最小宽度',
-)
-
-assertContains(
   'src/views/admin/AdminPublicCourses.vue',
   /@media\s*\(max-width:\s*640px\)[\s\S]*\.content-panel\s*\{[\s\S]*overflow-x:\s*auto/,
   '管理员公共课程移动端应把宽表格限制在内容面板内部滚动，避免撑开页面',

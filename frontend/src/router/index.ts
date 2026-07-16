@@ -167,12 +167,6 @@ const router = createRouter({
           meta: { title: '班级管理' },
         },
         {
-          path: 'materials',
-          name: 'teacher-materials',
-          component: () => import('../views/teacher/TeacherMaterials.vue'),
-          meta: { title: '资料管理' },
-        },
-        {
           path: 'questions',
           name: 'teacher-questions',
           component: () => import('../views/teacher/TeacherQuestions.vue'),
@@ -182,13 +176,13 @@ const router = createRouter({
           path: 'courses',
           name: 'teacher-courses',
           component: () => import('../views/teacher/TeacherCourses.vue'),
-          meta: { title: '课程管理' },
+          meta: { title: '管理课程' },
         },
         {
           path: 'courses/:courseId',
           name: 'teacher-course-detail',
           component: () => import('../views/teacher/TeacherCourseDetail.vue'),
-          meta: { title: '课程详情管理' },
+          meta: { title: '管理课程' },
         },
         {
           path: 'publish',

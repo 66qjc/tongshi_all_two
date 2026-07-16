@@ -1,34 +1,83 @@
 ﻿<script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { getTeacherStats } from '@/api/teacher'
+import { getCoursesPage } from '@/api/course'
+
+const LAST_COURSE_KEY = 'teacher_last_managed_course_id'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const pendingReviewCount = ref(0)
+/** 侧栏「管理课程」直达课程详情管理页（与列表操作「管理课程」相同） */
+const manageCoursePath = ref('/teacher/courses')
 let reviewTimer: number | undefined
 
-const navItems = [
+const navItems = computed(() => [
   { name: '概述', path: '/teacher', icon: '&#9673;' },
-  { name: '课程管理', path: '/teacher/courses', icon: '&#9670;' },
+  { name: '管理课程', path: manageCoursePath.value, icon: '&#9670;' },
   { name: '班级管理', path: '/teacher/classes', icon: '&#9881;' },
   { name: '发布作业', path: '/teacher/publish', icon: '&#9993;' },
   { name: '学生成绩', path: '/teacher/grades', icon: '&#9783;' },
   { name: '作业完成', path: '/teacher/task-report', icon: '&#9745;' },
   { name: '作品审核', path: '/teacher/reviews', icon: '&#10003;' },
-  { name: '资料管理', path: '/teacher/materials', icon: '&#9776;' },
   { name: '学生管理', path: '/teacher/student-admin', icon: '&#9782;' },
   { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
   { name: 'AI 点名', path: '/teacher/random-picker', icon: '&#127922;' },
-]
+])
 
 function isActive(path: string) {
   if (path === '/teacher/task-report') {
     return route.path.startsWith('/teacher/task-report')
   }
+  // 列表与详情均高亮「管理课程」
+  if (path === manageCoursePath.value || path.startsWith('/teacher/courses')) {
+    return route.path === '/teacher/courses' || route.path.startsWith('/teacher/courses/')
+  }
   return route.path === path
+}
+
+function rememberManagedCourseId(courseId: number) {
+  if (!Number.isFinite(courseId) || courseId <= 0) return
+  try {
+    sessionStorage.setItem(LAST_COURSE_KEY, String(courseId))
+  } catch {
+    // 忽略隐私模式等 storage 异常
+  }
+  manageCoursePath.value = `/teacher/courses/${courseId}`
+}
+
+async function resolveManageCoursePath() {
+  if (!authStore.isLoggedIn || authStore.user?.role !== 'teacher') {
+    manageCoursePath.value = '/teacher/courses'
+    return
+  }
+  try {
+    const result = await getCoursesPage({ scope: 'owned', page: 1, page_size: 50 })
+    const items = result.items || []
+    if (!items.length) {
+      manageCoursePath.value = '/teacher/courses'
+      return
+    }
+    let preferredId = 0
+    try {
+      preferredId = Number(sessionStorage.getItem(LAST_COURSE_KEY) || 0)
+    } catch {
+      preferredId = 0
+    }
+    const preferred = items.find((c) => c.id === preferredId)
+    const target = preferred ?? items[0]
+    // 上方已判断 items 非空；再兜底一次以满足严格空值检查
+    if (!target) {
+      manageCoursePath.value = '/teacher/courses'
+      return
+    }
+    rememberManagedCourseId(target.id)
+  } catch {
+    manageCoursePath.value = '/teacher/courses'
+  }
 }
 
 async function fetchPendingReviews() {
@@ -49,6 +98,7 @@ function handleLogout() {
 
 onMounted(() => {
   fetchPendingReviews()
+  resolveManageCoursePath()
   reviewTimer = window.setInterval(fetchPendingReviews, 15000)
 })
 
@@ -60,6 +110,11 @@ watch(
   () => route.fullPath,
   () => {
     fetchPendingReviews()
+    // 进入某门课详情时，侧栏「管理课程」记住该课，下次直达同一页
+    const match = route.path.match(/^\/teacher\/courses\/(\d+)/)
+    if (match) {
+      rememberManagedCourseId(Number(match[1]))
+    }
   },
 )
 </script>
@@ -90,7 +145,7 @@ watch(
         <nav class="sidebar-nav">
           <router-link
             v-for="item in navItems"
-            :key="item.path"
+            :key="item.name"
             :to="item.path"
             class="sidebar-link"
             :class="{ active: isActive(item.path) }"

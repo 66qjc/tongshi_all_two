@@ -25,7 +25,6 @@ const projectUpload = read('src/views/ProjectUploadView.vue')
 const actView = read('src/views/ActView.vue')
 const actDetail = read('src/views/ActDetailView.vue')
 const teacherReviews = read('src/views/teacher/TeacherReviews.vue')
-const teacherMaterials = read('src/views/teacher/TeacherMaterials.vue')
 const teacherCourseDetail = read('src/views/teacher/TeacherCourseDetail.vue')
 const adminPublicCourses = read('src/views/admin/AdminPublicCourses.vue')
 const adminShowcase = read('src/views/admin/AdminShowcase.vue')
@@ -136,9 +135,7 @@ check('通用 PDF 弹窗使用 resolvedUrl 而非直接解析私有文件路径'
   assert.doesNotMatch(pdfPreview, /resolveFileUrl/)
 })
 
-check('教师资料页面删除未调用的旧私有文件直开函数', () => {
-  assert.doesNotMatch(teacherMaterials, /resolveFileUrl/)
-  assert.doesNotMatch(teacherMaterials, /function openMaterial\s*\(/)
+check('教师课程详情不得调用 resolveFileUrl 或恢复旧直开函数', () => {
   assert.doesNotMatch(teacherCourseDetail, /resolveFileUrl/)
   assert.doesNotMatch(teacherCourseDetail, /function materialUrl\s*\(/)
   assert.doesNotMatch(teacherCourseDetail, /function openMaterial\s*\(/)
