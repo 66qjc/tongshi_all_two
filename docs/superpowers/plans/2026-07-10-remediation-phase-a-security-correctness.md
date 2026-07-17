@@ -1,5 +1,9 @@
 # 权限与核心数据正确性修复 Implementation Plan
 
+> **已废止（题库 rehome 部分）：** 文中“删课前 `rehome_questions_before_course_delete` 转挂到共享题库根/锚点课”的现行路径已废止。
+> **现行规则：** 删课不转挂、不软删共享题；活跃共享题只看 `Question.deleted_at`；`rehome` helper 已退役为 no-op；物理清理时引用脱钩。
+> **依据：** `docs/superpowers/specs/2026-07-15-unified-soft-delete-business-rules-design.md`、`docs/superpowers/plans/2026-07-17-shared-question-bank-followups.md`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 修复作业完成误判、密码与 JWT 失效、教师通知越权、课程删除误伤共享题库四类高风险问题。

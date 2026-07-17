@@ -80,7 +80,7 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 教师可以删除自己课程下的资料，包括公共课程同步到教师课程副本里的资料，但不会影响公共课程源
 - 教师可以新增和编辑自己创建的题目，但不能删除题目；题目删除仅由管理员执行
 - 公共课程的题库为全站共享题库，不再复制题目到教师课程副本；教师和管理员新增或导入题目会写入 `created_by` 并记录贡献日志
-- 删除教师课程或公共课程前必须把有效题目转挂到其他未删除课程；共享题目不随课程软删除或恢复，没有承接课程时拒绝删除
+- 删除教师课程或公共课程时不转挂、不软删、不隐藏共享题目；活跃共享题库只看 `Question.deleted_at`，课程仅是挂载上下文
 - 公共课程题库的新增与导入会记录到 `question_contribution_logs`，保存课程快照、操作人、动作类型、题目数量和时间
 - 课程正式 API 统一使用 `/api/courses*`；历史 `/api/questions/courses*` 兼容入口已删除。
 - 课程搜索使用 `ilike()`（大小写不敏感 + 中文子串），不再使用 `contains()`。
@@ -366,10 +366,10 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 
 ### 2026-07-14 代码审查修复后的稳定事实
 
-- 共享题库管理入口：管理员通过任一未软删除公共课程入口管理全站活跃共享题库；编辑教师贡献题时不要求题目原始课程等于入口课程，但题目及所属课程必须均未软删除。
-- 共享题库去重：`question_bank_service.compute_stem_hash` 是教师端和管理员端新增、编辑、导入的统一规范化 SHA-256 题干哈希实现；同题干判断覆盖活跃题目与活跃课程，兼容初始化会回填历史空值、MD5 和异常长度哈希。
+- 共享题库管理入口：管理员通过任一未软删除公共课程入口管理全站活跃共享题库；编辑教师贡献题时不要求题目原始课程等于入口课程；活跃共享题只要求题目自身未软删除。
+- 共享题库去重：`question_bank_service.compute_stem_hash` 是教师端和管理员端新增、编辑、导入的统一规范化 SHA-256 题干哈希实现；同题干判断覆盖全部活跃题目（不因挂载课程软删而排除），兼容初始化会回填历史空值、MD5 和异常长度哈希。
 - 正式删除入口：班级、作业、资料、作品、教师账号、公共课程、公共资料和共享题目均保留主记录及必要关联，写入 `deleted_at/deleted_by`；普通读取、统计和文件授权排除软删除资源，回收站恢复和最终清理是专用入口。
-- 管理端软删除边界：公共课程、公共资料、共享题目及题库计数/指纹/重复查询的正常入口都排除软删除资源和所属软删除课程。
+- 管理端软删除边界：公共课程、公共资料、共享题目及题库计数/指纹/重复查询的正常入口排除软删除题目；课程软删除不得让共享题目从题库、查重或管理入口消失。
 - 展示文件权限：已发布展示项的封面、图库、内容块图片可匿名访问；未发布展示项仅创建者管理员或教师可预览，普通用户和非创建者按不存在处理。
 - 展示内容块图片授权扫描只读取必要列并使用 `yield_per(100)` 分批迭代，不再 `.all()` 一次加载全表内容块 JSON。
 - Nginx `.mjs` 规则只匹配 `/assets/` 下构建产物；正式部署需同步配置并执行 `nginx -t` 后 reload。
@@ -392,3 +392,27 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - **阶段 D 剩余：** Task 3–5（缓存边界、忘记密码跨进程限流、启动锁与索引）仍未实施，归总体治理第三阶段。
 - **第二阶段及以后：** 可恢复发布、并发扩容、工程结构收口均未开始。
 - 服务器部署影响：**本条为文档同步，不需要服务器修改。** 第一阶段代码若将来上线，须先过第二阶段备份/回退/健康检查门，不得直接部署脏工作区。
+
+### 2026-07-17 删课后共享题库不再隐形
+
+- 问题：删课路径不转挂题目，但活跃题库查询仍要求所属课程未软删，导致题目 `deleted_at is None` 却在列表、练习、查重、管理端“消失”。
+- 修复：
+  - `question_bank_service._active_questions_query` 只过滤 `Question.deleted_at`
+  - 教师题库列表/单题、管理端公共题库列表/单题/更新/批量删除、学生自由练习可见范围同步去课程软删过滤
+  - 公共课挂载题即使挂载课进回收站，只要题目未删仍属共享题库；私有课题目仍要求挂载课活跃且学生有选课
+  - `rehome_questions_before_course_delete` 降级为历史兼容空操作，正式删课路径不得再依赖转挂
+- 回归保护：扩展 `test_soft_delete_read_filters`、`test_030405_management_systems`、`test_public_course_delete`、`test_integration_bugfixes`
+- 服务器部署影响：需要服务器拉代码、**重启后端**；**不需要**数据库迁移、前端重建、Nginx 或环境变量调整
+
+### 2026-07-17 共享题库删课后续闭环（已通过临时 MySQL 验收）
+
+- 计划：`docs/superpowers/plans/2026-07-17-shared-question-bank-followups.md`
+- **稳定事实（代码侧）：**
+  - 课程物理清理：允许共享题/资料/作品/source 等引用脱钩（`SET NULL` + 名称快照）；同批子资源与历史课时进度仍按既有规则清理；cleanup 预检阻断非同批活跃引用
+  - 管理员独立共享题库：`/api/admin/question-bank` + `/admin/question-bank`；公共课程页只维护阶段/资料；旧公共课题库路由保留并返回 `Deprecation`/`Link`
+  - 学生全局自由练习：`/api/quiz/questions` + `/practice/quiz`；课程卡片只承载作业；草稿键 `quiz-draft:global-practice`
+  - 学生 quiz 路由强制学生角色；管理审计使用真实 `AuthUser`；历史 `question_bank_root_course_id` 不再参与启动改写/删课阻断；无效 ORM `cache_result` 已移除
+- **验证：** 定向后端相关套件通过；前端相关静态测试、`npm run type-check`、`npm run build` 通过
+- **真实 MySQL 验收（2026-07-17）：** 临时库 `tongshi_cleanup_verify` 上执行 `backend/scripts/verify_course_cleanup_mysql.py`，`information_schema` 外键矩阵与 cleanup 脱钩场景 `ALL_MYSQL_VERIFY_OK`；设计文档 `docs/superpowers/specs/2026-07-17-course-purge-reference-detachment-design.md`；SQLite `PRAGMA foreign_keys=ON` 单测通过
+- **附带修复：** 系统清理审计改为 `user_id=NULL`（避免无 `system` 用户时 FK 失败）；审计 `error_message` 截断 512
+- 服务器部署影响：见修改记录第 71 轮（需拉代码、重启后端、重建前端；需 schema_compat/可空列与 SET NULL FK 兼容迁移；发布前备份）

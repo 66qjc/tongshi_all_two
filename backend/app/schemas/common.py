@@ -193,8 +193,10 @@ class QuestionOut(BaseModel):
 
     id: int
     type: str
-    course_id: int
+    course_id: Optional[int] = None
     course_name: str = ""
+    mount_course_state: Optional[str] = None
+    mount_course_name_snapshot: Optional[str] = None
     stem: str
     options: List[str] = []
     answer: str

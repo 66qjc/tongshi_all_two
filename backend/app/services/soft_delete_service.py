@@ -83,12 +83,16 @@ def _resource_name(item: Any) -> str:
 
 
 def _format_deleted(item: Any) -> dict:
-    return {
+    data = {
         "id": item.id,
         "name": _resource_name(item),
         "deleted_at": to_beijing_iso(getattr(item, "deleted_at", None)),
         "deleted_by": getattr(item, "deleted_by", None),
     }
+    if isinstance(item, Material):
+        data["course_id"] = item.course_id
+        data["needs_target_course"] = item.course_id is None
+    return data
 
 
 def list_deleted_resources(db: Session, resource_type: str, page: int = 1, page_size: int = 20) -> dict:
@@ -159,8 +163,17 @@ def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = F
     return item
 
 
-def restore_resource(db: Session, resource_type: str, resource_id: str, operator: AuthUser) -> dict:
-    """恢复已软删除资源。"""
+def restore_resource(
+    db: Session,
+    resource_type: str,
+    resource_id: str,
+    operator: AuthUser,
+    target_course_id: int | None = None,
+) -> dict:
+    """恢复已软删除资源。
+
+    资料在课程物理清理后 course_id 为空：必须指定活跃 target_course_id 才能恢复。
+    """
     model = RESOURCE_MODELS.get(resource_type)
     if model is None:
         raise BusinessException(404, "资源类型不存在")
@@ -170,6 +183,21 @@ def restore_resource(db: Session, resource_type: str, resource_id: str, operator
         raise BusinessException(404, "已删除资源不存在")
     deleted_at = item.deleted_at
     deleted_by = item.deleted_by
+
+    remount_course_id = None
+    if isinstance(item, Material) and item.course_id is None:
+        if not target_course_id:
+            raise BusinessException(400, "原课程已清理，请选择恢复到的课程")
+        target = (
+            db.query(Course)
+            .filter(Course.id == target_course_id, Course.deleted_at.is_(None))
+            .first()
+        )
+        if not target:
+            raise BusinessException(400, "目标课程不存在或已删除")
+        item.course_id = target.id
+        remount_course_id = target.id
+
     item.deleted_at = None
     item.deleted_by = None
     restored_children: dict[str, int] = {}
@@ -186,6 +214,12 @@ def restore_resource(db: Session, resource_type: str, resource_id: str, operator
                 row.deleted_at = None
                 row.deleted_by = None
     restored_child_count = sum(restored_children.values())
+    details: dict[str, Any] = {
+        "恢复子资源数量": restored_child_count,
+        "恢复子资源明细": restored_children,
+    }
+    if remount_course_id is not None:
+        details["重新挂载课程ID"] = remount_course_id
     create_audit_log(
         db,
         user=operator,
@@ -193,14 +227,13 @@ def restore_resource(db: Session, resource_type: str, resource_id: str, operator
         resource_type=resource_type,
         resource_id=item.id,
         resource_name=_resource_name(item),
-        details={
-            "恢复子资源数量": restored_child_count,
-            "恢复子资源明细": restored_children,
-        },
+        details=details,
     )
     db.commit()
     result = _format_deleted(item)
     result["恢复子资源数量"] = restored_child_count
+    if remount_course_id is not None:
+        result["重新挂载课程ID"] = remount_course_id
     return result
 
 

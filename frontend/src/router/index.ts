@@ -96,9 +96,21 @@ const router = createRouter({
       meta: { title: '选择作业' },
     },
     {
+      path: '/practice/quiz',
+      name: 'practice-quiz-global',
+      component: () => import('../views/PracticeQuizView.vue'),
+      meta: { title: '思 · 自由练习' },
+    },
+    {
       path: '/practice/quiz/:courseId',
       name: 'practice-quiz',
-      component: () => import('../views/PracticeQuizView.vue'),
+      redirect: (to) => ({
+        path: '/practice/quiz',
+        query: {
+          ...to.query,
+          // 保留旧链接的 random/question_ids，不再使用 courseId
+        },
+      }),
       meta: { title: '思 · 在线练习' },
     },
     {
@@ -239,6 +251,11 @@ const router = createRouter({
           path: 'public-courses',
           component: () => import('../views/admin/AdminPublicCourses.vue'),
           meta: { title: '公共课程', role: 'admin' },
+        },
+        {
+          path: 'question-bank',
+          component: () => import('../views/admin/AdminQuestionBank.vue'),
+          meta: { title: '共享题库', role: 'admin' },
         },
         {
           path: 'showcase',

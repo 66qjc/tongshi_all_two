@@ -36,7 +36,8 @@ from app.services.soft_delete_policy import RESOURCE_POLICIES, retention_deadlin
 from app.services.soft_delete_service import RESOURCE_MODELS
 
 
-SYSTEM_USER_ID = "system"
+# 系统自动清理审计不绑定真实用户行：audit_logs.user_id 有 FK，写 "system" 会在无该用户时失败。
+SYSTEM_USER_ID = None
 SYSTEM_USER_ROLE = "system"
 
 
@@ -605,6 +606,131 @@ def _cleanup_user(db: Session, user: User, cleanup_batch_id: str) -> dict[str, A
     return {"历史快照数量": snapshot_count, "文件处理结果": "无文件"}
 
 
+def _course_cleanup_blockers(db: Session, course: Course) -> dict[str, int]:
+    """课程物理清理前的入站引用预检。
+
+    可脱钩引用（共享题、作品、source/root、已软删非同批资料）在 cleanup 中置空；
+    仍阻断：活跃资料、非同批班级/作业（course_id 不可空）。
+    """
+    blockers: dict[str, int] = {}
+
+    # 活跃资料仍挂在课程上：禁止清理出“活跃无课程资料”
+    active_materials = db.query(Material).filter(
+        Material.course_id == course.id,
+        Material.deleted_at.is_(None),
+    ).count()
+    if active_materials:
+        blockers["活跃资料"] = active_materials
+
+    # 班级/作业 course_id 仍不可空：非同批必须阻断
+    non_batch_classes = db.query(Class).filter(Class.course_id == course.id)
+    non_batch_announcements = db.query(Announcement).filter(Announcement.course_id == course.id)
+    if course.deleted_at is not None:
+        non_batch_classes = non_batch_classes.filter(
+            (Class.deleted_at.is_(None))
+            | (Class.deleted_at != course.deleted_at)
+            | (Class.deleted_by != course.deleted_by)
+        )
+        non_batch_announcements = non_batch_announcements.filter(
+            (Announcement.deleted_at.is_(None))
+            | (Announcement.deleted_at != course.deleted_at)
+            | (Announcement.deleted_by != course.deleted_by)
+        )
+    class_count = non_batch_classes.count()
+    announcement_count = non_batch_announcements.count()
+    if class_count:
+        blockers["非同批班级"] = class_count
+    if announcement_count:
+        blockers["非同批作业"] = announcement_count
+
+    return blockers
+
+
+class CourseCleanupBlockedError(RuntimeError):
+    """课程因入站引用暂不可物理清理。"""
+
+    def __init__(self, blockers: dict[str, int]):
+        self.blockers = blockers
+        parts = [f"{name}{count}项" for name, count in blockers.items()]
+        super().__init__("课程仍被引用，暂不物理删除：" + "、".join(parts))
+
+
+def _detach_course_references(db: Session, course: Course) -> int:
+    """物理删课前脱钩允许 SET NULL 的引用，并固化题目标签快照。"""
+    detached = 0
+    questions = db.query(Question).filter(Question.course_id == course.id).all()
+    for question in questions:
+        if not (question.mount_course_name_snapshot or "").strip():
+            question.mount_course_name_snapshot = course.name or ""
+        question.course_id = None
+        detached += 1
+
+    materials = db.query(Material).filter(
+        Material.course_id == course.id,
+        Material.deleted_at.isnot(None),
+    ).all()
+    for material in materials:
+        material.course_id = None
+        detached += 1
+
+    projects = db.query(Project).filter(Project.course_id == course.id).all()
+    for project in projects:
+        project.course_id = None
+        detached += 1
+
+    copies = db.query(Course).filter(
+        Course.source_course_id == course.id,
+        Course.id != course.id,
+    ).all()
+    for copy in copies:
+        copy.source_course_id = None
+        detached += 1
+
+    root_refs = db.query(Course).filter(
+        Course.question_bank_root_course_id == course.id,
+        Course.id != course.id,
+    ).all()
+    for row in root_refs:
+        row.question_bank_root_course_id = None
+        detached += 1
+
+    db.flush()
+    return detached
+
+
+def _cleanup_course_history_structures(db: Session, course: Course) -> int:
+    """清理随课程走的阶段、课时与进度（产品已下线课时，历史表随课清理）。"""
+    from app.models.entities import CourseStage, Lesson, CourseProgress, LessonProgress
+
+    snapshot_count = 0
+    stages = db.query(CourseStage).filter(CourseStage.course_id == course.id).all()
+    for stage in stages:
+        db.query(Material).filter(Material.stage_id == stage.id).update(
+            {Material.stage_id: None},
+            synchronize_session=False,
+        )
+        db.delete(stage)
+        snapshot_count += 1
+
+    lessons = db.query(Lesson).filter(Lesson.course_id == course.id).all()
+    lesson_ids = [lesson.id for lesson in lessons]
+    if lesson_ids:
+        db.query(LessonProgress).filter(LessonProgress.lesson_id.in_(lesson_ids)).delete(
+            synchronize_session=False
+        )
+    for lesson in lessons:
+        db.delete(lesson)
+        snapshot_count += 1
+
+    progress_rows = db.query(CourseProgress).filter(CourseProgress.course_id == course.id).all()
+    for row in progress_rows:
+        db.delete(row)
+        snapshot_count += 1
+
+    db.flush()
+    return snapshot_count
+
+
 def _cleanup_course(db: Session, course: Course, cleanup_batch_id: str) -> dict[str, Any]:
     snapshot_count = 0
     file_results: list[str] = []
@@ -612,6 +738,10 @@ def _cleanup_course(db: Session, course: Course, cleanup_batch_id: str) -> dict[
         "deleted_at": course.deleted_at,
         "deleted_by": course.deleted_by,
     }
+
+    blockers = _course_cleanup_blockers(db, course)
+    if blockers:
+        raise CourseCleanupBlockedError(blockers)
 
     classes = db.query(Class).filter(
         Class.course_id == course.id,
@@ -640,12 +770,17 @@ def _cleanup_course(db: Session, course: Course, cleanup_batch_id: str) -> dict[
         result = _cleanup_announcement(db, announcement, cleanup_batch_id)
         snapshot_count += result["历史快照数量"]
 
+    # 脱钩共享题/作品/历史引用，再清理阶段课时
+    detached = _detach_course_references(db, course)
+    snapshot_count += _cleanup_course_history_structures(db, course)
+
     # 使用 Core DELETE，避免 ORM relationship cascade 误删“单独软删、尚未到期”的子资源。
     db.execute(delete(Course).where(Course.id == course.id))
     db.flush()
     return {
         "历史快照数量": snapshot_count,
         "文件处理结果": "；".join(file_results) if file_results else "无文件",
+        "脱钩引用数量": detached,
     }
 
 
@@ -753,12 +888,12 @@ def cleanup_expired_resources(db: Session, now: datetime | None = None) -> dict[
                     resource_name=str(getattr(row, "name", None) or getattr(row, "title", None) or getattr(row, "stem", None) or getattr(row, "id", "")),
                     details={
                         "清理结果": "系统自动清理失败",
-                        "失败原因": str(exc),
+                        "失败原因": str(exc)[:2000],
                         "下次重试时间": _next_sunday_retry(now_beijing),
                         "资源类型名称": RESOURCE_POLICIES[resource_type].display_name,
                     },
                     status="failed",
-                    error_message=str(exc),
+                    error_message=str(exc)[:512],
                 )
                 db.commit()
 

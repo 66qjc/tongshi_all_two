@@ -26,16 +26,27 @@ from app.schemas.common import (
     CourseStageUpdate,
 )
 from app.services import admin_public_course_service as service
+from app.services import admin_question_bank_service as question_bank_service
 from app.services.course_stage_service import create_stage, delete_stage, format_stage_out, list_stages_for_course, update_stage
 from app.services.public_course_sync_service import sync_stages_to_course_copies
 from app.services.question_bank_service import count_all_questions
 
 router = APIRouter(prefix="/public-courses", tags=["admin-public-courses"])
 
+# 旧公共课题库入口兼容：统一标记弃用并指向独立共享题库
+_DEPRECATED_QUESTION_BANK_HEADERS = {
+    "Deprecation": "true",
+    "Link": '</api/admin/question-bank>; rel="successor-version"',
+}
 
-def _format_course(course, sync_info: dict | None = None, total_question_count: int | None = None) -> dict:
+
+def _mark_question_bank_deprecated(response: Response) -> None:
+    for key, value in _DEPRECATED_QUESTION_BANK_HEADERS.items():
+        response.headers[key] = value
+
+
+def _format_course(course, sync_info: dict | None = None, total_question_count: int = 0) -> dict:
     active_material_count = sum(material.deleted_at is None for material in course.materials)
-    active_question_count = sum(question.deleted_at is None for question in course.questions)
     data = {
         "id": course.id,
         "name": course.name,
@@ -44,8 +55,8 @@ def _format_course(course, sync_info: dict | None = None, total_question_count: 
         "created_by": course.created_by,
         "is_public": bool(course.is_public),
         "material_count": active_material_count,
-        # 全站共享题库：题目数为全站题目总数
-        "question_count": total_question_count if total_question_count is not None else active_question_count,
+        # 全站共享题库：题目数必须由调用方传入全站活跃题数，禁止回落本课计数。
+        "question_count": total_question_count,
     }
     if sync_info:
         data.update(sync_info)
@@ -71,12 +82,39 @@ def _format_material(material) -> dict:
     }
 
 
+def _mount_course_state(question) -> str:
+    """挂载课程状态：active / soft_deleted / purged / none。"""
+    if question.course_id is None:
+        snapshot = (getattr(question, "mount_course_name_snapshot", None) or "").strip()
+        return "purged" if snapshot else "none"
+    course = question.course
+    if course is None:
+        return "purged"
+    if course.deleted_at is not None:
+        return "soft_deleted"
+    return "active"
+
+
 def _format_question(question) -> dict:
+    course = question.course
+    creator = getattr(question, "creator", None)
+    mount_state = _mount_course_state(question)
+    snapshot = (getattr(question, "mount_course_name_snapshot", None) or "").strip()
+    if mount_state == "soft_deleted" and course is not None:
+        course_name = f"{course.name}（已删除）"
+    elif mount_state == "purged":
+        course_name = snapshot or "原挂载课程已清理"
+    elif mount_state == "none":
+        course_name = "独立题库"
+    else:
+        course_name = course.name if course else snapshot
     return {
         "id": question.id,
         "type": question.type,
         "course_id": question.course_id,
-        "course_name": question.course.name if question.course else "",
+        "course_name": course_name,
+        "mount_course_state": mount_state,
+        "mount_course_name_snapshot": snapshot,
         "stem": question.stem,
         "options": question.options or [],
         "answer": question.answer,
@@ -84,6 +122,8 @@ def _format_question(question) -> dict:
         "tags": question.tags or [],
         "source_question_id": question.source_question_id,
         "is_synced": bool(question.source_question_id),
+        "created_by": question.created_by,
+        "creator_name": creator.name if creator else None,
         "star_rating": question.star_rating if question.star_rating is not None else 3,
     }
 
@@ -143,9 +183,9 @@ def edit_public_course(
 def remove_public_course(
     course_id: int,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
-    if not service.delete_public_course(db, course_id):
+    if not service.delete_public_course(db, course_id, operator=current_user):
         raise BusinessException(404, "公共课程不存在")
     return success()
 
@@ -272,33 +312,49 @@ def remove_public_material(
     course_id: int,
     material_id: int,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
     material = service.get_public_material(db, material_id)
     if not material or material.course_id != course_id:
         raise BusinessException(404, "公共资料不存在")
-    if not service.delete_public_material(db, material_id):
+    if not service.delete_public_material(db, material_id, operator=current_user):
         raise BusinessException(404, "公共资料不存在")
     return success()
 
 
-@router.get("/{course_id}/questions", summary="公共课程题库列表", description="管理员：获取公共课程题目")
+@router.get(
+    "/{course_id}/questions",
+    summary="公共课程题库列表（已弃用）",
+    description="兼容旧客户端：委托共享题库，并返回弃用响应头；请改用 /api/admin/question-bank",
+)
 def get_public_questions(
     course_id: int,
+    response: Response,
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
-    return success([_format_question(question) for question in service.list_public_questions(db, course_id)])
+    _mark_question_bank_deprecated(response)
+    # 保留旧响应形态（全量数组）；course_id 仅校验入口公共课存在
+    return success([
+        question_bank_service.format_question(question)
+        for question in service.list_public_questions(db, course_id)
+    ])
 
 
-@router.get("/{course_id}/question-contributions", summary="公共课程题库贡献记录", description="管理员：分页查看单门公共课程的题库贡献历史")
+@router.get(
+    "/{course_id}/question-contributions",
+    summary="公共课程题库贡献记录（已弃用）",
+    description="兼容旧客户端：返回该公共课贡献历史，并标记弃用；请改用 /api/admin/question-bank/contributions",
+)
 def get_public_question_contributions(
     course_id: int,
+    response: Response,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     _: AuthUser = Depends(require_role("admin")),
 ):
+    _mark_question_bank_deprecated(response)
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
         raise BusinessException(404, "公共课程不存在")
@@ -326,11 +382,17 @@ def _build_admin_question_template(question_type: str) -> bytes:
     return buffer.getvalue()
 
 
-@router.get("/questions/import/template", summary="下载公共题目导入模板", description="管理员：下载不含课程名称列的公共题目 Excel 批量导入模板")
+@router.get(
+    "/questions/import/template",
+    summary="下载公共题目导入模板（已弃用）",
+    description="兼容旧客户端：请改用 /api/admin/question-bank/import/template",
+)
 def download_public_question_template(
+    response: Response,
     template_type: str = Query("all", pattern="^(all|choice|fill|multi_choice)$"),
     _: AuthUser = Depends(require_role("admin")),
 ):
+    _mark_question_bank_deprecated(response)
     content = _build_admin_question_template(template_type)
     filename_map = {
         "choice": "admin-choice-question-template.xlsx",
@@ -341,34 +403,48 @@ def download_public_question_template(
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename_map[template_type]}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename_map[template_type]}"',
+            **_DEPRECATED_QUESTION_BANK_HEADERS,
+        },
     )
 
 
-@router.post("/{course_id}/questions", summary="新增共享题库题目", description="管理员：通过公共课程入口新增全站共享题目")
+@router.post(
+    "/{course_id}/questions",
+    summary="新增共享题库题目（已弃用）",
+    description="兼容旧客户端：委托 /api/admin/question-bank，并以当前公共课作为挂载",
+)
 def add_public_question(
     course_id: int,
     data: AdminQuestionCreate,
+    response: Response,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    question = service.create_public_question(
+    _mark_question_bank_deprecated(response)
+    question = question_bank_service.create_question(
         db,
-        course_id,
         data.model_dump(),
-        operator_id=current_user.id,
-        operator_role=current_user.role,
+        current_user,
+        mount_course_id=course_id,
     )
-    return success(_format_question(question))
+    return success(question_bank_service.format_question(question))
 
 
-@router.post("/{course_id}/questions/import", summary="Excel 批量导入共享题库题目", description="管理员：通过公共课程入口批量导入全站共享题目")
+@router.post(
+    "/{course_id}/questions/import",
+    summary="Excel 批量导入共享题库题目（已弃用）",
+    description="兼容旧客户端：委托独立共享题库导入，并以当前公共课作为挂载",
+)
 def import_public_questions(
     course_id: int,
+    response: Response,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
+    _mark_question_bank_deprecated(response)
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
         raise BusinessException(404, "公共课程不存在")
@@ -402,61 +478,79 @@ def import_public_questions(
         rows.append(item)
     if not rows:
         raise BusinessException(400, "Excel 中没有可导入的题目数据，请填写题目内容后再上传")
-    return success(service.import_questions_to_public_course(
+    return success(question_bank_service.import_questions(
         db,
-        course_id,
         rows,
-        operator_id=current_user.id,
-        operator_role=current_user.role,
+        current_user,
+        mount_course_id=course_id,
     ))
 
 
-@router.put("/{course_id}/questions/{question_id}", summary="编辑共享题库题目", description="管理员：通过公共课程入口修改全站共享题目")
+@router.put(
+    "/{course_id}/questions/{question_id}",
+    summary="编辑共享题库题目（已弃用）",
+    description="兼容旧客户端：委托独立共享题库更新接口",
+)
 def edit_public_question(
     course_id: int,
     question_id: int,
     data: AdminQuestionUpdate,
+    response: Response,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
-    # course_id 仅用于确认当前管理入口是有效公共课程；共享题目可挂在任意活跃课程。
+    _mark_question_bank_deprecated(response)
+    # course_id 仅用于确认当前管理入口是有效公共课程；共享题目可挂在任意课程（含已软删挂载）。
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
         raise BusinessException(404, "公共课程不存在")
-    question = service.update_public_question(db, question_id, data.model_dump(exclude_unset=True))
+    question = question_bank_service.update_question(
+        db,
+        question_id,
+        data.model_dump(exclude_unset=True),
+        current_user,
+    )
     if not question:
         raise BusinessException(404, "公共题目不存在")
-    return success(_format_question(question))
+    return success(question_bank_service.format_question(question))
 
 
-@router.delete("/{course_id}/questions/{question_id}", summary="删除共享题库题目", description="管理员：从全站共享题库软删除指定题目")
+@router.delete(
+    "/{course_id}/questions/{question_id}",
+    summary="删除共享题库题目（已弃用）",
+    description="兼容旧客户端：委托独立共享题库软删除",
+)
 def remove_public_question(
     course_id: int,
     question_id: int,
+    response: Response,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
+    _mark_question_bank_deprecated(response)
     # course_id 仅用于确认当前管理入口存在；共享题库删除不再要求题目挂在该公共课。
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
         raise BusinessException(404, "公共课程不存在")
-    if not service.delete_public_question(db, question_id):
+    if not question_bank_service.delete_question(db, question_id, current_user):
         raise BusinessException(404, "公共题目不存在")
     return success()
 
 
 @router.post(
     "/{course_id}/questions/batch-delete",
-    summary="批量删除共享题库题目",
-    description="管理员：按题目 ID 列表从全站共享题库批量软删除题目",
+    summary="批量删除共享题库题目（已弃用）",
+    description="兼容旧客户端：委托独立共享题库批量软删除",
 )
 def batch_remove_public_questions(
     course_id: int,
     data: AdminQuestionBatchDelete,
+    response: Response,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
+    _mark_question_bank_deprecated(response)
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
         raise BusinessException(404, "公共课程不存在")
-    return success(service.delete_public_questions(db, data.question_ids))
+    return success(question_bank_service.delete_questions(db, data.question_ids, current_user))

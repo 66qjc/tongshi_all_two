@@ -18,7 +18,7 @@ def ensure_schema_compatibility(engine) -> None:
                 conn.execute(text("""
                     CREATE TABLE question_contribution_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        public_course_id INTEGER NOT NULL,
+                        public_course_id INTEGER,
                         public_course_name VARCHAR(128) NOT NULL DEFAULT '',
                         operator_id VARCHAR(32) NOT NULL,
                         operator_name VARCHAR(64) NOT NULL DEFAULT '',
@@ -32,7 +32,7 @@ def ensure_schema_compatibility(engine) -> None:
                 conn.execute(text("""
                     CREATE TABLE question_contribution_logs (
                         id INTEGER NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                        public_course_id INTEGER NOT NULL,
+                        public_course_id INTEGER NULL,
                         public_course_name VARCHAR(128) NOT NULL DEFAULT '',
                         operator_id VARCHAR(32) NOT NULL,
                         operator_name VARCHAR(64) NOT NULL DEFAULT '',
@@ -295,6 +295,8 @@ def ensure_schema_compatibility(engine) -> None:
         _add_column_if_missing(
             conn, inspector, "questions", "tags", "JSON")
         _add_column_if_missing(
+            conn, inspector, "questions", "mount_course_name_snapshot", "VARCHAR(128)")
+        _add_column_if_missing(
             conn, inspector, "quiz_attempts", "announcement_id", "INTEGER")
         _add_column_if_missing(
             conn, inspector, "announcements", "course_id", "INTEGER")
@@ -383,50 +385,8 @@ def ensure_schema_compatibility(engine) -> None:
                         WHERE created_by IS NULL OR created_by = ''
                         """))
 
-        inspector = inspect(conn)
-        table_names = set(inspector.get_table_names())
-        if "courses" in table_names:
-            course_columns = {c["name"] for c in inspector.get_columns("courses")}
-            if "question_bank_root_course_id" in course_columns:
-                if conn.dialect.name == "mysql":
-                    conn.execute(text("""
-                        UPDATE courses
-                        SET question_bank_root_course_id = NULL
-                        WHERE question_bank_root_course_id IS NULL
-                    """))
-                    root_course = conn.execute(text("""
-                        SELECT id
-                        FROM courses
-                        ORDER BY is_public DESC, id ASC
-                        LIMIT 1
-                    """)).fetchone()
-                    if root_course is not None:
-                        root_id = root_course[0]
-                        conn.execute(text(f"""
-                            UPDATE courses
-                            SET question_bank_root_course_id = CASE
-                                WHEN id = {root_id} THEN NULL
-                                ELSE {root_id}
-                            END
-                        """))
-                else:
-                    root_course = conn.execute(text("""
-                        SELECT id
-                        FROM courses
-                        ORDER BY is_public DESC, id ASC
-                        LIMIT 1
-                    """)).fetchone()
-                    if root_course is not None:
-                        root_id = root_course[0]
-                        conn.execute(text("""
-                            UPDATE courses
-                            SET question_bank_root_course_id = CASE
-                                WHEN id = :root_id THEN NULL
-                                ELSE :root_id
-                            END
-                        """), {"root_id": root_id})
-                    conn.execute(text(
-                        "UPDATE classes SET created_by = 'T001' WHERE created_by IS NULL OR created_by = ''"))
+        # question_bank_root_course_id 仅作历史兼容列保留，启动时不再批量改写。
+        # 列本身仍由上方 ensure-column 逻辑兼容创建，业务代码不再读取其语义。
 
         # ── 清理旧版遗留列（班级改课程归属 / 章节去除后残留的 NOT NULL 列）──
         # 旧库里这些列为 NOT NULL 且无默认值，新模型已去除/改挂课程，
@@ -439,6 +399,13 @@ def ensure_schema_compatibility(engine) -> None:
         _make_column_nullable(conn, inspector, "questions", "chapter_id", "INTEGER")
         # announcements.class_id 改为可空（多班级走 announcement_classes 关联表）
         _make_column_nullable(conn, inspector, "announcements", "class_id", "INTEGER")
+        # 课程引用脱钩：题目/资料 course_id 可空；历史 root 清空业务值
+        _make_column_nullable(conn, inspector, "questions", "course_id", "INTEGER")
+        _make_column_nullable(conn, inspector, "materials", "course_id", "INTEGER")
+        _make_column_nullable(conn, inspector, "question_contribution_logs", "public_course_id", "INTEGER")
+        _backfill_question_mount_snapshots(conn, inspector)
+        _clear_question_bank_root_values(conn, inspector)
+        _ensure_course_set_null_foreign_keys(conn, inspector)
 
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
@@ -1065,6 +1032,92 @@ def _make_column_nullable(conn, inspector, table: str, column: str, col_type: st
     if col is not None and not col["nullable"]:
         conn.execute(
             text(f"ALTER TABLE {table} MODIFY {column} {col_type} NULL"))
+
+
+def _backfill_question_mount_snapshots(conn, inspector) -> None:
+    """按现有 course_id 回填题目挂载课程名称快照。"""
+    table_names = set(inspector.get_table_names())
+    if "questions" not in table_names or "courses" not in table_names:
+        return
+    question_columns = {c["name"] for c in inspector.get_columns("questions")}
+    if "mount_course_name_snapshot" not in question_columns:
+        return
+    try:
+        conn.execute(text("""
+            UPDATE questions
+            SET mount_course_name_snapshot = (
+                SELECT courses.name FROM courses WHERE courses.id = questions.course_id
+            )
+            WHERE (mount_course_name_snapshot IS NULL OR mount_course_name_snapshot = '')
+              AND course_id IS NOT NULL
+        """))
+    except SQLAlchemyError:
+        # 个别方言不支持相关子查询更新时跳过，业务创建路径会继续写快照
+        pass
+
+
+def _clear_question_bank_root_values(conn, inspector) -> None:
+    """清空历史 question_bank_root_course_id 业务值，列本身保留。"""
+    table_names = set(inspector.get_table_names())
+    if "courses" not in table_names:
+        return
+    course_columns = {c["name"] for c in inspector.get_columns("courses")}
+    if "question_bank_root_course_id" not in course_columns:
+        return
+    conn.execute(text("UPDATE courses SET question_bank_root_course_id = NULL"))
+
+
+def _ensure_course_set_null_foreign_keys(conn, inspector) -> None:
+    """MySQL：将可脱钩课程引用外键统一为 ON DELETE SET NULL。
+
+    约束名从 information_schema 读取，不写死生产未知名称。
+    """
+    if conn.dialect.name != "mysql":
+        return
+    specs = (
+        ("questions", "course_id", "fk_questions_course_id_set_null"),
+        ("materials", "course_id", "fk_materials_course_id_set_null"),
+        ("projects", "course_id", "fk_projects_course_id_set_null"),
+        ("courses", "source_course_id", "fk_courses_source_course_id_set_null"),
+        ("courses", "question_bank_root_course_id", "fk_courses_question_bank_root_set_null"),
+    )
+    table_names = set(inspector.get_table_names())
+    for table, column, stable_name in specs:
+        if table not in table_names:
+            continue
+        columns = {c["name"] for c in inspector.get_columns(table)}
+        if column not in columns:
+            continue
+        try:
+            rows = conn.execute(text("""
+                SELECT CONSTRAINT_NAME
+                FROM information_schema.KEY_COLUMN_USAGE
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = :table
+                  AND COLUMN_NAME = :column
+                  AND REFERENCED_TABLE_NAME = 'courses'
+            """), {"table": table, "column": column}).fetchall()
+            for (constraint_name,) in rows:
+                if not constraint_name:
+                    continue
+                conn.execute(text(f"ALTER TABLE {table} DROP FOREIGN KEY `{constraint_name}`"))
+            # 重建稳定名称的 SET NULL 外键
+            existing = conn.execute(text("""
+                SELECT CONSTRAINT_NAME
+                FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = :table
+                  AND CONSTRAINT_NAME = :name
+            """), {"table": table, "name": stable_name}).fetchone()
+            if not existing:
+                conn.execute(text(
+                    f"ALTER TABLE {table} "
+                    f"ADD CONSTRAINT `{stable_name}` "
+                    f"FOREIGN KEY (`{column}`) REFERENCES courses(id) ON DELETE SET NULL"
+                ))
+        except SQLAlchemyError:
+            # 权限或版本限制时跳过；ORM 与服务层仍按可空语义运行
+            continue
 
 
 def _ensure_check_constraint(conn, inspector, table: str, name: str, expression: str) -> None:

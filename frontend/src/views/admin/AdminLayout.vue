@@ -9,6 +9,7 @@ const authStore = useAuthStore()
 const navItems = [
   { name: '教师管理', path: '/admin/teachers', icon: '&#9783;' },
   { name: '公共课程', path: '/admin/public-courses', icon: '&#9670;' },
+  { name: '共享题库', path: '/admin/question-bank', icon: '&#10070;' },
   { name: '内容管理', path: '/admin/showcase', icon: '&#128196;' },
   { name: '密码重置', path: '/admin/password-reset', icon: '&#128273;' },
   { name: '数据回收站', path: '/admin/recycle-bin', icon: '&#9851;' },

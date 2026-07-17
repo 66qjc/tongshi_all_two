@@ -92,6 +92,31 @@ class TestImportDuplicateDetection:
         assert result["skip_count"] == 1
         assert "已存在相同题目" in result["skips"][0]["reason"]
 
+    def test_import_skips_same_stem_on_soft_deleted_mount_course(self, db_session):
+        """导入目标课活跃，但同题干挂在已软删课程上时仍应 skip，不得重复入库。"""
+        from datetime import datetime, timezone
+
+        from app.models.entities import Course
+
+        existing = db_session.query(Question).filter(Question.stem == "1+1=?").one()
+        mount = db_session.get(Course, existing.course_id)
+        mount.deleted_at = datetime.now(timezone.utc)
+        db_session.commit()
+
+        # 导入到另一门仍活跃的教师课
+        other = db_session.query(Course).filter(Course.name == "其它课程").one()
+        assert other.deleted_at is None
+        rows = [
+            {"题型": "choice", "课程名称": "其它课程", "题干": "1+1=?",
+             "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": "撞软删挂载"},
+        ]
+        before = db_session.query(Question).count()
+        result = import_questions_from_excel(db_session, rows, "T002")
+        assert result["success_count"] == 0
+        assert result["skip_count"] == 1
+        assert "已存在相同题目" in result["skips"][0]["reason"]
+        assert db_session.query(Question).count() == before
+
     def test_import_skips_same_stem_hash_even_if_options_differ(self, db_session):
         """已有 stem_hash 时，导入同题干但不同选项/答案也应跳过。"""
         from app.services.question_service import _compute_stem_hash

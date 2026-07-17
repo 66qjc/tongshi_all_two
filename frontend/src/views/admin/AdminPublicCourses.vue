@@ -1,34 +1,24 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Material } from '../../api/material'
-import type { Question } from '../../api/question'
 import PdfPreviewDialog from '../../components/common/PdfPreviewDialog.vue'
 import { useUploadWithProgress } from '../../composables/useUploadWithProgress'
 import {
   createAdminPublicCourse,
   createAdminPublicCourseStage,
   createAdminPublicMaterial,
-  createAdminPublicQuestion,
-  batchDeleteAdminPublicQuestions,
   deleteAdminPublicCourse,
   deleteAdminPublicCourseStage,
   deleteAdminPublicMaterial,
-  deleteAdminPublicQuestion,
-  downloadAdminQuestionTemplate,
   getAdminPublicCourseStages,
   getAdminPublicCourses,
   getAdminPublicMaterials,
-  getAdminPublicQuestionContributions,
-  getAdminPublicQuestions,
-  importAdminPublicQuestions,
   updateAdminPublicCourse,
   updateAdminPublicCourseStage,
   updateAdminPublicMaterial,
-  updateAdminPublicQuestion,
   type AdminCourseStage,
   type AdminPublicCourse,
-  type AdminQuestionContributionLog,
 } from '../../api/adminPublicCourse'
 
 function formatFileSize(bytes: number) {
@@ -45,7 +35,7 @@ function formatFileSize(bytes: number) {
 
 const courses = ref<AdminPublicCourse[]>([])
 const selectedCourse = ref<AdminPublicCourse | null>(null)
-const activeTab = ref<'stages' | 'materials' | 'questions' | 'contributions'>('stages')
+const activeTab = ref<'stages' | 'materials'>('stages')
 
 const courseLoading = ref(false)
 const contentLoading = ref(false)
@@ -53,22 +43,12 @@ const saving = ref(false)
 const { uploading, percent: uploadPercent, upload } = useUploadWithProgress()
 
 const materials = ref<Material[]>([])
-const questions = ref<Question[]>([])
-const selectedQuestions = ref<Question[]>([])
-const deletingQuestions = ref(false)
-
 const stages = ref<AdminCourseStage[]>([])
 const stageLoading = ref(false)
 const newStageName = ref('')
 const newStageOrder = ref(0)
 const savingStage = ref(false)
 const defaultStageId = ref<number | null>(null)
-
-const contributionLogs = ref<AdminQuestionContributionLog[]>([])
-const contributionLoading = ref(false)
-const contributionPage = ref(1)
-const contributionPageSize = ref(10)
-const contributionTotal = ref(0)
 
 const showCourseDialog = ref(false)
 const editingCourseId = ref<number | null>(null)
@@ -87,37 +67,16 @@ const materialForm = ref({
   file: null as File | null,
 })
 
-const showQuestionDialog = ref(false)
-const editingQuestionId = ref<number | null>(null)
-const questionForm = ref({
-  type: 'choice' as 'choice' | 'fill' | 'multi_choice',
-  stem: '',
-  optionsText: '',
-  answer: '',
-  explanation: '',
-  tags: [] as string[],
-  star_rating: 3,
-})
-
 const previewVisible = ref(false)
 const previewUrl = ref('')
 const previewFileId = ref<number | undefined>(undefined)
-
-// Excel 导入题目
-const importDialogVisible = ref(false)
-const importFile = ref<File | null>(null)
-const importInput = ref<HTMLInputElement | null>(null)
-const importing = ref(false)
-const importErrors = ref<{ row: number; reason: string }[]>([])
-const importErrorDialogVisible = ref(false)
-const templateType = ref<'all' | 'choice' | 'fill' | 'multi_choice'>('all')
 
 function previewMaterial(row: Material) {
   previewFileId.value = row.file_id
   previewUrl.value = row.url || ''
   previewVisible.value = true
 }
-const questionDialogTitle = computed(() => editingQuestionId.value ? '编辑公共题目' : '新增公共题目')
+
 const materialDialogTitle = computed(() => editingMaterialId.value ? '编辑公共资料' : '新增公共资料')
 
 function formatDate(dateStr: string) {
@@ -146,27 +105,19 @@ async function fetchCourses(keepCourseId?: number) {
 async function fetchContent() {
   if (!selectedCourse.value) {
     materials.value = []
-    questions.value = []
     stages.value = []
-    contributionLogs.value = []
-    contributionTotal.value = 0
     return
   }
   contentLoading.value = true
   stageLoading.value = true
   try {
     const courseId = selectedCourse.value.id
-    const [materialData, questionData, stageData] = await Promise.all([
+    const [materialData, stageData] = await Promise.all([
       getAdminPublicMaterials(courseId),
-      getAdminPublicQuestions(courseId),
       getAdminPublicCourseStages(courseId),
     ])
     materials.value = materialData || []
-    questions.value = questionData || []
     stages.value = stageData || []
-    if (activeTab.value === 'contributions') {
-      await fetchContributionLogs()
-    }
   } catch (err: any) {
     ElMessage.error(err?.message || '加载课程内容失败')
   } finally {
@@ -174,31 +125,6 @@ async function fetchContent() {
     stageLoading.value = false
   }
 }
-
-async function fetchContributionLogs() {
-  if (!selectedCourse.value) return
-  contributionLoading.value = true
-  try {
-    const result = await getAdminPublicQuestionContributions(
-      selectedCourse.value.id,
-      contributionPage.value,
-      contributionPageSize.value,
-    )
-    contributionLogs.value = result.items || []
-    contributionTotal.value = result.total || 0
-  } catch (err: any) {
-    ElMessage.error(err?.message || '加载题库贡献记录失败')
-  } finally {
-    contributionLoading.value = false
-  }
-}
-
-watch(activeTab, async (tab) => {
-  if (tab === 'contributions' && selectedCourse.value) {
-    contributionPage.value = 1
-    await fetchContributionLogs()
-  }
-})
 
 function selectCourse(course: AdminPublicCourse) {
   selectedCourse.value = course
@@ -247,7 +173,7 @@ async function saveCourse() {
 async function removeCourse(course: AdminPublicCourse) {
   try {
     await ElMessageBox.confirm(
-      `确定删除公共课程「${course.name}」吗？教师已添加的课程副本不会被删除，但后续不再从该公共课程源同步资料和阶段。`,
+      `确定删除公共课程「${course.name}」吗？共享题目不随课程删除、不转挂，仍保留在全站题库。教师已添加的课程副本不会被删除，但后续不再从该公共课程源同步资料和阶段。`,
       '删除公共课程',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
     )
@@ -268,7 +194,6 @@ function openCreateMaterial(stageId: number | null = null) {
   showMaterialDialog.value = true
 }
 
-
 function openEditMaterial(material: Material) {
   if (material.type === 'link') {
     ElMessage.warning('该链接资料来自公开学习内容源，本页仅维护上传文件；请到原创建入口修改链接。')
@@ -287,6 +212,7 @@ function openEditMaterial(material: Material) {
   if (uploadInput.value) uploadInput.value.value = ''
   showMaterialDialog.value = true
 }
+
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] || null
@@ -321,7 +247,6 @@ async function saveMaterial() {
       size: materialForm.value.size || '0 MB',
       file_id: materialForm.value.file_id,
       stage_id: typeof materialForm.value.stage_id === 'number' ? materialForm.value.stage_id : null,
-
     }
     if (editingMaterialId.value) {
       await updateAdminPublicMaterial(selectedCourse.value.id, editingMaterialId.value, payload)
@@ -354,158 +279,6 @@ async function removeMaterial(material: Material) {
     if (err !== 'cancel') ElMessage.error(err?.message || '删除公共资料失败')
   }
 }
-
-function openCreateQuestion() {
-  if (!selectedCourse.value) return
-  editingQuestionId.value = null
-  questionForm.value = { type: 'choice', stem: '', optionsText: '', answer: '', explanation: '', tags: [], star_rating: 3 }
-  showQuestionDialog.value = true
-}
-
-function openEditQuestion(question: Question) {
-  editingQuestionId.value = question.id
-  questionForm.value = {
-    type: question.type,
-    stem: question.stem,
-    optionsText: (question.options || []).join('\n'),
-    answer: question.answer,
-    explanation: question.explanation || '',
-    tags: [...(question.tags || [])],
-    star_rating: question.star_rating || 3,
-  }
-  showQuestionDialog.value = true
-}
-
-async function saveQuestion() {
-  if (!selectedCourse.value) return
-  if (!questionForm.value.stem.trim() || !questionForm.value.answer.trim()) {
-    ElMessage.warning('请填写题干和答案')
-    return
-  }
-  const options = questionForm.value.optionsText
-    .split('\n')
-    .map(item => item.trim())
-    .filter(Boolean)
-  if ((questionForm.value.type === 'choice' || questionForm.value.type === 'multi_choice') && options.length === 0) {
-    ElMessage.warning('选择题/多选题请至少填写一个选项')
-    return
-  }
-  saving.value = true
-  try {
-    const payload = {
-      type: questionForm.value.type,
-      stem: questionForm.value.stem.trim(),
-      options,
-      answer: questionForm.value.answer.trim(),
-      explanation: questionForm.value.explanation.trim(),
-      tags: questionForm.value.tags.map(item => item.trim()).filter(Boolean),
-      star_rating: questionForm.value.star_rating || 3,
-    }
-    if (editingQuestionId.value) {
-      await updateAdminPublicQuestion(selectedCourse.value.id, editingQuestionId.value, payload)
-      ElMessage.success('公共题目已更新，已写入全站共享题库')
-    } else {
-      await createAdminPublicQuestion(selectedCourse.value.id, payload)
-      ElMessage.success('公共题目已新增，已写入全站共享题库')
-    }
-    showQuestionDialog.value = false
-    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
-  } catch (err: any) {
-    ElMessage.error(err?.message || '保存公共题目失败')
-  } finally {
-    saving.value = false
-  }
-}
-
-function handleQuestionSelectionChange(rows: Question[]) {
-  selectedQuestions.value = rows
-}
-
-async function removeQuestion(question: Question) {
-  if (!selectedCourse.value) return
-  try {
-    await ElMessageBox.confirm(
-      '确定删除该题目吗？该题目可能由教师贡献；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。',
-      '删除题目',
-      {
-        type: 'warning',
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-      },
-    )
-    await deleteAdminPublicQuestion(selectedCourse.value.id, question.id)
-    ElMessage.success('题目已删除')
-    selectedQuestions.value = selectedQuestions.value.filter(item => item.id !== question.id)
-    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
-  } catch (err: any) {
-    if (err !== 'cancel') ElMessage.error(err?.message || '删除题目失败')
-  }
-}
-
-async function removeSelectedQuestions() {
-  if (!selectedCourse.value) return
-  const ids = selectedQuestions.value.map(item => item.id)
-  if (!ids.length) {
-    ElMessage.warning('请先勾选要删除的题目')
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确定删除已选中的 ${ids.length} 道题目吗？其中可能包含教师贡献题目；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。`,
-      '批量删除题目',
-      {
-        type: 'warning',
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-      },
-    )
-    deletingQuestions.value = true
-    const result = await batchDeleteAdminPublicQuestions(selectedCourse.value.id, ids)
-    const missing = result.missing_ids?.length || 0
-    ElMessage.success(
-      missing > 0
-        ? `已删除 ${result.deleted_count} 道题目，${missing} 道未找到`
-        : `已删除 ${result.deleted_count} 道题目`,
-    )
-    selectedQuestions.value = []
-    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
-  } catch (err: any) {
-    if (err !== 'cancel') ElMessage.error(err?.message || '批量删除题目失败')
-  } finally {
-    deletingQuestions.value = false
-  }
-}
-
-async function removeAllQuestions() {
-  if (!selectedCourse.value) return
-  const ids = questions.value.map(item => item.id)
-  if (!ids.length) {
-    ElMessage.warning('当前题库没有可删除的题目')
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      `确定一键删除当前题库全部 ${ids.length} 道题目吗？其中可能包含教师贡献题目；删除后会从全站共享题库永久移除、从作业中移除引用，并删除相关答题记录，操作不可恢复。`,
-      '一键删除全部题目',
-      {
-        type: 'warning',
-        confirmButtonText: '确定全部删除',
-        cancelButtonText: '取消',
-      },
-    )
-    deletingQuestions.value = true
-    const result = await batchDeleteAdminPublicQuestions(selectedCourse.value.id, ids)
-    ElMessage.success(`已删除 ${result.deleted_count} 道题目`)
-    selectedQuestions.value = []
-    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
-  } catch (err: any) {
-    if (err !== 'cancel') ElMessage.error(err?.message || '一键删除题目失败')
-  } finally {
-    deletingQuestions.value = false
-  }
-}
-
-// ── Excel 批量导入题目 ─────────────────────────────────────────────────
 
 const sortedStages = computed(() => [...stages.value].sort((a, b) => a.sort_order - b.sort_order))
 function stageMaterials(stageId: number) {
@@ -581,78 +354,6 @@ async function handleDeleteStage(stage: AdminCourseStage) {
   }
 }
 
-
-function openImportQuestions() {
-  if (!selectedCourse.value) return
-  importFile.value = null
-  templateType.value = 'all'
-  importDialogVisible.value = true
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-async function handleDownloadTemplate() {
-  try {
-    const blob = await downloadAdminQuestionTemplate(templateType.value)
-    const filenameMap: Record<string, string> = {
-      choice: 'admin-choice-question-template.xlsx',
-      fill: 'admin-fill-question-template.xlsx',
-      multi_choice: 'admin-multi-choice-question-template.xlsx',
-      all: 'admin-question-template.xlsx',
-    }
-    triggerDownload(blob as Blob, filenameMap[templateType.value] || 'admin-question-template.xlsx')
-  } catch {
-    ElMessage.error('模板下载失败，请稍后重试')
-  }
-}
-
-async function handleContributionPageChange(page: number) {
-  contributionPage.value = page
-  await fetchContributionLogs()
-}
-
-async function handleContributionPageSizeChange(pageSize: number) {
-  contributionPageSize.value = pageSize
-  contributionPage.value = 1
-  await fetchContributionLogs()
-}
-
-function handleImportFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  importFile.value = input.files?.[0] || null
-}
-
-async function handleImportQuestions() {
-  if (!selectedCourse.value) return
-  if (!importFile.value) {
-    ElMessage.warning('请选择文件')
-    return
-  }
-  importing.value = true
-  try {
-    const result = await importAdminPublicQuestions(selectedCourse.value.id, importFile.value)
-    ElMessage.success(`导入完成：成功 ${result.success_count} 题，跳过 ${result.skip_count} 题，失败 ${result.fail_count} 题`)
-    const importDetails = [...result.skips, ...result.errors]
-    if (importDetails.length > 0) {
-      importErrors.value = importDetails
-      importErrorDialogVisible.value = true
-    }
-    importDialogVisible.value = false
-    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
-  } catch {
-    ElMessage.error('导入失败，请检查文件格式')
-  } finally {
-    importing.value = false
-  }
-}
-
 onMounted(() => fetchCourses())
 </script>
 
@@ -661,7 +362,7 @@ onMounted(() => fetchCourses())
     <div class="page-header">
       <div>
         <h1 class="page-title">公共课程管理</h1>
-        <p class="page-subtitle">公共课程资料和题库由管理员维护；资料和阶段会同步到教师课程副本，题库为全站共享。</p>
+        <p class="page-subtitle">公共课程资料与阶段由管理员维护，会同步到教师课程副本；全站共享题库请到「共享题库」菜单维护。</p>
       </div>
       <el-button type="primary" @click="openCreateCourse">新建公共课程</el-button>
     </div>
@@ -679,7 +380,7 @@ onMounted(() => fetchCourses())
         >
           <el-table-column prop="name" label="课程名称" min-width="160" />
           <el-table-column prop="material_count" label="资料" width="80" align="center" />
-          <el-table-column prop="question_count" label="题目" width="80" align="center" />
+          <el-table-column prop="question_count" label="全站题数" width="90" align="center" />
           <el-table-column label="同步状态" width="100" align="center">
             <template #default="{ row }">
               <el-tag
@@ -721,7 +422,7 @@ onMounted(() => fetchCourses())
           <el-tabs v-model="activeTab">
             <el-tab-pane label="阶段与资料" name="stages">
               <div class="tab-toolbar stage-toolbar">
-                <span class="toolbar-tip">阶段名称与排序修改后会同步到教师课程副本</span>
+                <span class="toolbar-tip">阶段名称与排序修改后会同步到教师课程副本。题库维护请前往「共享题库」。</span>
                 <el-button type="primary" size="small" @click="openCreateMaterial(null)">新增资料</el-button>
               </div>
               <div v-loading="stageLoading" class="stage-section">
@@ -809,112 +510,6 @@ onMounted(() => fetchCourses())
                 </template>
               </el-table>
             </el-tab-pane>
-
-            <el-tab-pane label="题库管理" name="questions">
-              <div class="tab-toolbar">
-                <el-button type="primary" size="small" @click="openCreateQuestion()">新增题目</el-button>
-                <el-button size="small" @click="importDialogVisible = true">批量导入</el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  plain
-                  :disabled="!selectedQuestions.length"
-                  :loading="deletingQuestions"
-                  @click="removeSelectedQuestions"
-                >
-                  删除选中{{ selectedQuestions.length ? `（${selectedQuestions.length}）` : '' }}
-                </el-button>
-                <el-button
-                  size="small"
-                  type="danger"
-                  :disabled="!questions.length"
-                  :loading="deletingQuestions"
-                  @click="removeAllQuestions"
-                >
-                  一键删除全部
-                </el-button>
-                <span class="toolbar-tip">当前为全站共享题库，删除会影响所有课程入口</span>
-              </div>
-              <el-table
-                :data="questions"
-                v-loading="contentLoading"
-                border
-                stripe
-                style="width: 100%"
-                row-key="id"
-                @selection-change="handleQuestionSelectionChange"
-              >
-                <el-table-column type="selection" width="48" />
-                <el-table-column label="题型" width="100">
-                  <template #default="{ row }">
-                    <el-tag size="small" :type="row.type === 'choice' ? 'primary' : row.type === 'multi_choice' ? 'warning' : 'info'">
-                      {{ row.type === 'choice' ? '选择题' : row.type === 'multi_choice' ? '多选题' : '填空题' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="stem" label="题干" min-width="240" show-overflow-tooltip />
-                <el-table-column prop="answer" label="答案" width="140" show-overflow-tooltip />
-                <el-table-column label="星级" width="140">
-                  <template #default="{ row }">
-                    <el-rate :model-value="row.star_rating || 3" disabled :max="5" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="标签" min-width="160">
-                  <template #default="{ row }">
-                    <el-tag v-for="tag in (row.tags || [])" :key="tag" size="small" effect="plain" style="margin-right: 4px; margin-bottom: 2px;">{{ tag }}</el-tag>
-                    <span v-if="!row.tags || row.tags.length === 0" style="color: var(--el-text-color-placeholder)">无标签</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="140" fixed="right">
-                  <template #default="{ row }">
-                    <el-button size="small" text @click="openEditQuestion(row)">编辑</el-button>
-                    <el-button size="small" type="danger" text @click="removeQuestion(row)">删除</el-button>
-                  </template>
-                </el-table-column>
-                <template #empty>
-                  <el-empty description="暂无题目，新增后会写入全站共享题库" />
-                </template>
-              </el-table>
-            </el-tab-pane>
-
-            <el-tab-pane label="题库贡献" name="contributions">
-              <div class="tab-toolbar">
-                <span class="toolbar-tip">记录教师和管理员在公共题库中的新增与导入批次</span>
-              </div>
-              <el-table :data="contributionLogs" v-loading="contributionLoading" border stripe style="width: 100%">
-                <el-table-column prop="created_at" label="时间" width="180">
-                  <template #default="{ row }">
-                    {{ row.created_at ? new Date(row.created_at).toLocaleString('zh-CN') : '-' }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="operator_name" label="操作人" width="120" />
-                <el-table-column prop="operator_role" label="角色" width="90" />
-                <el-table-column prop="action" label="操作" width="100">
-                  <template #default="{ row }">
-                    {{ row.action === 'create' ? '新增' : row.action === 'import' ? '导入' : row.action }}
-                  </template>
-                </el-table-column>
-                <el-table-column prop="question_count" label="题数" width="80" align="center" />
-                <el-table-column prop="public_course_name" label="公共课程快照" min-width="180" show-overflow-tooltip />
-                <el-table-column prop="operator_id" label="工号" width="120" />
-                <template #empty>
-                  <el-empty description="暂无题库贡献记录" />
-                </template>
-              </el-table>
-              <div v-if="contributionTotal > contributionPageSize" class="pagination-wrap">
-                <el-pagination
-                  v-model:current-page="contributionPage"
-                  v-model:page-size="contributionPageSize"
-                  :total="contributionTotal"
-                  layout="total, sizes, prev, pager, next"
-                  :page-sizes="[10, 20, 50]"
-                  background
-                  @current-change="handleContributionPageChange"
-                  @size-change="handleContributionPageSizeChange"
-                />
-              </div>
-            </el-tab-pane>
-
           </el-tabs>
         </template>
         <el-empty v-else description="请先新建或选择一个公共课程" />
@@ -968,102 +563,11 @@ onMounted(() => fetchCourses())
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showQuestionDialog" :title="questionDialogTitle" width="620px" :close-on-click-modal="false">
-      <el-form :model="questionForm" label-width="90px">
-        <el-form-item label="题型" required>
-          <el-select v-model="questionForm.type" style="width: 160px">
-            <el-option label="选择题" value="choice" />
-            <el-option label="多选题" value="multi_choice" />
-            <el-option label="填空题" value="fill" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="题干" required>
-          <el-input v-model="questionForm.stem" type="textarea" :rows="3" placeholder="请输入题干" />
-        </el-form-item>
-        <el-form-item v-if="questionForm.type === 'choice' || questionForm.type === 'multi_choice'" label="选项">
-          <el-input v-model="questionForm.optionsText" type="textarea" :rows="4" placeholder="每行一个选项，例如：A. 图灵" />
-        </el-form-item>
-        <el-form-item label="答案" required>
-          <el-input v-model="questionForm.answer" placeholder="请输入标准答案" clearable />
-        </el-form-item>
-        <el-form-item label="课程标签">
-          <el-select
-            v-model="questionForm.tags"
-            multiple
-            filterable
-            allow-create
-            default-first-option
-            placeholder="输入标签后回车"
-            style="width: 100%"
-          />
-        </el-form-item>
-        <el-form-item label="题目星级">
-          <el-rate v-model="questionForm.star_rating" :max="5" show-score />
-        </el-form-item>
-        <el-form-item label="解析">
-          <el-input v-model="questionForm.explanation" type="textarea" :rows="3" placeholder="选填" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showQuestionDialog = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveQuestion">保存到题库</el-button>
-      </template>
-    </el-dialog>
-
     <PdfPreviewDialog
       v-model:visible="previewVisible"
       :url="previewUrl"
       :file-id="previewFileId"
     />
-
-    <!-- Excel 批量导入题目 -->
-    <el-dialog v-model="importDialogVisible" title="Excel 批量导入题目" width="560px">
-      <div class="import-info">
-        <p>请先选择模板类型并下载，再按模板填写后上传。</p>
-        <table class="format-table">
-          <thead>
-            <tr><th>题型</th><th>标签</th><th>题干</th><th>选项（选择题用 | 分隔）</th><th>答案</th><th>解析</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>choice</td><td>人工智能,基础</td><td>图灵测试由谁提出？</td><td>A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦</td><td>A</td><td>图灵提出了图灵测试。</td></tr>
-            <tr><td>multi_choice</td><td>编程基础|多选</td><td>以下哪些是编程语言？</td><td>A. Python|B. Java|C. HTML|D. C++</td><td>ABD</td><td>HTML 是标记语言，不是编程语言。</td></tr>
-            <tr><td>fill</td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
-          </tbody>
-        </table>
-        <p class="import-note">管理员导入会使用当前选中的公共课程，不需要填写课程名称；「标签」支持用逗号、顿号、|、/ 或分号分隔多个标签；题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。多选题答案列填写排序后的字母组合，如 ABD。导入后会写入全站共享题库。</p>
-      </div>
-      <div class="import-actions">
-        <div class="template-block">
-          <el-select v-model="templateType" style="width: 160px">
-            <el-option label="全部题型模板" value="all" />
-            <el-option label="选择题模板" value="choice" />
-            <el-option label="多选题模板" value="multi_choice" />
-            <el-option label="填空题模板" value="fill" />
-          </el-select>
-          <el-button class="download-btn" @click="handleDownloadTemplate">下载模板</el-button>
-        </div>
-        <div class="upload-zone" @click="importInput?.click()">
-          <input ref="importInput" type="file" accept=".xlsx,.xls" hidden @change="handleImportFileChange" />
-          <span v-if="!importFile">点击选择 Excel 文件</span>
-          <span v-else class="file-name">{{ importFile.name }}</span>
-        </div>
-      </div>
-      <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="importing" @click="handleImportQuestions">开始导入</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 导入未写入详情 -->
-    <el-dialog v-model="importErrorDialogVisible" title="导入未写入详情" width="560px">
-      <el-table :data="importErrors" stripe max-height="400">
-        <el-table-column prop="row" label="行号" width="80" />
-        <el-table-column prop="reason" label="未写入原因" />
-      </el-table>
-      <template #footer>
-        <el-button @click="importErrorDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -1142,12 +646,6 @@ onMounted(() => fetchCourses())
   font-size: 0.8125rem;
 }
 
-.pagination-wrap {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
 .upload-zone {
   padding: var(--space-xl);
   border: 2px dashed var(--color-border);
@@ -1174,98 +672,34 @@ onMounted(() => fetchCourses())
   line-height: 32px;
 }
 
-.import-info {
-  margin-bottom: var(--space-md);
-}
-
-.import-info p {
-  margin: 0 0 var(--space-sm);
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-}
-
-.import-note {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.format-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.75rem;
-  margin: var(--space-sm) 0;
-}
-
-.format-table th,
-.format-table td {
-  border: 1px solid var(--color-border);
-  padding: 0.35rem 0.5rem;
-  text-align: center;
-}
-
-.import-actions {
-  display: flex;
-  gap: var(--space-lg);
-  align-items: stretch;
-  margin-top: var(--space-md);
-  flex-wrap: wrap;
-}
-
-.template-block {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.download-btn {
-  align-self: flex-start;
-}
-
-.multi-tag {
-  margin-left: var(--space-xs);
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.readonly-text {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-
 .stage-toolbar {
   justify-content: space-between;
 }
-.toolbar-tip {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
+
 .stage-section {
   min-height: 160px;
 }
+
 .stage-add-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
 }
+
 .stage-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
+
 .stage-card {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 16px;
   background: var(--color-bg-card);
 }
+
 .stage-header {
   display: flex;
   align-items: center;
@@ -1273,6 +707,7 @@ onMounted(() => fetchCourses())
   flex-wrap: wrap;
   margin-bottom: 16px;
 }
+
 .stage-index {
   font-size: 0.7rem;
   font-weight: 700;
@@ -1281,30 +716,36 @@ onMounted(() => fetchCourses())
   color: #fff;
   border-radius: 12px;
 }
+
 .stage-index.other {
   background: var(--color-text-muted);
 }
+
 .stage-title-other {
   font-weight: 700;
   color: var(--color-text);
   margin-right: auto;
 }
+
 .stage-meta {
   color: var(--color-text-muted);
   font-size: 0.85rem;
   margin-right: auto;
 }
+
 .material-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
 }
+
 .material-card {
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 16px;
   background: var(--color-bg-card);
 }
+
 .material-card h4 {
   font-size: 0.95rem;
   font-weight: 700;
@@ -1313,11 +754,13 @@ onMounted(() => fetchCourses())
   line-height: 1.4;
   min-height: 2.8em;
 }
+
 .material-meta {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   margin-bottom: 12px;
 }
+
 .card-actions {
   display: flex;
   gap: 8px;
@@ -1332,8 +775,7 @@ onMounted(() => fetchCourses())
   .selected-header,
   .tab-toolbar,
   .stage-add-row,
-  .stage-header,
-  .import-actions {
+  .stage-header {
     align-items: stretch;
     flex-direction: column;
   }
@@ -1366,8 +808,7 @@ onMounted(() => fetchCourses())
   .stage-add-row :deep(.el-input),
   .stage-add-row :deep(.el-input-number),
   .stage-header :deep(.el-input),
-  .stage-header :deep(.el-input-number),
-  .template-block :deep(.el-select) {
+  .stage-header :deep(.el-input-number) {
     width: 100% !important;
   }
 
@@ -1377,11 +818,6 @@ onMounted(() => fetchCourses())
 
   .card-actions {
     flex-wrap: wrap;
-  }
-
-  .pagination-wrap {
-    justify-content: flex-start;
-    overflow-x: auto;
   }
 }
 </style>

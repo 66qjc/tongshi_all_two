@@ -344,14 +344,30 @@ def get_deleted_resources(
     return success(list_deleted_resources(db, resource_type, page, page_size))
 
 
-@router.post("/restore/{resource_type}/{resource_id}", summary="恢复已删除数据", description="管理员：恢复回收站中的数据")
+@router.post("/restore/{resource_type}/{resource_id}", summary="恢复已删除数据", description="管理员：恢复回收站中的数据；脱钩资料须指定 target_course_id")
 def post_restore_resource(
     resource_type: str,
     resource_id: str,
+    body: dict | None = None,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("admin")),
 ):
-    return success(restore_resource(db, resource_type, resource_id, current_user))
+    payload = body or {}
+    target_course_id = payload.get("target_course_id")
+    if target_course_id is not None:
+        try:
+            target_course_id = int(target_course_id)
+        except (TypeError, ValueError):
+            raise BusinessException(400, "目标课程 ID 无效")
+    return success(
+        restore_resource(
+            db,
+            resource_type,
+            resource_id,
+            current_user,
+            target_course_id=target_course_id,
+        )
+    )
 
 
 @router.delete("/purge/{resource_type}/{resource_id}", summary="彻底删除数据", description="管理员：彻底删除回收站中的数据")

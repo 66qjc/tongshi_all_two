@@ -111,7 +111,7 @@ const wrongQuestionGroups = computed(() => {
     if (!map.has(question.course_id)) {
       map.set(question.course_id, {
         course_id: question.course_id,
-        course_name: question.course_name || '未命名课程',
+        course_name: question.course_name || '原挂载课程已删除',
         questions: [],
       })
     }

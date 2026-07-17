@@ -4,12 +4,12 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.entities import Course, QuestionContributionLog, User
-from app.services.question_bank_service import resolve_question_bank_course
 
 
 def resolve_public_question_course(db: Session, course: Course) -> Course:
-    """将公共课程副本解析到源公共课程，私有课程保持不变。"""
-    return resolve_question_bank_course(db, course)
+    """兼容旧调用：共享题库不再依赖题库根，直接返回入参课程。"""
+    _ = db
+    return course
 
 
 def record_question_contribution(

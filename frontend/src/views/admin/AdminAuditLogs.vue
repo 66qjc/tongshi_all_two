@@ -130,11 +130,11 @@ onMounted(() => {
         <el-form-item label="操作人">
           <el-input v-model="filters.user_id" placeholder="学号/工号" clearable />
         </el-form-item>
-        <el-form-item label="动作">
-          <el-input v-model="filters.action" placeholder="如 course.delete" clearable />
+        <el-form-item label="动作代码">
+          <el-input v-model="filters.action" placeholder="筛选码，如 course.delete" clearable />
         </el-form-item>
-        <el-form-item label="资源类型">
-          <el-input v-model="filters.resource_type" placeholder="如 courses" clearable />
+        <el-form-item label="资源类型代码">
+          <el-input v-model="filters.resource_type" placeholder="筛选码，如 courses" clearable />
         </el-form-item>
         <el-form-item label="资源ID">
           <el-input v-model="filters.resource_id" placeholder="支持数字ID或学号" clearable />
@@ -164,11 +164,17 @@ onMounted(() => {
     <el-table v-loading="loading" :data="logs" border empty-text="暂无审计日志">
       <el-table-column prop="created_at" label="时间" width="180" />
       <el-table-column prop="user_id" label="操作人" width="130" />
-      <el-table-column prop="action" label="动作" width="170" />
-      <el-table-column prop="resource_type" label="资源类型" width="130" />
+      <el-table-column label="动作" width="170">
+        <template #default="{ row }">{{ row.action_name || row.action }}</template>
+      </el-table-column>
+      <el-table-column label="资源类型" width="130">
+        <template #default="{ row }">{{ row.resource_type_name || row.resource_type }}</template>
+      </el-table-column>
       <el-table-column prop="resource_id" label="资源ID" width="130" />
       <el-table-column prop="resource_name" label="资源名称" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="{ row }">{{ row.status_name || row.status }}</template>
+      </el-table-column>
       <el-table-column prop="error_message" label="错误信息" min-width="160" show-overflow-tooltip />
     </el-table>
 

@@ -71,7 +71,9 @@ class TestDeletePublicCourse:
         assert course is not None
         assert course.deleted_at is not None
 
-        # 课程级联软删班级/作业，但不处理题目
+        # 课程级联软删班级/作业，但不处理题目；活跃题库仍可见该题
+        from app.services.question_bank_service import count_all_questions, list_all_questions
+
         assert db_session.get(Class, class_id).deleted_at is not None
         assert db_session.get(Announcement, ann_id).deleted_at is not None
         surviving_question = db_session.get(Question, question_id)
@@ -79,6 +81,8 @@ class TestDeletePublicCourse:
         assert surviving_question.deleted_at is None
         assert surviving_question.course_id == course_id
         assert surviving_question.created_by == "admin"
+        assert question_id in {item.id for item in list_all_questions(db_session).all()}
+        assert count_all_questions(db_session) >= 1
         assert db_session.get(QuizAttempt, attempt_id) is not None
         assert db_session.get(Announcement, ann_id).question_ids == [question_id]
 
@@ -136,6 +140,28 @@ class TestDeletePublicCourse:
 
         db_session.refresh(deleted_copy)
         assert deleted_copy.question_bank_root_course_id == public_course.id
+        assert db_session.get(Course, public_course.id).deleted_at is not None
+
+    def test_active_question_bank_root_reference_does_not_block_delete(self, db_session):
+        """活跃课程仍引用历史 root 时，公共课也必须可软删。"""
+        from app.services.admin_public_course_service import delete_public_course
+
+        public_course = Course(name="活跃根引用公共课", created_by="admin", is_public=True)
+        db_session.add(public_course)
+        db_session.flush()
+
+        active_copy = Course(
+            name="仍活跃并引用历史根",
+            created_by="T001",
+            question_bank_root_course_id=public_course.id,
+        )
+        db_session.add(active_copy)
+        db_session.commit()
+
+        assert delete_public_course(db_session, public_course.id) is True
+        db_session.refresh(active_copy)
+        assert active_copy.deleted_at is None
+        assert active_copy.question_bank_root_course_id == public_course.id
         assert db_session.get(Course, public_course.id).deleted_at is not None
 
     def test_delete_public_material_soft_deletes_and_preserves_file_preview(self, db_session):

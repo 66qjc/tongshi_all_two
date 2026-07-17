@@ -1,4 +1,5 @@
 import http from './http'
+import type { Question } from './question'
 
 export function submitAnswer(questionId: number, userAnswer: string, announcementId?: number | null) {
   return http.post<any, any>('/quiz/submit', {
@@ -17,5 +18,10 @@ export function getQuizStats() {
 }
 
 export function getCourseQuizStats(courseId: number) {
-  return http.get<any, { course_id: number; questions_done: number; accuracy: number }>(`/quiz/stats/${courseId}`)
+  return http.get<any, { course_id: number; questions_done: number; accuracy: number; total_questions?: number }>(`/quiz/stats/${courseId}`)
+}
+
+/** 学生全局自由练习题池（隐藏答案与解析） */
+export function getPracticeQuestions(params?: { ids?: string; random?: number }) {
+  return http.get<any, Question[]>('/quiz/questions', { params })
 }

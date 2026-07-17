@@ -42,12 +42,8 @@ const form = reactive({
   tags: [] as string[],
   star_rating: 3,
 })
-
-function hasTag(row: Question, tag: string) {
-  const keyword = tag.trim().toLowerCase()
-  if (!keyword) return true
-  return (row.tags || []).some(item => item.toLowerCase().includes(keyword))
-}
+/** 编辑时若挂载课已软删且不在可写列表，展示只读原挂载信息，不强迫改挂 */
+const deletedMountLabel = ref('')
 
 function getQuestionTagType(type: Question['type']) {
   if (type === 'choice') return 'primary'
@@ -67,11 +63,12 @@ async function loadQuestions() {
     const result = await getQuestions({
       type: filterType.value || undefined,
       keyword: debouncedKeyword.value || undefined,
+      tag: filterTag.value.trim() || undefined,
       page: page.value,
       page_size: pageSize.value,
     })
-    questions.value = result.items.filter(item => hasTag(item, filterTag.value))
-    total.value = filterTag.value ? questions.value.length : result.total
+    questions.value = result.items
+    total.value = result.total
   } catch {
     ElMessage.error('题目加载失败，请稍后重试')
   } finally {
@@ -94,6 +91,7 @@ function handlePageChange(newPage: number) {
 
 function openNew() {
   editingId.value = null
+  deletedMountLabel.value = ''
   const defaultCourse = writableCourses.value.length === 1 ? writableCourses.value[0]?.id : undefined
   Object.assign(form, {
     course_id: defaultCourse ?? '',
@@ -110,8 +108,13 @@ function openNew() {
 
 function openEdit(row: Question) {
   editingId.value = row.id
+  const mountStillWritable = writableCourses.value.some(course => course.id === row.course_id)
+  deletedMountLabel.value = mountStillWritable
+    ? ''
+    : (row.course_name ? `挂载课程（已删除）：${row.course_name}` : '挂载课程（已删除）')
   Object.assign(form, {
-    course_id: row.course_id,
+    // 挂载课已删时保留原 course_id，用户主动选择活跃自有课才改挂
+    course_id: mountStillWritable ? row.course_id : (row.course_id ?? ''),
     type: row.type,
     stem: row.stem,
     options: row.options?.length ? [...row.options] : ['', '', '', ''],
@@ -125,7 +128,7 @@ function openEdit(row: Question) {
 
 async function handleSave() {
   if (typeof form.course_id !== 'number') {
-    ElMessage.warning('请选择所属课程')
+    ElMessage.warning(editingId.value && deletedMountLabel.value ? '请选择要改挂的活跃自有课程，或取消后保持原挂载' : '请选择所属课程')
     return
   }
   if (!form.stem.trim() || !form.answer.trim()) {
@@ -322,7 +325,14 @@ onMounted(async () => {
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑题目' : '新增题目'" width="560px">
       <div class="form-group">
         <label>所属课程</label>
-        <el-select v-model="form.course_id" placeholder="请选择课程" size="large" style="width: 100%">
+        <p v-if="deletedMountLabel" class="deleted-mount-hint">{{ deletedMountLabel }}。如需改挂，请在下方选择活跃自有课程。</p>
+        <el-select
+          v-model="form.course_id"
+          :placeholder="deletedMountLabel ? '可选：改挂到活跃自有课程' : '请选择课程'"
+          size="large"
+          style="width: 100%"
+          clearable
+        >
           <el-option v-for="course in writableCourses" :key="course.id" :label="course.name" :value="course.id" />
         </el-select>
       </div>
@@ -523,6 +533,13 @@ onMounted(async () => {
   font-size: 0.75rem;
   font-weight: 600;
   color: #d97706;
+}
+
+.deleted-mount-hint {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 .readonly-text {

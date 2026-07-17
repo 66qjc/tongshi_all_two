@@ -568,10 +568,29 @@ class TestTeacherRefactor:
         assert copied_material.source_material_id == source_material.id
         assert copied_material.deleted_at is None
 
-        # 全站共享题库：公共课删除不转挂、不软删题目
+        # 全站共享题库：公共课删除不转挂、不软删题目，且题库查询仍可见
+        from app.services.question_bank_service import count_all_questions, list_all_questions
+
         surviving = db_session.query(Question).filter(Question.id == question_id).one()
         assert surviving.deleted_at is None
         assert surviving.course_id == public_course_id
+        listed_ids = {item.id for item in list_all_questions(db_session).all()}
+        assert question_id in listed_ids
+        assert count_all_questions(db_session) >= 1
+
+        # 仍可通过其他活跃公共课入口管理该题
+        other_public = client.post(
+            "/api/admin/public-courses",
+            json={"name": "删课后仍可管理入口"},
+            headers=auth_header(admin_token),
+        ).json()
+        other_id = other_public["data"]["id"]
+        list_resp = client.get(
+            f"/api/admin/public-courses/{other_id}/questions",
+            headers=auth_header(admin_token),
+        ).json()
+        assert list_resp["code"] == 0
+        assert any(item["id"] == question_id for item in list_resp["data"])
 
     def test_teacher_can_delete_owned_course_copy_without_affecting_public_source(self, client, db_session, teacher_token):
         admin_token = client.post(

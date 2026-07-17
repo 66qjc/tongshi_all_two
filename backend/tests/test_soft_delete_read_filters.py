@@ -196,7 +196,8 @@ def test_admin_public_course_queries_hide_soft_deleted_courses(db_session):
     db_session.add_all([live, deleted])
     db_session.commit()
 
-    courses = admin_public_course_service.list_public_courses.__wrapped__(db_session)
+    # 无效 ORM 缓存装饰器已移除，直接调用服务函数。
+    courses = admin_public_course_service.list_public_courses(db_session)
     assert live in courses
     assert deleted not in courses
     assert admin_public_course_service.get_course_by_id(db_session, deleted.id) is None
@@ -448,7 +449,7 @@ def test_admin_public_course_sync_status_excludes_shared_questions_from_sync_den
 
 
 def test_shared_question_helpers_ignore_soft_deleted_questions_and_courses(db_session):
-    """共享题库列表、统计和查重都只处理活跃题目及活跃课程。"""
+    """共享题库列表、统计和查重只过滤题目自身软删；挂载课软删不得隐藏题目。"""
     active_course = Course(name="活跃共享题课程", created_by="T001")
     deleted_course = Course(
         name="已删共享题课程",
@@ -485,11 +486,12 @@ def test_shared_question_helpers_ignore_soft_deleted_questions_and_courses(db_se
     listed_ids = {item.id for item in list_all_questions(db_session).all()}
     assert active.id in listed_ids
     assert deleted_question.id not in listed_ids
-    assert deleted_course_question.id not in listed_ids
+    # 挂载课程软删后，题目只要自身未删就仍属活跃共享题库
+    assert deleted_course_question.id in listed_ids
     assert count_all_questions(db_session) == len(listed_ids)
     fingerprints = collect_question_fingerprints(db_session)
     assert all(fingerprint[1] != "共享题软删题干" for fingerprint in fingerprints)
-    assert all(fingerprint[1] != "共享题已删课程题干" for fingerprint in fingerprints)
+    assert any(fingerprint[1] == "共享题已删课程题干" for fingerprint in fingerprints)
     assert find_duplicate_question(
         db_session,
         "fill",
@@ -503,13 +505,13 @@ def test_shared_question_helpers_ignore_soft_deleted_questions_and_courses(db_se
         "共享题已删课程题干",
         [],
         "课程软删",
-    ) is None
+    ) is not None
     assert find_same_stem_question(db_session, "共享题软删题干") is None
-    assert find_same_stem_question(db_session, "共享题已删课程题干") is None
+    assert find_same_stem_question(db_session, "共享题已删课程题干") is not None
 
 
 def test_admin_question_update_rejects_soft_deleted_question_and_course(db_session):
-    """管理员不能更新软删除题目，也不能更新归属软删除课程的题目。"""
+    """管理员不能更新软删除题目；挂载课程软删后仍可维护未删共享题。"""
     course = Course(name="管理端题目软删课", created_by="admin", is_public=True)
     db_session.add(course)
     db_session.flush()
@@ -538,11 +540,13 @@ def test_admin_question_update_rejects_soft_deleted_question_and_course(db_sessi
     ) is None
     course.deleted_at = datetime.now(timezone.utc)
     db_session.commit()
-    assert admin_public_course_service.update_public_question(
+    updated = admin_public_course_service.update_public_question(
         db_session,
         live_question.id,
-        {"stem": "课程删除后不应更新"},
-    ) is None
+        {"stem": "课程删除后仍可更新"},
+    )
+    assert updated is not None
+    assert updated.stem == "课程删除后仍可更新"
 
 
 def test_list_announcements_hides_soft_deleted_assignment(db_session):

@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import or_
+from sqlalchemy import String, cast, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.cache import cache_result, invalidate_cache
+from app.core.cache import invalidate_cache
 from app.core.exceptions import BusinessException
 from app.models.entities import Class, Course, Material, Question, StudentClassEnrollment
 from app.services.public_course_sync_service import mirror_public_course_content
@@ -34,19 +34,25 @@ def list_questions(
     keyword: str | None = None,
     page: int | None = None,
     page_size: int | None = None,
+    tag: str | None = None,
 ):
-    # 全站共享题库：所有课程看到的是同一套题，不再按 course_id 过滤。
-    # course_id 入参保留兼容旧调用，但不参与过滤。
+    # 全站共享题库：所有课程看到同一套活跃题；course_id 入参仅兼容旧调用。
+    # teacher_id 仅供路由层标记 is_owner，不参与查询过滤。
+    # 活跃性只看题目自身 deleted_at，课程软删不得隐藏题目。
+    _ = (course_id, teacher_id)
     query = (
         db.query(Question)
         .options(joinedload(Question.creator), joinedload(Question.course))
-        .join(Course, Course.id == Question.course_id)
-        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+        .filter(Question.deleted_at.is_(None))
     )
     if type_ is not None:
         query = query.filter(Question.type == type_)
     if keyword:
         query = query.filter(Question.stem.ilike(f"%{keyword.strip()}%"))
+    tag_keyword = (tag or "").strip()
+    if tag_keyword:
+        # JSON 数组标签：文本包含模糊匹配，必须在分页前过滤以保持 total 正确。
+        query = query.filter(cast(Question.tags, String).ilike(f"%{tag_keyword}%"))
     total = query.count()
     if page and page_size:
         questions = query.order_by(Question.id).offset((page - 1) * page_size).limit(page_size).all()
@@ -81,7 +87,11 @@ def _row_value(row: dict, *keys: str):
 
 
 def get_question(db: Session, question_id: int, teacher_id: str | None = None):
-    query = db.query(Question).join(Course, Course.id == Question.course_id).filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None)).filter(Question.id == question_id)
+    query = (
+        db.query(Question)
+        .options(joinedload(Question.creator), joinedload(Question.course))
+        .filter(Question.deleted_at.is_(None), Question.id == question_id)
+    )
     if teacher_id is not None:
         query = query.filter(Question.created_by == teacher_id)
     return query.first()
@@ -123,12 +133,17 @@ def create_question(db: Session, data: dict, teacher_id: str):
 
     # 创建题目，添加创建人和哈希
     # 先从 data 中移除可能冲突的字段，然后显式设置
-    question_data = {k: v for k, v in data.items() if k not in ["created_by", "stem_hash", "star_rating"]}
+    question_data = {
+        k: v
+        for k, v in data.items()
+        if k not in ["created_by", "stem_hash", "star_rating", "mount_course_name_snapshot"]
+    }
     q = Question(
         **question_data,
         created_by=teacher_id,
         stem_hash=stem_hash,
         star_rating=data.get("star_rating", 3),  # 默认3星
+        mount_course_name_snapshot=course.name or "",
     )
     db.add(q)
     db.flush()
@@ -207,10 +222,9 @@ def get_course_questions(db: Session, course_id: int, student_user_id: str | Non
     if not course:
         return []
 
-    query = (
-        db.query(Question)
-        .join(Course, Course.id == Question.course_id)
-        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+    # 活跃题只看题目自身；学生侧再按挂载课程是否公共或是否在活跃选课中过滤。
+    query = db.query(Question).outerjoin(Course, Course.id == Question.course_id).filter(
+        Question.deleted_at.is_(None),
     )
     if student_user_id is not None:
         from app.services.access_control_service import student_has_active_course_enrollment
@@ -218,9 +232,13 @@ def get_course_questions(db: Session, course_id: int, student_user_id: str | Non
 
         if not student_has_active_course_enrollment(db, student_user_id):
             return []
-        student_course_ids = _student_active_course_ids(db, student_user_id)
+        student_course_ids = _student_active_course_ids(db, student_user_id) or [-1]
         query = query.filter(
-            or_(Course.is_public.is_(True), Question.course_id.in_(student_course_ids))
+            or_(
+                Question.course_id.is_(None),
+                Course.is_public.is_(True),
+                Question.course_id.in_(student_course_ids),
+            )
         )
     return query.order_by(Question.id).all()
 
@@ -307,6 +325,11 @@ def update_course(db: Session, course_id: int, name: str, teacher_id: str, descr
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
+    # 课程改名时同步活跃挂载题名称快照，便于后续脱钩展示
+    db.query(Question).filter(
+        Question.course_id == course.id,
+        Question.deleted_at.is_(None),
+    ).update({Question.mount_course_name_snapshot: name}, synchronize_session=False)
     if description is not None:
         course.description = description
     if is_public is not None:
@@ -335,9 +358,11 @@ def delete_course(db: Session, course_id: int, teacher_id: str):
     return course
 
 
-@cache_result("course:detail:{course_id}", ttl=300)
 def get_course_detail(db: Session, course_id: int, teacher_id: str | None = None):
-    """获取课程详情（缓存5分钟）"""
+    """获取课程详情。
+
+    不再缓存 ORM 返回值：实体绑定 Session，JSON 缓存无效且键不稳定。
+    """
     query = db.query(Course).filter(Course.id == course_id, Course.deleted_at.is_(None))
     if teacher_id is not None:
         query = query.filter(_course_access_filter(teacher_id))
@@ -414,6 +439,7 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
                 created_by=teacher_id,
                 stem_hash=stem_hash,
                 star_rating=3,
+                mount_course_name_snapshot=course.name or "",
             )
             db.add(q)
             db.flush()

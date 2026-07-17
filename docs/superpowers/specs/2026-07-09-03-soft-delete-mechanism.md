@@ -1,5 +1,9 @@
 # 软删除机制设计
 
+> **已废止（部分）：** 文中“删除课程前先转挂共享题到其他未删除课程 / 题库根”的现行规则已废止。
+> **现行规则：** 删课不转挂、不软删、不隐藏共享题；活跃共享题只看 `Question.deleted_at`；课程仅是挂载上下文，物理清理时允许 `course_id` 等引用脱钩。
+> **依据：** `docs/superpowers/specs/2026-07-15-unified-soft-delete-business-rules-design.md`、`docs/superpowers/plans/2026-07-17-shared-question-bank-followups.md`。
+
 ## 一、背景与目标
 
 ### 当前问题

@@ -24,6 +24,8 @@ ACTION_LABELS: dict[str, str] = {
     "material.restore": "恢复资料",
     "project.delete": "删除作品",
     "project.restore": "恢复作品",
+    "question.create": "创建题目",
+    "question.update": "更新题目",
     "question.delete": "删除题目",
     "question.restore": "恢复题目",
     "user.delete": "删除用户",
@@ -107,6 +109,10 @@ def create_audit_log(
     error_message: str | None = None,
 ) -> AuditLog:
     """创建审计日志，调用方负责提交事务。"""
+    # error_message 列最长 512；长堆栈只截断入库，完整原因可放 details
+    safe_error = error_message
+    if safe_error is not None and len(safe_error) > 512:
+        safe_error = safe_error[:509] + "..."
     log = AuditLog(
         user_id=user.id if user else user_id,
         user_role=user.role if user else user_role,
@@ -118,7 +124,7 @@ def create_audit_log(
         ip_address=ip_address,
         user_agent=user_agent,
         status=status,
-        error_message=error_message,
+        error_message=safe_error,
     )
     db.add(log)
     return log

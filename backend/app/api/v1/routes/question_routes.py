@@ -54,17 +54,35 @@ def _format_question(q, current_user_id: str | None = None, *, include_answer: b
     return data
 
 
-@router.get("", summary="题目列表", description="按课程和题型筛选题目，支持分页和关键词搜索")
+@router.get(
+    "",
+    summary="题目列表",
+    description="全站共享题库列表：按题型和关键词筛选，支持分页。"
+    " course_id 仅为兼容旧调用参数，不再按课程筛选。",
+)
 def get_questions(
     type: Optional[str] = None,
-    course_id: Optional[int] = None,
+    course_id: Optional[int] = Query(
+        default=None,
+        description="兼容参数：历史客户端可能仍传课程 ID，服务端忽略，不按课程过滤",
+    ),
     keyword: Optional[str] = None,
+    tag: Optional[str] = Query(default=None, description="标签关键词，分页前过滤"),
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    questions, total = list_questions(db, course_id, type, current_user.id, keyword, page, page_size)
+    questions, total = list_questions(
+        db,
+        course_id,
+        type,
+        current_user.id,
+        keyword,
+        page,
+        page_size,
+        tag=tag,
+    )
     return paginated_success([_format_question(q, current_user.id) for q in questions], total, page, page_size)
 
 

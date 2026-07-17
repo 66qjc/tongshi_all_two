@@ -36,7 +36,9 @@ def test_course_soft_delete_keeps_question_course_and_creator(
     db_session,
     teacher_token,
 ):
-    """软删除课程时保留题目的原课程归属与创建人。"""
+    """软删除课程时保留题目的原课程归属与创建人，且共享题库仍可见。"""
+    from app.services.question_bank_service import count_all_questions, list_all_questions
+
     admin_token = _admin_token(client)
     material = Material(course_id=1, type="pdf", title="测试资料", url="/x.pdf")
     question = Question(
@@ -50,6 +52,7 @@ def test_course_soft_delete_keeps_question_course_and_creator(
     db_session.add_all([material, question])
     db_session.commit()
     question_id = question.id
+    count_before = count_all_questions(db_session)
 
     resp = client.delete("/api/courses/1", headers=auth_header(teacher_token)).json()
     deleted_classes = client.get("/api/admin/deleted/classes", headers=auth_header(admin_token)).json()
@@ -57,6 +60,7 @@ def test_course_soft_delete_keeps_question_course_and_creator(
     deleted_questions = client.get("/api/admin/deleted/questions", headers=auth_header(admin_token)).json()
     db_session.expire_all()
     stored_question = db_session.get(Question, question_id)
+    listed_ids = {item.id for item in list_all_questions(db_session).all()}
 
     assert resp["code"] == 0
     assert any(item["id"] == 1 for item in deleted_classes["data"]["items"])
@@ -65,6 +69,14 @@ def test_course_soft_delete_keeps_question_course_and_creator(
     assert stored_question.deleted_at is None
     assert stored_question.course_id == 1
     assert stored_question.created_by == "T001"
+    assert question_id in listed_ids
+    assert count_all_questions(db_session) == count_before
+
+    # 教师题库列表也应继续看到该共享题
+    teacher_list = client.get("/api/questions", headers=auth_header(teacher_token)).json()
+    assert teacher_list["code"] == 0
+    teacher_items = teacher_list["data"]["items"] if isinstance(teacher_list["data"], dict) else teacher_list["data"]
+    assert any(item["id"] == question_id for item in teacher_items)
 
     restore_resp = client.post("/api/admin/restore/courses/1", headers=auth_header(admin_token)).json()
     db_session.expire_all()

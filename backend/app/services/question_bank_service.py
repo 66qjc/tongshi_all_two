@@ -7,7 +7,6 @@ import re
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import BusinessException
 from app.models.entities import Course, Question
 
 
@@ -17,12 +16,12 @@ def compute_stem_hash(stem: str) -> str:
 
 
 def _active_questions_query(db: Session):
-    """返回题目和所属课程均未软删除的共享题库查询。"""
-    return (
-        db.query(Question)
-        .join(Course, Course.id == Question.course_id)
-        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
-    )
+    """返回未软删除的共享题库查询。
+
+    活跃性只看题目自身的 deleted_at。课程仅是挂载上下文，
+    课程软删除不得隐藏、转挂或误伤共享题目。
+    """
+    return db.query(Question).filter(Question.deleted_at.is_(None))
 
 
 def find_same_stem_question(
@@ -30,7 +29,7 @@ def find_same_stem_question(
     stem: str,
     exclude_question_id: int | None = None,
 ) -> Question | None:
-    """按兼容哈希语义查找同题干题目，仅检查活跃题目和活跃课程。"""
+    """按兼容哈希语义查找同题干题目，仅检查活跃题目。"""
     normalized_stem = normalize_question_stem(stem)
     stem_hash = compute_stem_hash(stem)
     query = _active_questions_query(db).filter(
@@ -45,69 +44,24 @@ def find_same_stem_question(
 
 
 def resolve_question_bank_course(db: Session, course: Course) -> Course:
-    """解析课程所属的共享题库根课程。"""
-    if course.question_bank_root_course_id is None:
-        return course
-    root = db.query(Course).filter(
-        Course.id == course.question_bank_root_course_id,
-        Course.deleted_at.is_(None),
-    ).first()
-    return root or course
+    """历史兼容：共享题库已不再依赖题库根课程。
+
+    直接返回入参课程本身；调用方不得再把 root 当作题目归属依据。
+    """
+    _ = db
+    return course
 
 
 def get_shared_question_bank_root_course(db: Session) -> Course | None:
-    """获取当前系统内的共享题库根课程。"""
-    root = db.query(Course).filter(
-        Course.question_bank_root_course_id.is_(None),
-        Course.deleted_at.is_(None),
-    ).order_by(
-        Course.is_public.desc(),
-        Course.id.asc(),
-    ).first()
-    if root:
-        return root
-
-    referenced_root_id = db.query(Course.question_bank_root_course_id).filter(
-        Course.question_bank_root_course_id.isnot(None),
-        Course.deleted_at.is_(None),
-    ).order_by(Course.id.asc()).first()
-    if referenced_root_id and referenced_root_id[0] is not None:
-        return db.query(Course).filter(
-            Course.id == referenced_root_id[0],
-            Course.deleted_at.is_(None),
-        ).first()
+    """历史兼容：题库根语义已退役，固定返回 None。"""
+    _ = db
     return None
 
 
 def get_question_bank_course(db: Session, course: Course | None) -> Course | None:
-    if course is None:
-        return get_shared_question_bank_root_course(db)
-    return resolve_question_bank_course(db, course)
-
-
-def rehome_questions_before_course_delete(db: Session, course: Course) -> Course | None:
-    """删除课程前把有效共享题转挂到另一门未删除课程。"""
-    questions = db.query(Question).filter(
-        Question.course_id == course.id,
-        Question.deleted_at.is_(None),
-    ).all()
-    if not questions:
-        return None
-
-    target = db.query(Course).filter(
-        Course.id != course.id,
-        Course.deleted_at.is_(None),
-    ).order_by(
-        Course.is_public.desc(),
-        Course.id.asc(),
-    ).first()
-    if target is None:
-        raise BusinessException(400, "当前没有可承接共享题库的课程，暂时无法删除该课程")
-
-    for question in questions:
-        question.course_id = target.id
-    db.flush()
-    return target
+    """历史兼容：无课程上下文时不再回落到系统根课。"""
+    _ = db
+    return course
 
 
 def normalize_question_stem(stem: str) -> str:

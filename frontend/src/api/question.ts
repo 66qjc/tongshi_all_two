@@ -9,8 +9,10 @@ export interface Course {
 export interface Question {
   id: number
   type: 'choice' | 'fill' | 'multi_choice'
-  course_id: number
+  course_id: number | null
   course_name: string
+  mount_course_state?: 'active' | 'soft_deleted' | 'purged' | 'none' | null
+  mount_course_name_snapshot?: string | null
   stem: string
   options: string[]
   answer: string
@@ -40,6 +42,7 @@ export function getQuestions(params?: {
   type?: string
   course_id?: number
   keyword?: string
+  tag?: string
   page?: number
   page_size?: number
 }) {

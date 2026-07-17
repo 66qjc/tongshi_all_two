@@ -5,9 +5,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from app.core.cache import cache_result, invalidate_cache
+from app.core.cache import invalidate_cache
 from app.core.exceptions import BusinessException
 from app.models.entities import Course, CourseStage, Material, Question, StoredFile
 from app.schemas.common import AuthUser
@@ -67,9 +67,11 @@ def _validate_stage_id(db: Session, course_id: int, stage_id: int | None) -> Non
         raise BusinessException(400, "阶段不存在或不属于该课程")
 
 
-@cache_result("course:public:list", ttl=300)
 def list_public_courses(db: Session) -> list[Course]:
-    """获取公共课程列表（缓存5分钟）"""
+    """获取公共课程列表。
+
+    不再使用 ORM 对象缓存：返回值含 Session 绑定实体，JSON 缓存无效且键不稳定。
+    """
     return db.query(Course).filter(
         Course.is_public.is_(True),
         Course.deleted_at.is_(None),
@@ -122,14 +124,11 @@ def get_course_sync_status(db: Session, course: Course) -> dict:
 def create_public_course(db: Session, name: str, admin_id: str, description: str = "") -> Course:
     if db.query(Course).filter(Course.name == name, Course.created_by == admin_id).first():
         raise BusinessException(400, "公共课程已存在")
+    # 不再写入 question_bank_root_course_id；该列仅兼容保留，不参与业务。
     course = Course(name=name, created_by=admin_id, description=(description or "").strip(), is_public=True)
     db.add(course)
     db.commit()
     db.refresh(course)
-    if course.question_bank_root_course_id is None:
-        course.question_bank_root_course_id = course.id
-        db.commit()
-        db.refresh(course)
     # 清除公共课程列表缓存
     invalidate_cache("course:public:*")
     return course
@@ -142,6 +141,10 @@ def update_public_course(db: Session, course_id: int, name: str, description: st
     course.name = name.strip()
     if description is not None:
         course.description = description.strip()
+    db.query(Question).filter(
+        Question.course_id == course.id,
+        Question.deleted_at.is_(None),
+    ).update({Question.mount_course_name_snapshot: course.name}, synchronize_session=False)
     sync_course_name_to_copies(db, course)
     db.commit()
     db.refresh(course)
@@ -150,23 +153,17 @@ def update_public_course(db: Session, course_id: int, name: str, description: st
     return course
 
 
-def delete_public_course(db: Session, course_id: int) -> bool:
+def delete_public_course(db: Session, course_id: int, operator: AuthUser | None = None) -> bool:
     """软删除公共课程，不转挂题目，不破坏阶段/同步引用。"""
     course = _get_public_course(db, course_id)
     if not course:
         return False
-    # 全站共享题库：被删课程若是其他活跃课程的共享根，阻止删除，避免题库失效
-    is_referenced_root = db.query(Course).filter(
-        Course.question_bank_root_course_id == course.id,
-        Course.id != course.id,
-        Course.deleted_at.is_(None),
-    ).first() is not None
-    if is_referenced_root:
-        raise BusinessException(400, "该课程是共享题库根课程，请先迁移题库根后再删除")
+    # 历史字段 question_bank_root_course_id 不再阻断删除；共享题独立于课程生命周期。
+    actor = operator or AuthUser(id="admin", name="", role="admin")
     soft_delete(
         db,
         course,
-        AuthUser(id="admin", name="", role="admin"),
+        actor,
         action="course.delete",
     )
     db.commit()
@@ -189,14 +186,13 @@ def get_public_question(db: Session, question_id: int) -> Question | None:
     """查询共享题库题目。
 
     管理端题库页展示的是全站共享题，不再要求题目必须挂在公共课程上。
+    活跃性只看题目自身 deleted_at，课程软删不得隐藏题目。
     """
     return (
         db.query(Question)
-        .join(Course, Course.id == Question.course_id)
         .filter(
             Question.id == question_id,
             Question.deleted_at.is_(None),
-            Course.deleted_at.is_(None),
         )
         .first()
     )
@@ -258,7 +254,7 @@ def update_public_material(db: Session, material_id: int, data: dict) -> Materia
     return material
 
 
-def delete_public_material(db: Session, material_id: int) -> bool:
+def delete_public_material(db: Session, material_id: int, operator: AuthUser | None = None) -> bool:
     """软删除公共资料，保留文件、预览与教师副本引用。"""
     material = db.query(Material).join(Course, Course.id == Material.course_id).filter(
         Material.id == material_id,
@@ -268,10 +264,11 @@ def delete_public_material(db: Session, material_id: int) -> bool:
     ).first()
     if not material:
         return False
+    actor = operator or AuthUser(id="admin", name="", role="admin")
     soft_delete(
         db,
         material,
-        AuthUser(id="admin", name="", role="admin"),
+        actor,
         action="material.delete",
     )
     db.commit()
@@ -282,11 +279,12 @@ def list_public_questions(db: Session, course_id: int) -> list[Question]:
     course = _get_public_course(db, course_id)
     if not course:
         raise BusinessException(404, "公共课程不存在")
-    # 全站共享题库：任意公共课程题库页都返回全站同一套活跃题
+    # 全站共享题库：任意公共课程题库页都返回全站同一套活跃题。
+    # 课程只是管理入口，不得因挂载课软删而过滤题目。
     return (
         db.query(Question)
-        .join(Course, Course.id == Question.course_id)
-        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
+        .options(joinedload(Question.creator), joinedload(Question.course))
+        .filter(Question.deleted_at.is_(None))
         .order_by(Question.id)
         .all()
     )
@@ -298,7 +296,10 @@ def create_public_question(
     data: dict,
     operator_id: str | None = None,
     operator_role: str = "admin",
+    operator: AuthUser | None = None,
 ) -> Question:
+    from app.services.audit_service import create_audit_log
+
     course = _get_public_course(db, course_id)
     if not course:
         raise BusinessException(404, "公共课程不存在")
@@ -317,27 +318,44 @@ def create_public_question(
     )
     if duplicate:
         raise BusinessException(400, "题库中已存在相同题目")
-    # 题目原地保存，course_id 写所选公共课程
+    actor_id = operator.id if operator else operator_id
+    # 题目原地保存，course_id 写所选公共课程，并固化挂载名称快照
     question = Question(
         course_id=course.id,
-        created_by=operator_id,
+        created_by=actor_id,
         stem_hash=stem_hash,
+        mount_course_name_snapshot=course.name or "",
         **data,
     )
     db.add(question)
     db.flush()
-    if operator_id:
-        record_question_contribution(db, course, operator_id, operator_role, "create", 1)
+    if actor_id:
+        record_question_contribution(db, course, actor_id, operator_role, "create", 1)
+    create_audit_log(
+        db,
+        user=operator or AuthUser(id=actor_id or "admin", name="", role=operator_role),
+        action="question.create",
+        resource_type="questions",
+        resource_id=question.id,
+        resource_name=(question.stem or "")[:256],
+        details={"入口课程ID": course.id, "挂载课程ID": question.course_id},
+    )
     db.commit()
     db.refresh(question)
     return question
 
 
-def update_public_question(db: Session, question_id: int, data: dict) -> Question | None:
-    question = db.query(Question).join(Course, Course.id == Question.course_id).filter(
+def update_public_question(
+    db: Session,
+    question_id: int,
+    data: dict,
+    operator: AuthUser | None = None,
+) -> Question | None:
+    from app.services.audit_service import create_audit_log
+
+    question = db.query(Question).filter(
         Question.id == question_id,
         Question.deleted_at.is_(None),
-        Course.deleted_at.is_(None),
     ).first()
     if not question:
         return None
@@ -372,28 +390,46 @@ def update_public_question(db: Session, question_id: int, data: dict) -> Questio
         if value is not None and hasattr(question, key):
             setattr(question, key, _normalize_tags(value) if key == "tags" else value)
     question.stem_hash = stem_hash
+    create_audit_log(
+        db,
+        user=operator or AuthUser(id="admin", name="", role="admin"),
+        action="question.update",
+        resource_type="questions",
+        resource_id=question.id,
+        resource_name=(question.stem or "")[:256],
+        details={"挂载课程ID": question.course_id},
+    )
     # 全站共享题库：题目不再复制到教师副本，无需同步
     db.commit()
     db.refresh(question)
     return question
 
 
-def delete_public_question(db: Session, question_id: int) -> bool:
+def delete_public_question(
+    db: Session,
+    question_id: int,
+    operator: AuthUser | None = None,
+) -> bool:
     """软删除共享题库题目，保留答题记录与作业题目列表。"""
     question = get_public_question(db, question_id)
     if not question:
         return False
+    actor = operator or AuthUser(id="admin", name="", role="admin")
     soft_delete(
         db,
         question,
-        AuthUser(id="admin", name="", role="admin"),
+        actor,
         action="question.delete",
     )
     db.commit()
     return True
 
 
-def delete_public_questions(db: Session, question_ids: list[int]) -> dict:
+def delete_public_questions(
+    db: Session,
+    question_ids: list[int],
+    operator: AuthUser | None = None,
+) -> dict:
     """批量软删除共享题库题目。"""
     unique_ids = []
     seen = set()
@@ -412,11 +448,9 @@ def delete_public_questions(db: Session, question_ids: list[int]) -> dict:
 
     questions = (
         db.query(Question)
-        .join(Course, Course.id == Question.course_id)
         .filter(
             Question.id.in_(unique_ids),
             Question.deleted_at.is_(None),
-            Course.deleted_at.is_(None),
         )
         .all()
     )
@@ -425,9 +459,9 @@ def delete_public_questions(db: Session, question_ids: list[int]) -> dict:
     if not found_ids:
         raise BusinessException(404, "未找到可删除的题目")
 
-    operator = AuthUser(id="admin", name="", role="admin")
+    actor = operator or AuthUser(id="admin", name="", role="admin")
     for question in questions:
-        soft_delete(db, question, operator, action="question.delete")
+        soft_delete(db, question, actor, action="question.delete")
     db.commit()
     return {
         "deleted_count": len(found_ids),
@@ -527,6 +561,7 @@ def import_questions_to_public_course(
                 options=option_list, answer=answer, explanation=explanation, tags=tags,
                 created_by=operator_id,
                 stem_hash=stem_hash,
+                mount_course_name_snapshot=course.name or "",
             )
             db.add(question)
             db.flush()

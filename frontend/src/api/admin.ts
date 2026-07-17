@@ -105,6 +105,8 @@ export interface DeletedResourceItem {
     name: string
     deleted_at: string
     deleted_by: string | null
+    course_id?: number | null
+    needs_target_course?: boolean
 }
 
 export interface DeletedResourcePage {
@@ -119,13 +121,16 @@ export interface AuditLogItem {
     user_id: string | null
     user_role: string | null
     action: string
+    action_name?: string | null
     resource_type: string | null
+    resource_type_name?: string | null
     resource_id: string | null
     resource_name: string | null
     details: Record<string, unknown>
     ip_address: string | null
     user_agent: string | null
     status: string
+    status_name?: string | null
     error_message: string | null
     created_at: string
 }
@@ -141,8 +146,12 @@ export function getDeletedResources(resourceType: string, page = 1, pageSize = 2
     return http.get<any, DeletedResourcePage>(`/admin/deleted/${resourceType}`, { params: { page, page_size: pageSize } })
 }
 
-export function restoreDeletedResource(resourceType: string, id: number | string) {
-    return http.post<any, DeletedResourceItem>(`/admin/restore/${resourceType}/${id}`)
+export function restoreDeletedResource(
+    resourceType: string,
+    id: number | string,
+    payload?: { target_course_id?: number },
+) {
+    return http.post<any, DeletedResourceItem>(`/admin/restore/${resourceType}/${id}`, payload || {})
 }
 
 export function purgeDeletedResource(resourceType: string, id: number | string) {

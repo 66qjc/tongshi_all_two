@@ -79,6 +79,7 @@ def test_free_practice_blocks_soft_deleted_question(db_session):
 
 
 def test_free_practice_blocks_soft_deleted_course_question(db_session):
+    """私有挂载课软删后，学生自由练习不可见也不可提交。"""
     course = db_session.query(Course).filter(Course.name == "测试课程").first()
     question = db_session.query(Question).filter(Question.course_id == course.id).first()
     course.deleted_at = datetime.now(timezone.utc)
@@ -86,6 +87,52 @@ def test_free_practice_blocks_soft_deleted_course_question(db_session):
 
     with pytest.raises(BusinessException) as exc:
         submit_answer(db_session, "2025001", question.id, "B", role="student")
+    assert exc.value.code == 404
+
+
+def test_free_practice_allows_public_question_after_mount_course_soft_delete(db_session):
+    """公共挂载课软删后，已选课学生仍可列出并提交该共享题。"""
+    from app.services.quiz_service import _visible_question_ids_for_student
+
+    public_course = Course(name="软删公共挂载课", created_by="admin", is_public=True)
+    db_session.add(public_course)
+    db_session.flush()
+    public_q = _add_question(db_session, public_course.id, "软删公共挂载共享题", answer="A")
+    public_course.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    visible_ids = {row[0] for row in _visible_question_ids_for_student(db_session, "2025001").all()}
+    assert public_q.id in visible_ids
+
+    # 通过仍活跃的课程入口拉题，应包含该公共挂载共享题
+    live_course = db_session.query(Course).filter(Course.name == "测试课程").first()
+    listed_ids = {q.id for q in get_course_questions(db_session, live_course.id, student_user_id="2025001")}
+    assert public_q.id in listed_ids
+
+    result = submit_answer(db_session, "2025001", public_q.id, "A", role="student")
+    assert result["is_correct"] is True
+    assert result["correct_answer"] == "A"
+
+
+def test_free_practice_blocks_public_question_without_enrollment_after_mount_soft_delete(db_session):
+    """公共挂载课软删后，无活跃选课学生仍不可提交。"""
+    lonely = User(
+        id="2025098",
+        name="无课学生B",
+        hashed_password="hash",
+        role="student",
+        major="测试",
+    )
+    db_session.add(lonely)
+    public_course = Course(name="无课学生公共挂载", created_by="admin", is_public=True)
+    db_session.add(public_course)
+    db_session.flush()
+    public_q = _add_question(db_session, public_course.id, "无课不可见公共题", answer="A")
+    public_course.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    with pytest.raises(BusinessException) as exc:
+        submit_answer(db_session, "2025098", public_q.id, "A", role="student")
     assert exc.value.code == 404
 
 
@@ -190,3 +237,72 @@ def test_student_course_questions_include_public_bank_only(client, student_token
     )
     ids = {item["id"] for item in resp.json()["data"]}
     assert public_q.id in ids
+
+
+def test_null_mount_shared_question_visible_to_enrolled_student(db_session):
+    """课程物理清理后 course_id 为空的共享题，有活跃选课学生仍可提交。"""
+    from app.services.quiz_service import submit_answer
+
+    question = Question(
+        course_id=None,
+        type="choice",
+        stem="空挂载共享题",
+        options=["A", "B"],
+        answer="A",
+        created_by="admin",
+        mount_course_name_snapshot="已清理公共课",
+    )
+    db_session.add(question)
+    db_session.commit()
+
+    result = submit_answer(db_session, "2025001", question.id, "A", "student")
+    assert result["is_correct"] is True
+
+
+def test_null_mount_shared_question_blocked_without_enrollment(db_session):
+    """无活跃选课时，空挂载共享题不可提交。"""
+    from app.core.exceptions import BusinessException
+    from app.services.quiz_service import submit_answer
+
+    # 2025002 仅加入其它课程；先清空其选课以模拟无活跃选课
+    from app.models.entities import StudentClassEnrollment
+
+    db_session.query(StudentClassEnrollment).filter(
+        StudentClassEnrollment.user_id == "2025002"
+    ).delete()
+    question = Question(
+        course_id=None,
+        type="choice",
+        stem="无选课空挂载题",
+        options=["A", "B"],
+        answer="B",
+        created_by="admin",
+    )
+    db_session.add(question)
+    db_session.commit()
+
+    with pytest.raises(BusinessException) as exc:
+        submit_answer(db_session, "2025002", question.id, "B", "student")
+    assert exc.value.code == 404
+
+
+def test_teacher_cannot_use_student_quiz_submit_route(client, teacher_token, db_session):
+    """教师不得复用学生 /quiz/submit 获取答案与解析。"""
+    question = db_session.query(Question).first()
+    resp = client.post(
+        "/api/quiz/submit",
+        json={"question_id": question.id, "user_answer": "B"},
+        headers={"Authorization": f"Bearer {teacher_token}"},
+    )
+    body = resp.json()
+    # 本项目 BusinessException 统一 HTTP 200，权限拒绝看业务 code
+    assert body["code"] == 403
+    assert "student" in body["message"] or "学生" in body["message"]
+
+
+def test_admin_cannot_use_student_quiz_stats_route(client, db_session):
+    admin_token = client.post("/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
+    resp = client.get("/api/quiz/stats", headers={"Authorization": f"Bearer {admin_token}"})
+    body = resp.json()
+    assert body["code"] == 403
+    assert "student" in body["message"] or "学生" in body["message"]

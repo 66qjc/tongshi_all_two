@@ -64,13 +64,19 @@ def _format_course_batch(db: Session, courses: list[Course], current_user: AuthU
         return []
     material_counts = _count_by_course(
         db.query(Material.course_id, func.count(Material.id))
-        .filter(Material.course_id.in_(course_ids))
+        .filter(
+            Material.course_id.in_(course_ids),
+            Material.deleted_at.is_(None),
+        )
         .group_by(Material.course_id)
         .all()
     )
     class_query = (
         db.query(Class.course_id, func.count(Class.id))
-        .filter(Class.course_id.in_(course_ids))
+        .filter(
+            Class.course_id.in_(course_ids),
+            Class.deleted_at.is_(None),
+        )
     )
     if current_user.role == "teacher":
         class_query = class_query.filter(Class.created_by == current_user.id)

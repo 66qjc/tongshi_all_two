@@ -2,8 +2,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getCourseQuestions, type Question } from '@/api/question'
-import { submitAnswer as apiSubmitAnswer } from '@/api/quiz'
+import type { Question } from '@/api/question'
+import { getPracticeQuestions, submitAnswer as apiSubmitAnswer } from '@/api/quiz'
 import { loadQuizDraft, saveQuizDraft, clearQuizDraft } from '@/composables/useQuizDraft'
 import { getAnnouncementQuestions, recordCompletion } from '@/api/announcement'
 
@@ -55,25 +55,23 @@ function shuffle<T>(arr: T[]): T[] {
   return a
 }
 
-watch([courseId, announcementId], async () => {
+watch([courseId, announcementId, questionIds, randomCount], async () => {
   loading.value = true
   loadError.value = ''
   try {
-    if (!announcementId.value && !courseId.value) {
-      mockQuestions.value = []
-      loadError.value = '无效的课程链接'
-      return
-    }
     let qs: Question[]
     if (announcementId.value) {
       const data = await getAnnouncementQuestions(announcementId.value)
       assignmentTitle.value = data.announcement.title
       qs = data.questions
     } else {
-      qs = await getCourseQuestions(courseId.value!, questionIds.value?.join(','))
-      // 自由练习：随机选取指定数量题目
-      if (randomCount.value && !questionIds.value) {
-        qs = shuffle(qs).slice(0, randomCount.value)
+      // 自由练习：全局题池，不再依赖 courseId
+      qs = await getPracticeQuestions({
+        ids: questionIds.value?.join(','),
+        random: randomCount.value || undefined,
+      })
+      if (!qs.length) {
+        loadError.value = '你尚未加入课程，或当前没有可练习的题目'
       }
     }
     mockQuestions.value = qs
@@ -111,8 +109,8 @@ watch(mockQuestions, (qs) => {
     resetState()
     return
   }
-  const draft = loadQuizDraft(courseId.value)
-  if (draft && draft.courseId === courseId.value) {
+  const draft = loadQuizDraft(null, 'global')
+  if (draft && draft.scope === 'global-practice') {
     // 恢复已答状态
     const restoredAnswers: (string | null)[] = qs.map(() => null)
     const restoredResults: (boolean | null)[] = qs.map(() => null)
@@ -193,7 +191,7 @@ async function submitAnswer() {
       return
     }
     practiceFinished.value = true
-    clearQuizDraft(courseId.value)
+    clearQuizDraft(null, 'global')
     return
   }
   submitted.value = true
@@ -276,7 +274,8 @@ async function finishPractice() {
     }
   }
   practiceFinished.value = true
-  clearQuizDraft(courseId.value)
+  if (!isAssignmentMode.value) clearQuizDraft(null, 'global')
+  else clearQuizDraft(courseId.value)
 }
 
 // 自由练习没有作业上下文，全部答完后直接展示总结。
@@ -286,11 +285,10 @@ watch(allDone, (done) => {
   }
 })
 
-/** 保存当前答题草稿到 localStorage */
+/** 保存当前答题草稿到 localStorage（自由练习用全局键） */
 function persistDraft() {
+  if (isAssignmentMode.value) return
   const qs = mockQuestions.value
-  const currentCourseId = courseId.value
-  if (!currentCourseId) return
   const answeredIds: number[] = []
   const answersMap: Record<number, string> = {}
   const resultsMap: Record<number, boolean> = {}
@@ -304,13 +302,14 @@ function persistDraft() {
     }
   })
   saveQuizDraft({
-    courseId: currentCourseId,
+    courseId: null,
+    scope: 'global-practice',
     currentQuestionId: qs[currentIndex.value]?.id ?? null,
     answeredQuestionIds: answeredIds,
     answers: answersMap,
     results: resultsMap,
     updatedAt: Date.now(),
-  })
+  }, 'global')
 }
 
 async function backToPrevious() {
@@ -318,7 +317,6 @@ async function backToPrevious() {
   if (isAssignmentMode.value && allDone.value && !practiceFinished.value && announcementId.value) {
     await recordCompletion(announcementId.value).catch(() => {})
     practiceFinished.value = true
-    clearQuizDraft(courseId.value)
   }
   if (window.history.length > 1) {
     router.back()

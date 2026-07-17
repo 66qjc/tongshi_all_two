@@ -763,3 +763,185 @@ def test_admin_batch_delete_shared_questions(client, db_session, teacher_token):
     rows = db_session.query(Question).filter(Question.id.in_(ids)).all()
     assert len(rows) == 2
     assert all(row.deleted_at is not None for row in rows)
+
+
+def test_teacher_can_edit_own_question_when_mount_course_soft_deleted(
+    client,
+    db_session,
+    teacher_token,
+):
+    """教师可编辑自己创建、挂载课已软删且题目未删的共享题，不必改挂。"""
+    from datetime import datetime, timezone
+
+    course_id = _create_teacher_course(client, teacher_token, "待软删挂载课")
+    created = client.post(
+        "/api/questions",
+        json={
+            "course_id": course_id,
+            "type": "fill",
+            "stem": "挂载课软删后仍可编辑",
+            "options": [],
+            "answer": "原答案",
+            "explanation": "",
+            "tags": [],
+            "star_rating": 3,
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+    assert created["code"] == 0
+    question_id = created["data"]["id"]
+
+    course = db_session.get(Course, course_id)
+    course.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    # 接口要求 course_id；不改挂时继续提交原挂载课 ID（即使该课已软删）
+    response = client.put(
+        f"/api/questions/{question_id}",
+        json={
+            "course_id": course_id,
+            "type": "fill",
+            "stem": "挂载课软删后已更新题干",
+            "options": [],
+            "answer": "新答案",
+            "explanation": "仅改内容",
+            "tags": ["软删挂载"],
+            "star_rating": 5,
+        },
+        headers=auth_header(teacher_token),
+    )
+    data = response.json()
+    assert response.status_code == 200, data
+    assert data["code"] == 0
+    # 教师编辑接口成功时可能只返回 ok，以库内状态为准
+    db_session.expire_all()
+    stored = db_session.get(Question, question_id)
+    assert stored.stem == "挂载课软删后已更新题干"
+    assert stored.answer == "新答案"
+    assert stored.star_rating == 5
+    assert stored.course_id == course_id
+    assert stored.deleted_at is None
+
+
+def test_create_rejects_same_stem_on_soft_deleted_mount_course(client, teacher_token, db_session):
+    """新增撞上挂载课已软删但仍活跃的同题干时，必须判重拒绝。"""
+    from datetime import datetime, timezone
+
+    course_a = _create_teacher_course(client, teacher_token, "同干挂载课A")
+    course_b = _create_teacher_course(client, teacher_token, "同干挂载课B")
+    first = client.post(
+        "/api/questions",
+        json={
+            "course_id": course_a,
+            "type": "fill",
+            "stem": "挂载课软删后仍占题干",
+            "options": [],
+            "answer": "答案",
+            "explanation": "",
+            "tags": [],
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+    assert first["code"] == 0
+
+    course = db_session.get(Course, course_a)
+    course.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    second = client.post(
+        "/api/questions",
+        json={
+            "course_id": course_b,
+            "type": "fill",
+            "stem": "挂载课软删后仍占题干",
+            "options": [],
+            "answer": "答案",
+            "explanation": "",
+            "tags": [],
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+    assert second["code"] == 400
+    assert "相同题目" in second["message"]
+
+
+def test_admin_create_rejects_same_stem_on_soft_deleted_mount_course(client, teacher_token, db_session):
+    """管理员新增撞上已软删挂载课上的活跃同题干时，必须判重拒绝。"""
+    from datetime import datetime, timezone
+
+    admin_token = _admin_token(client)
+    public_course_id = _create_public_course(client, admin_token, "管理新增判重公共课")
+    teacher_course_id = _create_teacher_course(client, teacher_token, "管理新增判重挂课")
+    first = client.post(
+        "/api/questions",
+        json={
+            "course_id": teacher_course_id,
+            "type": "choice",
+            "stem": "管理端撞软删挂载同干",
+            "options": ["A", "B"],
+            "answer": "A",
+            "explanation": "",
+            "tags": [],
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+    assert first["code"] == 0
+
+    course = db_session.get(Course, teacher_course_id)
+    course.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    second = client.post(
+        f"/api/admin/public-courses/{public_course_id}/questions",
+        json={
+            "type": "choice",
+            "stem": "管理端撞软删挂载同干",
+            "options": ["A", "B"],
+            "answer": "A",
+            "explanation": "",
+            "tags": [],
+        },
+        headers=auth_header(admin_token),
+    ).json()
+    assert second["code"] == 400
+    assert "相同题目" in second["message"]
+
+
+def test_admin_question_delete_audit_uses_real_operator(client, db_session, teacher_token):
+    """管理员删题审计必须记录真实操作者，不得写死 admin 字符串身份。"""
+    from app.models.entities import AuditLog
+
+    admin_token = _admin_token(client)
+    public_course_id = _create_public_course(client, admin_token, "审计身份公共课")
+    teacher_course_id = _create_teacher_course(client, teacher_token, "审计身份挂课")
+    created = client.post(
+        "/api/questions",
+        json={
+            "course_id": teacher_course_id,
+            "type": "fill",
+            "stem": "审计身份待删题",
+            "options": [],
+            "answer": "A",
+            "explanation": "",
+            "tags": [],
+        },
+        headers=auth_header(teacher_token),
+    ).json()
+    assert created["code"] == 0
+    question_id = created["data"]["id"]
+
+    delete_resp = client.delete(
+        f"/api/admin/public-courses/{public_course_id}/questions/{question_id}",
+        headers=auth_header(admin_token),
+    )
+    assert delete_resp.json()["code"] == 0
+
+    audit = (
+        db_session.query(AuditLog)
+        .filter(AuditLog.action == "question.delete", AuditLog.resource_id == str(question_id))
+        .order_by(AuditLog.id.desc())
+        .first()
+    )
+    assert audit is not None
+    assert audit.user_id == "admin"
+    assert audit.user_role == "admin"

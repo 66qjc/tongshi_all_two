@@ -16,31 +16,31 @@ from app.services.task_service import get_accessible_assignment, validate_assign
 
 
 def _active_question_query(db: Session):
-    """仅查询未软删题目及其所属活跃课程。"""
-    return (
-        db.query(Question)
-        .join(Course, Course.id == Question.course_id)
-        .filter(Question.deleted_at.is_(None), Course.deleted_at.is_(None))
-    )
+    """仅查询未软删题目。课程软删不得让共享题消失。"""
+    return db.query(Question).filter(Question.deleted_at.is_(None))
 
 
 def _student_can_access_question(db: Session, user_id: str, question: Question) -> bool:
     """学生自由练习可见范围：活跃选课 + 公共共享题库（公共课挂载题）。
 
     - 私有课题目：仅当学生加入该题所属活跃课程时可见
-    - 公共课题目：任一活跃选课学生可练（全站共享题库）
-    - 题目或所属课程已软删：不可见
+    - 公共课题目（含挂载课已软删的历史公共挂载）：任一活跃选课学生可练
+    - 空挂载共享题（课程已物理清理）：任一活跃选课学生可练
+    - 题目本身已软删：不可见
     """
     if question.deleted_at is not None:
         return False
-    course = db.query(Course).filter(
-        Course.id == question.course_id,
-        Course.deleted_at.is_(None),
-    ).first()
+    if question.course_id is None:
+        return student_has_active_course_enrollment(db, user_id)
+    course = db.query(Course).filter(Course.id == question.course_id).first()
     if not course:
-        return False
+        # 挂载行已物理删除但 course_id 尚未置空的兼容路径
+        return student_has_active_course_enrollment(db, user_id)
+    # 挂载课程曾是公共课：共享题库语义继续可见，不因课程进回收站而消失。
     if course.is_public:
         return student_has_active_course_enrollment(db, user_id)
+    if course.deleted_at is not None:
+        return False
     return student_can_access_course(db, user_id, question.course_id)
 
 
@@ -52,20 +52,21 @@ def submit_answer(
     role: str = "student",
     announcement_id: int | None = None,
 ):
+    if role != "student":
+        raise BusinessException(403, "仅学生可提交练习答案")
     question = _active_question_query(db).filter(Question.id == question_id).first()
     if not question:
         raise BusinessException(404, "题目不存在")
-    if role == "student":
-        if announcement_id is not None:
-            ann = get_accessible_assignment(db, user_id, announcement_id)
-            if not ann:
-                raise BusinessException(404, "题目任务不存在")
-            validate_assignment_available(ann)
-            question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
-            if question.id not in question_ids:
-                raise BusinessException(404, "题目不存在")
-        elif not _student_can_access_question(db, user_id, question):
+    if announcement_id is not None:
+        ann = get_accessible_assignment(db, user_id, announcement_id)
+        if not ann:
+            raise BusinessException(404, "题目任务不存在")
+        validate_assignment_available(ann)
+        question_ids = ann.question_ids if isinstance(ann.question_ids, list) else []
+        if question.id not in question_ids:
             raise BusinessException(404, "题目不存在")
+    elif not _student_can_access_question(db, user_id, question):
+        raise BusinessException(404, "题目不存在")
 
     if question.type == "multi_choice":
         user_sorted = "".join(sorted(user_answer.strip().upper()))
@@ -143,19 +144,52 @@ def _student_active_course_ids(db: Session, user_id: str) -> list[int]:
 
 
 def _visible_question_ids_for_student(db: Session, user_id: str):
-    """学生自由练习可见题目：所属活跃私有课 或 全站公共课挂载题。"""
+    """学生自由练习可见题目：活跃私有课 + 公共挂载共享题 + 空挂载共享题。
+
+    公共课挂载题即使挂载课程已软删，只要题目本身未删，仍计入共享题库。
+    课程物理清理后 course_id 为空的共享题，对有活跃选课的学生继续可见。
+    """
     if not student_has_active_course_enrollment(db, user_id):
         return db.query(Question.id).filter(False)
-    student_course_ids = _student_active_course_ids(db, user_id)
+    student_course_ids = _student_active_course_ids(db, user_id) or [-1]
     return (
         db.query(Question.id)
-        .join(Course, Course.id == Question.course_id)
+        .outerjoin(Course, Course.id == Question.course_id)
         .filter(
             Question.deleted_at.is_(None),
-            Course.deleted_at.is_(None),
-            or_(Course.is_public.is_(True), Question.course_id.in_(student_course_ids)),
+            or_(
+                Question.course_id.is_(None),
+                Course.is_public.is_(True),
+                Question.course_id.in_(student_course_ids),
+            ),
         )
     )
+
+
+def list_visible_practice_questions(
+    db: Session,
+    user_id: str,
+    *,
+    ids: list[int] | None = None,
+    random_count: int | None = None,
+) -> list[Question]:
+    """学生全局可见题池：始终隐藏答案/解析由路由层处理。"""
+    visible_ids_query = _visible_question_ids_for_student(db, user_id)
+    query = (
+        db.query(Question)
+        .filter(Question.id.in_(visible_ids_query), Question.deleted_at.is_(None))
+        .order_by(Question.id)
+    )
+    questions = query.all()
+    if ids:
+        id_set = set(ids)
+        questions = [q for q in questions if q.id in id_set]
+    if random_count and random_count > 0 and not ids:
+        import random as _random
+
+        if len(questions) > random_count:
+            questions = _random.sample(questions, random_count)
+    return questions
 
 
 def get_quiz_stats(db: Session, user_id: str):
@@ -260,23 +294,41 @@ def get_wrong_questions(db: Session, user_id: str):
     for a in attempts:
         if a.question and a.question.course_id is not None:
             course_ids_for_names.add(a.question.course_id)
+    # 历史挂载课即使软删也要读出名称，避免错题本显示空名。
     courses = (
         db.query(Course)
-        .filter(Course.id.in_(course_ids_for_names), Course.deleted_at.is_(None))
+        .filter(Course.id.in_(course_ids_for_names))
         .all()
         if course_ids_for_names
         else []
     )
-    course_names = {course.id: course.name for course in courses}
+    course_meta = {
+        course.id: {
+            "name": course.name,
+            "deleted": course.deleted_at is not None,
+        }
+        for course in courses
+    }
     result = []
     for a in attempts:
         q = a.question
         if not q:
             continue
+        meta = course_meta.get(q.course_id)
+        snapshot = (getattr(q, "mount_course_name_snapshot", None) or "").strip()
+        if meta is None:
+            if q.course_id is None:
+                course_name = snapshot or "独立题库"
+            else:
+                course_name = snapshot or "原挂载课程已删除"
+        elif meta["deleted"]:
+            course_name = f"{meta['name']}（已删除）" if meta["name"] else (snapshot or "原挂载课程已删除")
+        else:
+            course_name = meta["name"] or snapshot or ""
         result.append({
             "question_id": q.id,
             "course_id": q.course_id,
-            "course_name": course_names.get(q.course_id, ""),
+            "course_name": course_name,
             "type": q.type,
             "stem": q.stem,
             "options": q.options,

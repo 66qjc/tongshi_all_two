@@ -47,11 +47,26 @@ function handleResourceChange() {
 
 async function handleRestore(row: DeletedResourceItem) {
   try {
-    await restoreDeletedResource(resourceType.value, row.id)
+    let payload: { target_course_id?: number } | undefined
+    // 资料课程已物理清理后 course_id 为空，恢复前必须选择目标课程
+    if (resourceType.value === 'materials' && (row.needs_target_course || row.course_id == null)) {
+      const { value } = await ElMessageBox.prompt(
+        '原课程已清理，请输入要恢复到的活跃课程 ID',
+        '选择恢复课程',
+        {
+          confirmButtonText: '恢复',
+          cancelButtonText: '取消',
+          inputPattern: /^\d+$/,
+          inputErrorMessage: '请输入有效的课程 ID',
+        },
+      )
+      payload = { target_course_id: Number(value) }
+    }
+    await restoreDeletedResource(resourceType.value, row.id, payload)
     ElMessage.success('已恢复该数据')
     await loadData()
-  } catch {
-    ElMessage.error('恢复失败，请稍后重试')
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error('恢复失败，请稍后重试')
   }
 }
 

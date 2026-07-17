@@ -72,8 +72,11 @@ class Course(Base):
     name = Column(String(128), nullable=False)
     created_by = Column(String(32), ForeignKey("users.id"), nullable=False, index=True)
     is_public = Column(Boolean, nullable=False, default=False, index=True)
-    source_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
-    question_bank_root_course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
+    source_course_id = Column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
+    # 历史兼容列：业务已退役，父课程物理删除时置空。
+    question_bank_root_course_id = Column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
     description = Column(Text, default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     deleted_at = Column(DateTime, nullable=True, index=True)
@@ -84,10 +87,9 @@ class Course(Base):
     stages = relationship(
         "CourseStage", back_populates="course", cascade="all, delete-orphan",
         order_by="CourseStage.sort_order")
-    materials = relationship(
-        "Material", back_populates="course", cascade="all, delete-orphan")
-    questions = relationship(
-        "Question", back_populates="course", cascade="all, delete-orphan")
+    # 资料/题目在父课程物理删除时由数据库 SET NULL 脱钩，禁止 ORM cascade 误删。
+    materials = relationship("Material", back_populates="course")
+    questions = relationship("Question", back_populates="course")
     lessons = relationship(
         "Lesson", back_populates="course", cascade="all, delete-orphan",
         order_by="Lesson.sort_order")
@@ -186,8 +188,9 @@ class LessonProgress(Base):
 class Material(Base):
     __tablename__ = "materials"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    course_id = Column(Integer, ForeignKey(
-        "courses.id"), nullable=False, index=True)
+    # 可空：课程物理清理后脱钩；恢复时必须重新指定活跃课程。
+    course_id = Column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
     type = Column(String(16), nullable=False)
     title = Column(String(128), nullable=False)
     url = Column(String(512), default="")
@@ -242,8 +245,9 @@ class Question(Base):
     __tablename__ = "questions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     type = Column(String(16), nullable=False)
-    course_id = Column(Integer, ForeignKey(
-        "courses.id"), nullable=False, index=True)
+    # 可空：课程物理清理后挂载脱钩；活跃性仍只看 deleted_at。
+    course_id = Column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
     stem = Column(Text, nullable=False)
     options = Column(JSON, default=list)
     answer = Column(String(128), nullable=False)
@@ -255,6 +259,8 @@ class Question(Base):
     created_by = Column(String(32), ForeignKey("users.id"), nullable=True, index=True)
     star_rating = Column(Integer, nullable=False, default=3)  # 1-5星，默认3星
     stem_hash = Column(String(64), nullable=True, index=True)  # 规范化题干 SHA-256，用于防重复
+    # 挂载课程名称快照：课程改名时同步，课程物理清理前固化。
+    mount_course_name_snapshot = Column(String(128), nullable=True, default="")
     deleted_at = Column(DateTime, nullable=True, index=True)
     deleted_by = Column(String(32), nullable=True, index=True)
 
@@ -267,7 +273,8 @@ class QuestionContributionLog(Base):
     __tablename__ = "question_contribution_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    public_course_id = Column(Integer, nullable=False, index=True)
+    # 可空：独立题库贡献无公共课程上下文
+    public_course_id = Column(Integer, nullable=True, index=True)
     public_course_name = Column(String(128), nullable=False, default="")
     operator_id = Column(String(32), nullable=False, index=True)
     operator_name = Column(String(64), nullable=False, default="")
@@ -308,7 +315,8 @@ class Project(Base):
     title = Column(String(128), nullable=False)
     author_id = Column(String(32), ForeignKey(
         "users.id"), nullable=False, index=True)
-    course_id = Column(Integer, ForeignKey("courses.id"), nullable=True, index=True)
+    course_id = Column(
+        Integer, ForeignKey("courses.id", ondelete="SET NULL"), nullable=True, index=True)
     major = Column(String(64), default="")
     description = Column(Text, default="")
     tags = Column(JSON, default=list)

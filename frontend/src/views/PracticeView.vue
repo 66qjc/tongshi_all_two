@@ -3,34 +3,27 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCourseList, type Course } from '@/api/course'
 import { getAnnouncements, type Announcement } from '@/api/announcement'
-import { getCourseQuizStats } from '@/api/quiz'
+import { getQuizStats } from '@/api/quiz'
 
 const router = useRouter()
 const courses = ref<Course[]>([])
 const announcements = ref<Announcement[]>([])
-const courseStats = ref<Map<number, { done: number; accuracy: number }>>(new Map())
+const globalStats = ref({ total_questions: 0, questions_done: 0, accuracy: 0, today_count: 0 })
 const loading = ref(true)
 const courseHint = ref<string | null>(null)
 
 async function loadData() {
   loading.value = true
   try {
-    const [courseResult, a] = await Promise.all([getCourseList(), getAnnouncements()])
+    const [courseResult, a, stats] = await Promise.all([
+      getCourseList(),
+      getAnnouncements(),
+      getQuizStats().catch(() => ({ total_questions: 0, questions_done: 0, accuracy: 0, today_count: 0 })),
+    ])
     courses.value = courseResult.courses
     courseHint.value = courseResult.hint
     announcements.value = a
-    const statsMap = new Map<number, { done: number; accuracy: number }>()
-    await Promise.all(
-      courses.value.map(async (co) => {
-        try {
-          const s = await getCourseQuizStats(co.id)
-          statsMap.set(co.id, { done: s.questions_done, accuracy: s.accuracy })
-        } catch {
-          // 单个课程统计失败不影响课程入口展示。
-        }
-      }),
-    )
-    courseStats.value = statsMap
+    globalStats.value = stats
   } finally {
     loading.value = false
   }
@@ -39,6 +32,7 @@ async function loadData() {
 onMounted(loadData)
 
 const emptyText = computed(() => courseHint.value || '暂无已加入的课程')
+const noEnrollment = computed(() => !loading.value && courses.value.length === 0)
 
 const courseAssignmentStats = computed(() => {
   const map = new Map<number, { completed: number; pending: number; expired: number }>()
@@ -57,8 +51,8 @@ function goToAssignments(courseId: number, status: string) {
   router.push(`/practice/assignments?course_id=${courseId}&status=${status}`)
 }
 
-function goToFreePractice(courseId: number) {
-  router.push(`/practice/quiz/${courseId}?random=10`)
+function goToFreePractice() {
+  router.push('/practice/quiz?random=10')
 }
 </script>
 
@@ -77,7 +71,7 @@ function goToFreePractice(courseId: number) {
             />
           </div>
           <h1>思 · 深化理解</h1>
-          <p>完成老师发布的作业练习，也可以围绕已加入课程自由练习。</p>
+          <p>完成老师发布的作业练习，也可以进入全站共享题池自由练习。</p>
         </div>
       </div>
     </section>
@@ -85,6 +79,34 @@ function goToFreePractice(courseId: number) {
     <div v-if="loading" class="empty-state">加载中...</div>
 
     <template v-else>
+      <section class="section-block free-section">
+        <div class="container">
+          <h2 class="section-title">自由练习</h2>
+          <div v-if="noEnrollment" class="empty-hint">你尚未加入课程</div>
+          <div v-else class="global-practice-card">
+            <div class="global-stats">
+              <div class="stat-item">
+                <span class="stat-num">{{ globalStats.total_questions }}</span>
+                <span class="stat-label">可见题数</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">{{ globalStats.questions_done }}</span>
+                <span class="stat-label">已完成</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">{{ globalStats.accuracy }}%</span>
+                <span class="stat-label">正确率</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-num">{{ globalStats.today_count }}</span>
+                <span class="stat-label">今日作答</span>
+              </div>
+            </div>
+            <button class="go-btn" @click="goToFreePractice">进入全局练习</button>
+          </div>
+        </div>
+      </section>
+
       <section class="section-block">
         <div class="container">
           <h2 class="section-title">作业</h2>
@@ -104,23 +126,6 @@ function goToFreePractice(courseId: number) {
                     含 {{ courseAssignmentStats.get(c.id)?.expired }} 个已过期
                   </span>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="section-block free-section">
-        <div class="container">
-          <h2 class="section-title">自由练习</h2>
-          <div v-if="courses.length === 0" class="empty-hint">{{ emptyText }}</div>
-          <div v-else class="card-grid">
-            <div v-for="c in courses" :key="c.id" class="free-card">
-              <h3>{{ c.name }}</h3>
-              <div class="free-row">
-                <span class="free-stat">已完成 {{ courseStats.get(c.id)?.done ?? 0 }} 次</span>
-                <span class="free-stat">题目 {{ c.question_count }} 题</span>
-                <button class="go-btn" @click="goToFreePractice(c.id)">去练习</button>
               </div>
             </div>
           </div>
@@ -170,11 +175,11 @@ function goToFreePractice(courseId: number) {
 
 .card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-md); }
 
-.hw-card, .free-card {
+.hw-card {
   padding: var(--space-lg); background: var(--color-bg-card);
   border: 1px solid var(--color-border); border-radius: var(--radius-md);
 }
-.hw-card h3, .free-card h3 {
+.hw-card h3 {
   font-family: var(--font-sans); font-size: var(--text-card-title); font-weight: 800;
   line-height: var(--leading-compact); color: var(--color-text); margin-bottom: var(--space-md); letter-spacing: 0;
 }
@@ -188,30 +193,42 @@ function goToFreePractice(courseId: number) {
 .hw-stat.done:hover { background: rgba(16,185,129,0.15); }
 .hw-stat.pending { background: rgba(245,158,11,0.08); }
 .hw-stat.pending:hover { background: rgba(245,158,11,0.15); }
-.hw-num { display: block; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-.hw-stat.done .hw-num { color: #10b981; }
-.hw-stat.pending .hw-num { color: #f59e0b; }
-.hw-label { font-size: 0.75rem; color: var(--color-text-muted); }
+.hw-num { display: block; font-size: 1.4rem; font-weight: 800; }
+.hw-label { font-size: 0.85rem; color: var(--color-text-secondary); }
+.hw-expired-tip { display: block; font-size: 0.75rem; color: var(--color-danger, #dc2626); margin-top: 2px; }
 
-.hw-expired-tip {
-  display: block;
-  font-size: 0.65rem;
-  color: var(--color-text-muted);
-  margin-top: 2px;
+.global-practice-card {
+  padding: var(--space-xl);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
 }
-
-.free-row { display: flex; align-items: center; gap: var(--space-md); }
-.free-stat { font-size: 0.8rem; color: var(--color-text-secondary); }
-
+.global-stats { display: flex; gap: var(--space-xl); flex-wrap: wrap; }
+.stat-item { text-align: center; min-width: 72px; }
+.stat-num { display: block; font-size: 1.5rem; font-weight: 800; color: var(--color-text); }
+.stat-label { font-size: 0.85rem; color: var(--color-text-secondary); }
 .go-btn {
-  padding: 6px 20px; font-size: 0.85rem; font-weight: 600; color: white;
-  background: var(--color-practice); border-radius: var(--radius-full);
-  transition: all var(--duration-fast); margin-left: auto;
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
 }
-.go-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.empty-hint, .empty-state {
+  text-align: center;
+  color: var(--color-text-secondary);
+  padding: var(--space-xl) 0;
+}
 
-.empty-state { text-align: center; padding: var(--space-4xl) 0; color: var(--color-text-muted); font-size: 0.9rem; }
-.empty-hint { text-align: center; padding: var(--space-2xl) 0; color: var(--color-text-muted); font-size: 0.9rem; }
-
-@media (max-width: 768px) { .card-grid { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+  .card-grid { grid-template-columns: 1fr; }
+  .global-practice-card { flex-direction: column; align-items: stretch; }
+}
 </style>

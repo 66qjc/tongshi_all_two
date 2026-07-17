@@ -216,7 +216,7 @@ async function handleDelete(course: Course) {
   }
   try {
     await ElMessageBox.confirm(
-      `确定删除课程「${course.name}」？将删除你工作台中的课程副本及其关联内容，不影响公共课程源。`,
+      `确定删除课程「${course.name}」？将软删除你工作台中的课程副本及其班级、资料、作业等关联内容；共享题目不随课程删除、不转挂，不影响公共课程源。`,
       '确认删除',
       { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' },
     )

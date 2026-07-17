@@ -208,6 +208,7 @@ def test_question_cleanup_snapshots_attempts_before_physical_delete(db_session):
 
 
 def test_course_cleanup_only_removes_same_batch_children(db_session):
+    """非同批已软删资料在课程清理时脱钩保留，课程可物理删除。"""
     from app.services.soft_delete_cleanup_service import cleanup_expired_resources
 
     deleted_at = datetime(2026, 1, 15, 3, 0, tzinfo=BEIJING_TZ)
@@ -223,12 +224,15 @@ def test_course_cleanup_only_removes_same_batch_children(db_session):
     db_session.add(separate)
     db_session.commit()
     separate_id = separate.id
+    course_id = course.id
 
     result = cleanup_expired_resources(db_session, now=FIXED_SUNDAY)
     assert result["cleaned_count"] >= 1
-    assert db_session.get(Course, course.id) is None
-    # 独立删除资料保留期未到或不在同批，仍在库中
-    assert db_session.get(Material, separate_id) is not None
+    assert db_session.get(Course, course_id) is None
+    detached = db_session.get(Material, separate_id)
+    assert detached is not None
+    assert detached.course_id is None
+    assert detached.deleted_at is not None
 
 
 def test_public_purge_does_not_participate_in_cleanup(db_session):
@@ -248,6 +252,232 @@ def test_public_purge_does_not_participate_in_cleanup(db_session):
         purge_resource(db_session, "courses", str(course.id), AuthUser(id="admin", name="", role="admin"))
     assert exc.value.code == 403
     assert db_session.get(Course, course.id) is not None
+
+
+def test_course_cleanup_detaches_shared_questions_instead_of_deleting_them(db_session):
+    """共享题挂载在到期课时：课程可清理，题目保留并脱钩。"""
+    from app.services.soft_delete_cleanup_service import cleanup_expired_resources
+
+    deleted_at = datetime(2026, 1, 15, 3, 0, tzinfo=BEIJING_TZ)
+    course = seed_deleted_course(db_session, deleted_at)
+    question = Question(
+        course_id=course.id,
+        type="choice",
+        stem="仍挂载在到期课上的共享题",
+        options=["A", "B"],
+        answer="A",
+        created_by="TCLN",
+        mount_course_name_snapshot="",
+    )
+    db_session.add(question)
+    db_session.commit()
+    question_id = question.id
+    course_id = course.id
+    course_name = course.name
+
+    result = cleanup_expired_resources(db_session, now=FIXED_SUNDAY)
+    assert result["cleaned_count"] >= 1
+    assert db_session.get(Course, course_id) is None
+    surviving = db_session.get(Question, question_id)
+    assert surviving is not None
+    assert surviving.deleted_at is None
+    assert surviving.course_id is None
+    assert surviving.mount_course_name_snapshot == course_name
+
+
+def test_orm_delete_course_does_not_delete_shared_questions(db_session):
+    """Course.questions 不得再带 delete-orphan，ORM 删除课程不能误删共享题。"""
+    course = Course(name="ORM删除课", created_by="T001")
+    db_session.add(course)
+    db_session.flush()
+    question = Question(
+        course_id=course.id,
+        type="fill",
+        stem="不应被 ORM 级联删除",
+        options=[],
+        answer="A",
+        created_by="T001",
+    )
+    db_session.add(question)
+    db_session.commit()
+    question_id = question.id
+    course_id = course.id
+
+    row = db_session.get(Course, course_id)
+    db_session.delete(row)
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        # SQLite 未开 FK 时可能仍删课成功；无论是否成功，题都必须还在
+    assert db_session.get(Question, question_id) is not None
+
+
+def test_course_cleanup_with_sqlite_foreign_keys_enabled():
+    """开启 SQLite 外键后，课程 cleanup 仍应脱钩共享题/作品并删课。"""
+    from sqlalchemy import create_engine, event, text
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.db.session import Base
+    from app.core.security import get_password_hash
+    from app.services.soft_delete_cleanup_service import cleanup_expired_resources
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(bind=engine)
+    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    session = SessionLocal()
+    try:
+        # 确认外键已开启
+        enabled = session.execute(text("PRAGMA foreign_keys")).scalar()
+        assert int(enabled or 0) == 1
+
+        teacher = User(
+            id="T_FK",
+            name="外键教师",
+            hashed_password=get_password_hash("abc123"),
+            role="teacher",
+        )
+        student = User(
+            id="S_FK",
+            name="外键学生",
+            hashed_password=get_password_hash("abc123"),
+            role="student",
+        )
+        session.add_all([teacher, student])
+        session.flush()
+
+        deleted_at = datetime(2026, 1, 15, 3, 0, tzinfo=BEIJING_TZ)
+        course = Course(
+            name="SQLite外键清理课",
+            created_by="T_FK",
+            deleted_at=_as_utc_naive(deleted_at),
+            deleted_by="T_FK",
+        )
+        session.add(course)
+        session.flush()
+        course_id = course.id
+        course_name = course.name
+
+        cls = Class(
+            name="同批班级",
+            course_id=course.id,
+            created_by="T_FK",
+            deleted_at=_as_utc_naive(deleted_at),
+            deleted_by="T_FK",
+        )
+        material = Material(
+            course_id=course.id,
+            type="link",
+            title="同批资料",
+            url="https://example.com/fk-batch",
+            deleted_at=_as_utc_naive(deleted_at),
+            deleted_by="T_FK",
+        )
+        announcement = Announcement(
+            course_id=course.id,
+            teacher_id="T_FK",
+            type="quiz",
+            title="同批作业",
+            question_ids=[],
+            deleted_at=_as_utc_naive(deleted_at),
+            deleted_by="T_FK",
+        )
+        question = Question(
+            course_id=course.id,
+            type="fill",
+            stem="外键开启后应脱钩",
+            options=[],
+            answer="A",
+            created_by="T_FK",
+            mount_course_name_snapshot="",
+        )
+        project = Project(
+            title="外键开启后作品保留",
+            description="x",
+            author_id="S_FK",
+            course_id=course.id,
+            status="approved",
+        )
+        session.add_all([cls, material, announcement, question, project])
+        session.commit()
+        question_id = question.id
+        project_id = project.id
+
+        result = cleanup_expired_resources(session, now=FIXED_SUNDAY)
+        assert result["cleaned_count"] >= 1
+        assert session.get(Course, course_id) is None
+
+        surviving_q = session.get(Question, question_id)
+        assert surviving_q is not None
+        assert surviving_q.course_id is None
+        assert surviving_q.deleted_at is None
+        assert surviving_q.mount_course_name_snapshot == course_name
+
+        surviving_p = session.get(Project, project_id)
+        assert surviving_p is not None
+        assert surviving_p.course_id is None
+
+        # 系统清理审计不得依赖不存在的 system 用户行
+        audit = session.query(AuditLog).order_by(AuditLog.id.desc()).first()
+        assert audit is not None
+        assert audit.user_id is None
+        assert audit.user_role == "system"
+    finally:
+        session.close()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def test_detached_material_restore_requires_target_course(db_session):
+    """脱钩资料直接恢复失败；指定活跃目标课后恢复成功。"""
+    from app.schemas.common import AuthUser
+    from app.core.exceptions import BusinessException
+    from app.services.soft_delete_service import restore_resource
+
+    target = Course(name="恢复目标课", created_by="admin", is_public=True)
+    material = Material(
+        course_id=None,
+        type="link",
+        title="已脱钩资料",
+        url="https://example.com/detached",
+        deleted_at=_as_utc_naive(datetime(2026, 1, 1, 0, 0, tzinfo=BEIJING_TZ)),
+        deleted_by="admin",
+    )
+    db_session.add_all([target, material])
+    db_session.commit()
+    material_id = material.id
+    target_id = target.id
+    operator = AuthUser(id="admin", name="管理员", role="admin")
+
+    with pytest.raises(BusinessException) as exc:
+        restore_resource(db_session, "materials", str(material_id), operator)
+    assert exc.value.code == 400
+    assert "原课程已清理" in exc.value.message
+
+    result = restore_resource(
+        db_session,
+        "materials",
+        str(material_id),
+        operator,
+        target_course_id=target_id,
+    )
+    restored = db_session.get(Material, material_id)
+    assert restored is not None
+    assert restored.deleted_at is None
+    assert restored.course_id == target_id
+    assert result.get("重新挂载课程ID") == target_id
 
 
 def test_cleanup_cli_entry_returns_nonzero_on_failure(monkeypatch):
