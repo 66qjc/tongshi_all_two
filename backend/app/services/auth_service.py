@@ -1,17 +1,16 @@
-"""Auth service: login and register"""
+"""Auth service: login and password recovery"""
 import logging
 import random
 import string
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.core.exceptions import BusinessException
 from app.models.entities import User, SecurityQuestion, PasswordResetRequest
-from app.schemas.common import RegisterRequest
 from app.services.audit_service import create_audit_log
 
 logger = logging.getLogger(__name__)
@@ -88,33 +87,6 @@ def change_user_password(
             "token_version": user.token_version,
         }),
     }
-
-
-def register_user(db: Session, data: RegisterRequest) -> dict:
-    allowed_roles = {"student"}
-    if data.role not in allowed_roles:
-        raise BusinessException(400, "注册角色不合法")
-    existing = db.query(User).filter(User.id == data.id).first()
-    if existing:
-        raise BusinessException(400, "该学号已注册")
-    user = User(
-        id=data.id,
-        name=data.name,
-        hashed_password=get_password_hash(data.password),
-        role=data.role,
-        major=data.major or "",
-    )
-    try:
-        db.add(user)
-        db.commit()
-        logger.info(f"用户注册成功: user_id={user.id}, role={user.role}")
-    except IntegrityError:
-        db.rollback()
-        raise BusinessException(400, "该学号已注册")
-    except SQLAlchemyError:
-        db.rollback()
-        raise BusinessException(500, "注册失败，请稍后重试")
-    return {"success": True, "message": "注册成功"}
 
 
 # ── 密保问题管理 ────────────────────────────────────────────────────────────

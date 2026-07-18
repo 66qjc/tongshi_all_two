@@ -27,23 +27,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class RegisterRequest(BaseModel):
-    id: str
-    name: str
-    password: str = Field(min_length=6)
-    role: str = "student"
-    major: Optional[str] = None
-
-    @field_validator("password")
-    @classmethod
-    def password_complexity(cls, v: str) -> str:
-        if not re.search(r"[a-zA-Z]", v):
-            raise ValueError("密码必须包含至少一个字母")
-        if not re.search(r"\d", v):
-            raise ValueError("密码必须包含至少一个数字")
-        return v
-
-
 # ── Class ───────────────────────────────────────────────────────────────────
 class ClassOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

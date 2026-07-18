@@ -12,7 +12,7 @@ from tests.conftest import auth_header
 
 
 class TestAuth:
-    """登录和注册"""
+    """登录与鉴权"""
 
     def test_login_success(self, client):
         resp = client.post("/api/token", json={"id": "2025001", "password": "abc123"})
@@ -33,81 +33,19 @@ class TestAuth:
         data = resp.json()
         assert data["code"] == 401
 
-    def test_register_too_simple_password(self, client):
+    def test_register_endpoint_removed(self, client):
         resp = client.post(
             "/api/register",
             json={
                 "id": "2025100",
                 "name": "新学生",
-                "password": "123456",
-                "role": "student",
-                "major": "测试",
-            },
-        )
-        assert resp.status_code == 422
-
-    def test_register_duplicate(self, client):
-        resp = client.post(
-            "/api/register",
-            json={
-                "id": "2025001",
-                "name": "重复",
                 "password": "abc123",
                 "role": "student",
                 "major": "测试",
             },
         )
-        data = resp.json()
-        assert data["code"] == 400
-        assert "已注册" in data["message"]
-
-    def test_register_rejects_teacher_role(self, client):
-        resp = client.post(
-            "/api/register",
-            json={
-                "id": "T9001",
-                "name": "公开注册教师",
-                "password": "abc123456",
-                "role": "teacher",
-                "major": "",
-            },
-        )
-        data = resp.json()
-        assert resp.status_code == 200
-        assert data["code"] == 400
-        assert "角色" in data["message"]
-
-    def test_register_rejects_admin_role(self, client):
-        resp = client.post(
-            "/api/register",
-            json={
-                "id": "A9001",
-                "name": "恶意管理员",
-                "password": "abc123456",
-                "role": "admin",
-                "major": "",
-            },
-        )
-        data = resp.json()
-        assert resp.status_code == 200
-        assert data["code"] == 400
-        assert "角色" in data["message"]
-
-    def test_register_rejects_unknown_role(self, client):
-        resp = client.post(
-            "/api/register",
-            json={
-                "id": "X9001",
-                "name": "未知角色",
-                "password": "abc123456",
-                "role": "superadmin",
-                "major": "",
-            },
-        )
-        data = resp.json()
-        assert resp.status_code == 200
-        assert data["code"] == 400
-        assert "角色" in data["message"]
+        # 路由已删除：Starlette/FastAPI 返回 404
+        assert resp.status_code == 404
 
     def test_get_me(self, client, student_token):
         resp = client.get("/api/me", headers=auth_header(student_token))
