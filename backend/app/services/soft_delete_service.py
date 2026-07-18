@@ -176,6 +176,59 @@ def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = F
     return item
 
 
+def _resolve_material_stage_on_restore(db: Session, item: Material, target_course_id: int) -> dict[str, Any]:
+    """按当前 stage 或删除快照，将资料挂回目标课程下的阶段。"""
+    info: dict[str, Any] = {"阶段处理": "无快照", "重建阶段": False}
+    # 1) 当前 stage_id 仍有效且属于目标课程
+    if item.stage_id is not None:
+        stage = (
+            db.query(CourseStage)
+            .filter(CourseStage.id == item.stage_id, CourseStage.course_id == target_course_id)
+            .first()
+        )
+        if stage is not None:
+            info["阶段处理"] = "保留原阶段"
+            info["阶段ID"] = stage.id
+            info["阶段名称"] = stage.name
+            return info
+        item.stage_id = None
+
+    name = (item.deleted_stage_name or "").strip()
+    if not name:
+        info["阶段处理"] = "无阶段快照"
+        item.stage_id = None
+        return info
+
+    existing = (
+        db.query(CourseStage)
+        .filter(CourseStage.course_id == target_course_id, CourseStage.name == name)
+        .first()
+    )
+    if existing is not None:
+        item.stage_id = existing.id
+        info["阶段处理"] = "复用同名阶段"
+        info["阶段ID"] = existing.id
+        info["阶段名称"] = existing.name
+        return info
+
+    sort_order = item.deleted_stage_sort_order
+    if sort_order is None:
+        sort_order = 0
+    stage = CourseStage(
+        course_id=target_course_id,
+        name=name,
+        sort_order=sort_order,
+    )
+    db.add(stage)
+    db.flush()
+    item.stage_id = stage.id
+    info["阶段处理"] = "重建同名阶段"
+    info["重建阶段"] = True
+    info["阶段ID"] = stage.id
+    info["阶段名称"] = stage.name
+    return info
+
+
 def restore_resource(
     db: Session,
     resource_type: str,
@@ -211,6 +264,17 @@ def restore_resource(
         item.course_id = target.id
         remount_course_id = target.id
 
+    # 资料恢复：挂回/重建阶段并清空删除快照，再清除 deleted 标记
+    stage_restore_info: dict[str, Any] = {}
+    if isinstance(item, Material):
+        target_cid = item.course_id
+        if target_cid is None:
+            raise BusinessException(400, "原课程已清理，请选择恢复到的课程")
+        stage_restore_info = _resolve_material_stage_on_restore(db, item, target_cid)
+        item.deleted_stage_id = None
+        item.deleted_stage_name = None
+        item.deleted_stage_sort_order = None
+
     item.deleted_at = None
     item.deleted_by = None
     restored_children: dict[str, int] = {}
@@ -233,6 +297,8 @@ def restore_resource(
     }
     if remount_course_id is not None:
         details["重新挂载课程ID"] = remount_course_id
+    if stage_restore_info:
+        details.update(stage_restore_info)
     create_audit_log(
         db,
         user=operator,
@@ -247,6 +313,8 @@ def restore_resource(
     result["恢复子资源数量"] = restored_child_count
     if remount_course_id is not None:
         result["重新挂载课程ID"] = remount_course_id
+    if stage_restore_info:
+        result.update(stage_restore_info)
     return result
 
 
