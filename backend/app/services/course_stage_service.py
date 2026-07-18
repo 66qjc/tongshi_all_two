@@ -123,9 +123,9 @@ def delete_stage(
         op_id = operator_id or teacher_id or ""
         operator = AuthUser(id=op_id, name="", role=operator_role)
         for material in list(active_materials):
+            # 先软删并写入 deleted_stage_* 快照；勿再清空 stage_id，
+            # 以免干扰快照；物理删阶段时由 FK ON DELETE SET NULL 脱钩。
             soft_delete(db, material, operator, action="material.delete")
-            # 脱钩阶段，避免关系仍挂在即将删除的阶段上
-            material.stage_id = None
 
     db.delete(stage)
     db.flush()

@@ -284,8 +284,9 @@ def remove_public_stage(
                         # 教师在副本阶段自行新增的资料不随公共源删除，转为未分类。
                         material.stage_id = None
                     else:
+                        # 先软删写阶段快照；勿再 stage_id=None 干扰快照，
+                        # 物理删副本阶段时由 ON DELETE SET NULL 脱钩。
                         soft_delete(db, material, current_user, action="material.delete")
-                        material.stage_id = None
             else:
                 # 将副本阶段下活跃资料设为未分类，避免级联阻塞
                 db.query(Material).filter(
