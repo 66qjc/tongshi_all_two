@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Announcement, Class, Course, Material, Project, Question, User
+from app.models.entities import Announcement, Class, Course, CourseStage, Material, Project, Question, User
 from app.schemas.common import AuthUser
 from app.services.audit_service import create_audit_log
 from app.services.soft_delete_policy import get_resource_policy
@@ -132,6 +132,19 @@ def soft_delete(db: Session, item: Any, operator: AuthUser, *, cascade: bool = F
             if item.id in question_ids:
                 raise BusinessException(400, "题目已被未删除作业使用，不能删除")
     if was_active:
+        # 资料软删时写入所属阶段快照，便于后续原位恢复
+        if isinstance(item, Material):
+            stage = None
+            if getattr(item, "stage_id", None) is not None:
+                stage = db.query(CourseStage).filter(CourseStage.id == item.stage_id).first()
+            if stage is not None:
+                item.deleted_stage_id = stage.id
+                item.deleted_stage_name = stage.name
+                item.deleted_stage_sort_order = stage.sort_order
+            else:
+                item.deleted_stage_id = None
+                item.deleted_stage_name = None
+                item.deleted_stage_sort_order = None
         deleted_at = now_utc()
         item.deleted_at = deleted_at
         item.deleted_by = operator.id
