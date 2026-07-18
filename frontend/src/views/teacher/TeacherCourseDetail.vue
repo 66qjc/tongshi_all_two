@@ -14,6 +14,7 @@ import {
 import type { Material } from '@/api/material'
 import { createMaterial, deleteMaterial, updateMaterial, rebuildMaterialPreview } from '@/api/material'
 import { useUploadWithProgress } from '@/composables/useUploadWithProgress'
+import { validateCourseMaterialUpload } from '@/api/upload'
 import MaterialRichCard from '@/components/common/MaterialRichCard.vue'
 import MaterialPreviewDialog from '@/components/common/MaterialPreviewDialog.vue'
 
@@ -226,7 +227,17 @@ function openEditMaterial(material: Material) {
 
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
-  materialForm.file = input.files?.[0] || null
+  const file = input.files?.[0] || null
+  if (file) {
+    const error = validateCourseMaterialUpload(file)
+    if (error) {
+      ElMessage.error(error)
+      input.value = ''
+      materialForm.file = null
+      return
+    }
+  }
+  materialForm.file = file
 }
 
 async function handleSaveMaterial() {
@@ -257,8 +268,8 @@ async function handleSaveMaterial() {
     let uploaded
     try {
       uploaded = await upload(materialForm.file, 'material')
-    } catch {
-      ElMessage.error('文件上传失败，请检查文件后重试')
+    } catch (error) {
+      ElMessage.error(error instanceof Error ? error.message : '文件上传失败，请检查文件后重试')
       return
     }
     try {

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getProject, toggleLike as apiToggleLike, type Project } from '@/api/project'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getProject,
+  toggleLike as apiToggleLike,
+  deleteMyProject,
+  guestLikeProject,
+  type Project,
+} from '@/api/project'
 import { useAuthStore } from '@/stores/auth'
 import { resolveFileUrl } from '@/utils/url'
 import { useAuthenticatedFileUrl } from '@/composables/useAuthenticatedFileUrl'
@@ -20,11 +27,13 @@ const authStore = useAuthStore()
 const project = ref<Project | null>(null)
 const loading = ref(true)
 const liked = ref(false)
+const deleting = ref(false)
 const relatedProjects = ref<{ id: number; title: string; author: string }[]>([])
 const previewImage = ref<ProtectedImageSource | null>(null)
 const imagePreviewVisible = ref(false)
 
 const projectId = computed(() => Number(route.params.id))
+const guestLikeKey = computed(() => `guest_liked_${projectId.value}`)
 const imageList = computed<ProtectedImageSource[]>(() => {
   if (!project.value) return []
   if (project.value.images && project.value.images.length > 0) {
@@ -52,6 +61,11 @@ const canResubmit = computed(() => {
   if (!project.value) return false
   return project.value.status === 'rejected' && project.value.author_id === authStore.user?.id
 })
+const canDelete = computed(() => {
+  if (!project.value || !authStore.user) return false
+  return project.value.author_id === authStore.user.id
+    && (project.value.status === 'pending' || project.value.status === 'rejected')
+})
 const projectLink = computed(() => project.value?.link_url || project.value?.video_url || '')
 const reportSource = computed(() => {
   const currentProject = project.value
@@ -69,8 +83,11 @@ const {
 onMounted(async () => {
   try {
     project.value = await getProject(projectId.value)
-    // 从后端返回的 is_liked 字段初始化点赞状态
-    liked.value = project.value?.is_liked ?? false
+    if (authStore.isLoggedIn) {
+      liked.value = project.value?.is_liked ?? false
+    } else {
+      liked.value = localStorage.getItem(guestLikeKey.value) === '1'
+    }
   } finally {
     loading.value = false
   }
@@ -78,9 +95,40 @@ onMounted(async () => {
 
 async function toggleLike() {
   if (!project.value) return
+  if (!authStore.isLoggedIn) {
+    if (localStorage.getItem(guestLikeKey.value) === '1') return
+    const result = await guestLikeProject(project.value.id)
+    project.value.likes = result.likes
+    liked.value = true
+    localStorage.setItem(guestLikeKey.value, '1')
+    return
+  }
   const result = await apiToggleLike(project.value.id)
   project.value.likes = result.likes
   liked.value = result.liked
+}
+
+async function handleDelete() {
+  if (!project.value || deleting.value) return
+  try {
+    await ElMessageBox.confirm(
+      `将删除「${project.value.title}」。删除后不可在「我的作品」中恢复，如需再次展示请重新上传。`,
+      '确认删除作品？',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  deleting.value = true
+  try {
+    await deleteMyProject(project.value.id)
+    ElMessage.success('已删除')
+    router.push('/create')
+  } catch {
+    // 业务错误由拦截器提示
+  } finally {
+    deleting.value = false
+  }
 }
 
 function goResubmit() {
@@ -140,8 +188,9 @@ function openPreview(image: ProtectedImageSource) {
           </button>
         </div>
 
-        <div v-if="canResubmit" class="resubmit-bar">
-          <el-button type="warning" round @click="goResubmit">修改后重新提交</el-button>
+        <div v-if="canResubmit || canDelete" class="resubmit-bar">
+          <el-button v-if="canResubmit" type="warning" round @click="goResubmit">修改后重新提交</el-button>
+          <el-button v-if="canDelete" type="danger" round plain :loading="deleting" @click="handleDelete">删除作品</el-button>
         </div>
 
         <section class="detail-section">

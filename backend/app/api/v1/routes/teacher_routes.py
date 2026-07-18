@@ -285,6 +285,11 @@ def batch_download_projects(
 # 学生成绩 Excel 导出
 # ──────────────────────────────────────────────────────────────
 
+def _as_student_id_text(value) -> str:
+    """学号始终按文本写入，避免 Excel 把长数字学号显示成科学计数或异常格式。"""
+    return "" if value is None else str(value)
+
+
 def _write_student_sheet(ws, students: list) -> None:
     """向工作表写入学生成绩：表头行、数据行、末尾汇总行"""
     # 表头行（与前端表格列保持一致）
@@ -295,7 +300,7 @@ def _write_student_sheet(ws, students: list) -> None:
     for idx, s in enumerate(students, start=1):
         ws.append([
             s.get("serial_no") or idx,
-            s["id"],
+            _as_student_id_text(s["id"]),
             s["name"],
             s["major"] or "",
             s["class_name"] or "未分班",
@@ -303,6 +308,8 @@ def _write_student_sheet(ws, students: list) -> None:
             s["incomplete_tasks"],
             s["task_completion_rate"],
         ])
+        # 学号列强制文本格式
+        ws.cell(row=ws.max_row, column=2).number_format = "@"
 
     # 汇总行（仅当有数据时追加）
     if students:
@@ -359,7 +366,7 @@ def _write_course_score_sheet(ws, group: dict) -> None:
         scores = student.get("scores", {})
         ws.append([
             student.get("serial_no") or idx,
-            student["id"],
+            _as_student_id_text(student["id"]),
             student["name"],
             student.get("major") or "",
             student.get("class_name") or "未分班",
@@ -368,6 +375,8 @@ def _write_course_score_sheet(ws, group: dict) -> None:
             student["task_completion_rate"],
             *[scores.get(task["id"]) for task in tasks],
         ])
+        # 学号列强制文本格式，避免 Excel 把长学号显示成科学计数
+        ws.cell(row=ws.max_row, column=2).number_format = "@"
 
     if students:
         count = len(students)

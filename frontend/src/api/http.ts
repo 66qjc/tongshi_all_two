@@ -23,6 +23,8 @@ function normalizeValidationMessage(message: string) {
 
 function getErrorMessage(error: unknown) {
   if (!axios.isAxiosError(error)) return '网络错误'
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return '请求超时，请检查网络后重试'
+  if (error.code === 'ERR_NETWORK') return '网络连接失败，请检查网络后重试'
   const data = error.response?.data
   if (data?.message) return data.message
   if (Array.isArray(data?.detail) && data.detail.length > 0) {

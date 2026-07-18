@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Material } from '../../api/material'
 import PdfPreviewDialog from '../../components/common/PdfPreviewDialog.vue'
 import { useUploadWithProgress } from '../../composables/useUploadWithProgress'
+import { validateCourseMaterialUpload } from '../../api/upload'
 import {
   createAdminPublicCourse,
   createAdminPublicCourseStage,
@@ -216,6 +217,15 @@ function openEditMaterial(material: Material) {
 function handleFileChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] || null
+  if (file) {
+    const error = validateCourseMaterialUpload(file)
+    if (error) {
+      ElMessage.error(error)
+      input.value = ''
+      materialForm.value.file = null
+      return
+    }
+  }
   materialForm.value.file = file
   if (file) {
     materialForm.value.size = formatFileSize(file.size)

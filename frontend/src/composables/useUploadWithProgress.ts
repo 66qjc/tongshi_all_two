@@ -10,9 +10,14 @@ export function useUploadWithProgress() {
     uploading.value = true
     percent.value = 0
     try {
-      const result = await uploadFile(file, bizType, (p) => {
-        percent.value = p
-      })
+      const result = await uploadFile(
+        file,
+        bizType,
+        (p) => {
+          percent.value = p
+        },
+        true,
+      )
       percent.value = 100
       return result
     } finally {

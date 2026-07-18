@@ -127,7 +127,7 @@ watch(
           />
         </span>
         <span class="logo-text">
-          <span class="logo-main">深度学思践行</span>
+          <span class="logo-main">深度学思践悟</span>
           <span class="logo-sub">中国计量大学 · AI 通识课平台</span>
         </span>
       </router-link>

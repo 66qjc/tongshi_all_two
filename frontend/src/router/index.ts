@@ -69,7 +69,7 @@ const router = createRouter({
       path: '/create',
       name: 'create',
       component: () => import('../views/CreateView.vue'),
-      meta: { title: '践 · 智创未来' },
+      meta: { title: '践 · 智创未来', public: true },
     },
     {
       path: '/act',
@@ -117,7 +117,7 @@ const router = createRouter({
       path: '/create/project/:id',
       name: 'project-detail',
       component: () => import('../views/ProjectDetailView.vue'),
-      meta: { title: '作品详情' },
+      meta: { title: '作品详情', public: true },
     },
     {
       path: '/create/upload',

@@ -2,9 +2,11 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getProjects, type Project } from '@/api/project'
+import { useAuthStore } from '@/stores/auth'
 import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const projects = ref<Project[]>([])
 const loading = ref(true)
 
@@ -32,6 +34,14 @@ function handlePageChange(page: number) {
   currentPage.value = page
   loadProjects()
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function goUpload() {
+  if (!authStore.isLoggedIn) {
+    router.push('/login')
+    return
+  }
+  router.push('/create/upload')
 }
 </script>
 
@@ -140,7 +150,7 @@ function handlePageChange(page: number) {
             <p>将你的 AI 创意作品展示给更多人</p>
             <p class="upload-hint">支持课程报告、演示视频链接等</p>
           </div>
-          <el-button type="warning" size="large" round @click="router.push('/create/upload')">
+          <el-button type="warning" size="large" round @click="goUpload">
             上传作品
           </el-button>
         </div>

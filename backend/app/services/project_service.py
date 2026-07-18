@@ -303,6 +303,54 @@ def delete_project(db: Session, project_id: int, teacher_id: str | None = None):
     return project
 
 
+def delete_own_project(db: Session, project_id: int, user):
+    """学生删除自己的待审/驳回作品（软删除）。"""
+    from app.schemas.common import AuthUser
+    from app.services.soft_delete_service import soft_delete
+
+    project = get_project(db, project_id)
+    if not project:
+        raise BusinessException(404, "作品不存在")
+    if project.author_id != user.id:
+        raise BusinessException(403, "只能删除自己的作品")
+    if project.status == "approved":
+        raise BusinessException(400, "已通过作品不可删除，请联系教师处理")
+    if project.status not in ("pending", "rejected"):
+        raise BusinessException(400, "当前作品不可删除")
+
+    # 以学生身份记录软删除审计
+    operator = AuthUser(id=user.id, name=user.name, role="student")
+    soft_delete(db, project, operator, action="project.delete")
+    db.commit()
+    logger.info("学生删除作品: user_id=%s, project_id=%s, title=%s", user.id, project_id, project.title)
+    return project
+
+
+def get_public_or_accessible_project(db: Session, project_id: int, user_id: str | None):
+    """游客仅已通过；登录用户沿用 get_accessible_project。"""
+    if user_id:
+        return get_accessible_project(db, project_id, user_id)
+    project = get_project(db, project_id)
+    if not project or project.status != "approved":
+        return None
+    return project
+
+
+def guest_like_project(db: Session, project_id: int):
+    """游客匿名点赞：仅已通过作品计数 +1，不写 ProjectLike。"""
+    project = get_project(db, project_id)
+    if not project or project.status != "approved":
+        return None
+    db.execute(
+        Project.__table__.update()
+        .where(Project.id == project_id)
+        .values(likes=Project.likes + 1)
+    )
+    db.commit()
+    db.refresh(project)
+    return {"liked": True, "likes": project.likes}
+
+
 def format_project(db: Session, p, user_id: str | None = None, liked_set: set[int] | None = None) -> dict:
     """将 Project ORM 对象格式化为 API 响应 dict（唯一规范版本）。
 

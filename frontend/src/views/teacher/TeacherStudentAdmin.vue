@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { enrollStudent, getClasses, getClassStudents, importStudents, unenrollStudent, type ClassInfo, type ClassStudent } from '@/api/class'
@@ -9,7 +9,14 @@ const route = useRoute()
 const classes = ref<ClassInfo[]>([])
 const selectedClassId = ref<number | ''>('')
 const students = ref<ClassStudent[]>([])
+const searchStudentId = ref('')
 const loading = ref(false)
+
+const filteredStudents = computed(() => {
+  const keyword = searchStudentId.value.trim().toLowerCase()
+  if (!keyword) return students.value
+  return students.value.filter(item => String(item.id).toLowerCase().includes(keyword))
+})
 const enrollDialogVisible = ref(false)
 const importDialogVisible = ref(false)
 const studentId = ref('')
@@ -29,6 +36,7 @@ async function loadStudents() {
   if (typeof selectedClassId.value !== 'number') {
     students.value = []
     selectedStudentIds.value = []
+    searchStudentId.value = ''
     return
   }
   loading.value = true
@@ -176,6 +184,7 @@ async function handleImport() {
 }
 
 watch(selectedClassId, () => {
+  searchStudentId.value = ''
   loadStudents()
 })
 
@@ -280,10 +289,22 @@ onMounted(async () => {
           :value="item.id"
         />
       </el-select>
-      <span class="filter-count">共 {{ students.length }} 名学生</span>
+      <span class="filter-count">
+        共 {{ searchStudentId.trim() ? filteredStudents.length : students.length }} 名学生
+        <template v-if="searchStudentId.trim() && filteredStudents.length !== students.length">
+          （本班 {{ students.length }} 人）
+        </template>
+      </span>
+      <el-input
+        v-model="searchStudentId"
+        class="student-search"
+        placeholder="按学号搜索"
+        clearable
+        style="width: 220px; margin-left: auto"
+      />
     </div>
 
-    <el-table :data="students" stripe style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
+    <el-table :data="filteredStudents" stripe style="width: 100%" v-loading="loading" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" />
       <el-table-column prop="serial_no" label="序号" width="80" align="center" />
       <el-table-column prop="id" label="学号" width="160" />
@@ -297,6 +318,7 @@ onMounted(async () => {
     </el-table>
 
     <div v-if="!loading && students.length === 0" class="empty-state">该班级暂无学生</div>
+    <div v-else-if="!loading && filteredStudents.length === 0" class="empty-state">未找到匹配学号的学生</div>
 
     <el-dialog v-model="enrollDialogVisible" title="手动添加学生" width="420px">
       <div class="form-group">

@@ -120,6 +120,16 @@ function handleIncompletePageChange(p: number) {
   loadReport()
 }
 
+// Excel 打开 CSV 时会把纯数字学号转成数值（科学计数/异常显示），用公式强制保留文本
+function formatStudentIdForCsv(id: string | number): string {
+  const text = String(id ?? '').replace(/"/g, '""')
+  return `="${text}"`
+}
+
+function escapeCsvText(value: string | number | null | undefined): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`
+}
+
 // ── 导出 CSV ──
 async function exportTab(tab: 'completed' | 'incomplete') {
   if (!Number.isFinite(taskId.value)) return
@@ -141,11 +151,26 @@ async function exportTab(tab: 'completed' | 'incomplete') {
     if (tab === 'completed') {
       csv = BOM + '学号,姓名,专业,班级,得分,题目总数,正确率\n'
       csv += students.map(s =>
-        `"${s.id}","${s.name}","${s.major}","${s.class_name}",${getNormalizedScore(s.score, s.total_questions)},${s.total_questions},${getNormalizedScore(s.score, s.total_questions)}%`
+        [
+          formatStudentIdForCsv(s.id),
+          escapeCsvText(s.name),
+          escapeCsvText(s.major),
+          escapeCsvText(s.class_name),
+          getNormalizedScore(s.score, s.total_questions),
+          s.total_questions,
+          `${getNormalizedScore(s.score, s.total_questions)}%`,
+        ].join(','),
       ).join('\n')
     } else {
       csv = BOM + '学号,姓名,专业,班级\n'
-      csv += students.map(s => `"${s.id}","${s.name}","${s.major}","${s.class_name}"`).join('\n')
+      csv += students.map(s =>
+        [
+          formatStudentIdForCsv(s.id),
+          escapeCsvText(s.name),
+          escapeCsvText(s.major),
+          escapeCsvText(s.class_name),
+        ].join(','),
+      ).join('\n')
     }
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)

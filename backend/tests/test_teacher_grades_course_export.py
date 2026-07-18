@@ -192,3 +192,43 @@ def test_students_export_splits_sheets_by_course_and_writes_task_scores(client, 
     filtered_headers = [cell.value for cell in filtered_sheet[1]]
     assert "第一课程作业" in filtered_headers
     assert "第二课程作业" not in filtered_headers
+
+
+def test_students_export_keeps_student_id_as_text(client, db_session, teacher_token):
+    """长数字学号必须以文本写入，避免 Excel 科学计数或异常显示。"""
+    course = db_session.query(Course).filter(Course.created_by == "T001", Course.name == "测试课程").one()
+    cls = db_session.query(Class).filter(Class.course_id == course.id).one()
+    long_id = "2400305311"
+    student = User(
+        id=long_id,
+        name="长学号学生",
+        hashed_password=get_password_hash("abc123"),
+        role="student",
+        major="人工智能",
+    )
+    db_session.add(student)
+    db_session.flush()
+    db_session.add(StudentClassEnrollment(user_id=student.id, class_id=cls.id, import_order=9))
+    db_session.commit()
+
+    resp = client.get(
+        f"/api/teacher/students/export?course_id={course.id}",
+        headers=auth_header(teacher_token),
+    )
+    assert resp.status_code == 200
+    wb = load_workbook(BytesIO(resp.content))
+    sheet = wb[wb.sheetnames[0]]
+    headers = [cell.value for cell in sheet[1]]
+    id_col = headers.index("学号") + 1
+
+    student_ids = [sheet.cell(row=row, column=id_col).value for row in range(2, sheet.max_row + 1)]
+    assert long_id in student_ids
+
+    target_row = next(
+        row for row in range(2, sheet.max_row + 1)
+        if sheet.cell(row=row, column=id_col).value == long_id
+    )
+    cell = sheet.cell(row=target_row, column=id_col)
+    assert cell.value == long_id
+    assert isinstance(cell.value, str)
+    assert cell.number_format == "@"

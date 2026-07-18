@@ -77,3 +77,11 @@ export function updateProject(id: number, data: ProjectPayload) {
 export function toggleLike(projectId: number) {
   return http.post<any, { liked: boolean; likes: number }>(`/projects/${projectId}/like`)
 }
+
+export function deleteMyProject(projectId: number) {
+  return http.delete<any, { id?: number }>(`/projects/${projectId}`)
+}
+
+export function guestLikeProject(projectId: number) {
+  return http.post<any, { liked: boolean; likes: number }>(`/projects/${projectId}/guest-like`)
+}

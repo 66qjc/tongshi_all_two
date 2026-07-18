@@ -127,6 +127,16 @@ async def get_current_user(
     return authenticate_bearer_token(token, db)
 
 
+async def get_optional_user(
+    token: str | None = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+) -> AuthUser | None:
+    """可选登录：无 token 返回 None；有 token 则完整校验。"""
+    if not token:
+        return None
+    return authenticate_bearer_token(token, db)
+
+
 def require_role(role: str):
     """Dependency factory that checks current user has the required role."""
     async def _check(current_user: AuthUser = Depends(get_current_user)):

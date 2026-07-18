@@ -11,7 +11,8 @@ assert.match(nginxConfig, /location\s+\/api\/\s*\{[\s\S]*proxy_pass\s+http:\/\/t
 assert.match(nginxConfig, /location\s+\/uploads\/\s*\{[\s\S]*proxy_pass\s+http:\/\/tongshi_backend/, 'Nginx 应代理 /uploads/ 到后端兼容旧文件地址。')
 assert.match(nginxConfig, /proxy_set_header\s+Range\s+\$http_range/, 'Nginx 文件代理应透传 Range 请求。')
 assert.match(nginxConfig, /proxy_set_header\s+If-Range\s+\$http_if_range/, 'Nginx 文件代理应透传 If-Range 请求。')
-assert.match(nginxConfig, /client_max_body_size\s+1024m/, 'Nginx 上传限制应覆盖当前视频上传上限。')
+assert.match(nginxConfig, /client_max_body_size\s+1050m/, 'Nginx 上传限制应为 multipart 边界留出余量。')
+assert.match(nginxConfig, /location\s+=\s+\/api\/upload\s*\{[\s\S]*proxy_request_buffering\s+off;/, '视频上传必须禁用 Nginx 请求缓冲。')
 
 assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*internal;/, 'Nginx 应配置内部受保护上传目录。')
 assert.match(nginxConfig, /location\s+\/_protected_uploads\/\s*\{[\s\S]*alias\s+\/data\/tongshi\/uploads\//, 'Nginx 内部上传目录应映射到生产上传目录。')

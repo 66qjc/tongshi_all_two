@@ -56,7 +56,20 @@ def test_nginx_config_proxies_api_uploads_and_range_headers():
     assert "try_files $uri $uri/ /index.html;" in content
     assert "proxy_set_header Range $http_range;" in content
     assert "proxy_set_header If-Range $http_if_range;" in content
-    assert "client_max_body_size 1024m;" in content
+    assert "client_max_body_size 1050m;" in content
+
+
+def test_nginx_config_streams_large_uploads_with_dedicated_timeouts_and_logs():
+    """精确上传路由必须禁用请求缓冲并保留独立诊断日志。"""
+    content = (REPO_ROOT / "deploy" / "nginx.conf").read_text(encoding="utf-8")
+    upload_block = _extract_nginx_location_block(content, "location = /api/upload")
+
+    assert "proxy_request_buffering off;" in upload_block
+    assert "client_body_timeout 3600s;" in upload_block
+    assert "proxy_read_timeout 3600s;" in upload_block
+    assert "proxy_send_timeout 3600s;" in upload_block
+    assert "access_log /var/log/nginx/tongshi.access.log combined;" in content
+    assert "error_log /var/log/nginx/tongshi.error.log warn;" in content
 
 
 def test_nginx_config_keeps_accel_uploads_internal_and_points_to_runtime_storage():

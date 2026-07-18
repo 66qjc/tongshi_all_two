@@ -17,7 +17,7 @@
                 class="footer-logo-icon"
               />
             </span>
-            <span class="footer-logo-text">深度学思践行</span>
+            <span class="footer-logo-text">深度学思践悟</span>
           </div>
           <p class="footer-desc">AI 通识课教学平台，助力每一位理工科新生探索人工智能的无限可能。</p>
         </div>
@@ -47,7 +47,7 @@
       </div>
 
       <div class="footer-bottom">
-        <p>深度学思践行 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
+        <p>深度学思践悟 AI 通识课平台 &mdash; 在学中思，在践中悟</p>
       </div>
     </div>
   </footer>

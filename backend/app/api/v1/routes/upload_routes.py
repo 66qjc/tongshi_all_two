@@ -1,5 +1,6 @@
 """文件上传路由"""
 import hashlib
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from app.core.config import settings
 from app.core.security import get_current_user
 from app.core.response import success
 from app.core.exceptions import BusinessException
-from app.core.upload_validation import validate_upload, detect_content_type, get_upload_max_size
+from app.core.upload_validation import MAX_VIDEO_SIZE, validate_upload, detect_content_type, get_upload_max_size
 from app.core.svg_sanitizer import sanitize_svg
 from app.db.session import get_db
 from app.schemas.common import AuthUser
@@ -24,6 +25,48 @@ from app.services.storage_service import StoredObject
 router = APIRouter(tags=["upload"])
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 UPLOAD_HEADER_SIZE = 4096
+UPLOAD_DISK_RESERVE_BYTES = 2 * 1024 * 1024 * 1024
+_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov"}
+_video_upload_in_progress = False
+
+
+def _is_video_upload(filename: str) -> bool:
+    return Path(filename).suffix.lower() in _VIDEO_EXTENSIONS
+
+
+def _get_local_upload_free_bytes() -> int:
+    return shutil.disk_usage(settings.local_upload_dir).free
+
+
+async def _guard_large_video_upload(
+    file: UploadFile = File(...),
+    expected_size: int | None = Form(None),
+):
+    """在单 worker 环境中保护本地大视频上传的磁盘余量和并发。"""
+    global _video_upload_in_progress
+
+    if not file.filename or not _is_video_upload(file.filename):
+        yield
+        return
+
+    if expected_size is not None:
+        if expected_size < 0:
+            raise BusinessException(400, "文件大小参数无效")
+        if expected_size > MAX_VIDEO_SIZE:
+            raise BusinessException(400, "视频文件大小超过 1GiB 限制")
+        if settings.storage_backend == "local":
+            required_free_bytes = expected_size + UPLOAD_DISK_RESERVE_BYTES
+            if _get_local_upload_free_bytes() < required_free_bytes:
+                raise BusinessException(400, "服务器可用磁盘空间不足，暂时无法接收该视频")
+
+    if _video_upload_in_progress:
+        raise BusinessException(429, "已有视频正在上传，请等待完成后再试")
+
+    _video_upload_in_progress = True
+    try:
+        yield
+    finally:
+        _video_upload_in_progress = False
 
 
 async def _save_local_upload_stream(file: UploadFile, object_key: str, content_type: str) -> tuple[StoredObject, int, str, bytes]:
@@ -93,6 +136,7 @@ async def _spool_upload_to_temp_file(file: UploadFile):
 async def upload_file(
     file: UploadFile = File(...),
     biz_type: str = Form("upload"),
+    _video_upload_guard=Depends(_guard_large_video_upload),
     current_user: AuthUser = Depends(get_current_user),
     db=Depends(get_db),
 ):

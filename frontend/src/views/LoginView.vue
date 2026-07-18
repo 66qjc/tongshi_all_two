@@ -71,7 +71,7 @@ async function handleLogin() {
       await navigateByRole()
     }
   } else {
-    ElMessageBox.alert('密码错误，请重试', '登录失败', {
+    ElMessageBox.alert('账号或密码错误，请重试', '登录失败', {
       confirmButtonText: '确定',
       type: 'error',
     })
