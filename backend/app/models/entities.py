@@ -206,6 +206,10 @@ class Material(Base):
         "materials.id"), nullable=True, index=True)
     stage_id = Column(Integer, ForeignKey(
         "course_stages.id", ondelete="SET NULL"), nullable=True, index=True)
+    # 软删时阶段定位快照；活跃资料忽略；恢复挂回后清空
+    deleted_stage_id = Column(Integer, nullable=True)
+    deleted_stage_name = Column(String(64), nullable=True)
+    deleted_stage_sort_order = Column(Integer, nullable=True)
 
     course = relationship("Course", back_populates="materials")
     stage = relationship("CourseStage", back_populates="materials")

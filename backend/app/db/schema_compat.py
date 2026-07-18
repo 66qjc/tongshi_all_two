@@ -558,6 +558,10 @@ def ensure_schema_compatibility(engine) -> None:
             indexes = inspector.get_indexes("materials")
             if not any(index.get("name") == "ix_materials_stage_id" for index in indexes):
                 conn.execute(text("CREATE INDEX ix_materials_stage_id ON materials (stage_id)"))
+            # 软删阶段快照字段
+            _add_column_if_missing(conn, inspector, "materials", "deleted_stage_id", "INTEGER NULL")
+            _add_column_if_missing(conn, inspector, "materials", "deleted_stage_name", "VARCHAR(64) NULL")
+            _add_column_if_missing(conn, inspector, "materials", "deleted_stage_sort_order", "INTEGER NULL")
 
         # course_stages.source_stage_id 索引和外键约束补齐
         if "course_stages" in table_names:
