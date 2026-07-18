@@ -429,7 +429,7 @@ onMounted(async () => {
             height="420"
             style="width: 100%"
             v-loading="questionLoading"
-            :empty-text="questions.length === 0 ? '题库暂无题目，请先到题库管理中新增或导入题目。' : '没有符合条件的题目，请调整关键词或题型。'"
+            :empty-text="questions.length === 0 ? '题库暂无题目，请先到共享题库中新增或导入题目。' : '没有符合条件的题目，请调整关键词或题型。'"
             @selection-change="handleQuestionSelection"
           >
             <el-table-column type="selection" width="50" reserve-selection />

@@ -30,7 +30,7 @@ class TestImportDuplicateDetection:
         """相同课程、相同题干的题目再次导入时应跳过，而非重复插入。"""
         # 种子数据已有：course_id=1, stem="1+1=?"
         rows = [
-            {"题型": "choice", "课程名称": "测试课程", "题干": "1+1=?",
+            {"题型": "choice", "课程名称": "测试课程", "标签": "基础计算", "题干": "1+1=?",
              "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": "基础加法"},
         ]
         result = import_questions_from_excel(db_session, rows, "T001")
@@ -43,7 +43,7 @@ class TestImportDuplicateDetection:
     def test_new_stem_is_imported(self, db_session):
         """不同题干的题目应正常导入。"""
         rows = [
-            {"题型": "fill", "课程名称": "测试课程", "题干": "太阳从哪边升起？",
+            {"题型": "fill", "课程名称": "测试课程", "标签": "地理", "题干": "太阳从哪边升起？",
              "选项": "", "答案": "东方", "解析": "地理常识"},
         ]
         result = import_questions_from_excel(db_session, rows, "T001")
@@ -67,11 +67,11 @@ class TestImportDuplicateDetection:
     def test_mixed_new_and_duplicate(self, db_session):
         """混合导入：新题目成功，重复题目跳过。"""
         rows = [
-            {"题型": "choice", "课程名称": "测试课程", "题干": "1+1=?",
+            {"题型": "choice", "课程名称": "测试课程", "标签": "基础计算", "题干": "1+1=?",
              "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": ""},
-            {"题型": "fill", "课程名称": "测试课程", "题干": "水的化学式？",
+            {"题型": "fill", "课程名称": "测试课程", "标签": "化学", "题干": "水的化学式？",
              "选项": "", "答案": "H2O", "解析": ""},
-            {"题型": "fill", "课程名称": "测试课程", "题干": "光速约多少？",
+            {"题型": "fill", "课程名称": "测试课程", "标签": "物理", "题干": "光速约多少？",
              "选项": "", "答案": "3×10^8 m/s", "解析": ""},
         ]
         result = import_questions_from_excel(db_session, rows, "T001")
@@ -84,7 +84,7 @@ class TestImportDuplicateDetection:
     def test_same_stem_different_course_is_skipped_in_shared_bank(self, db_session):
         """全站共享题库：不同课程下导入相同题目也会被全站查重拦截并跳过。"""
         rows = [
-            {"题型": "choice", "课程名称": "其它课程", "题干": "1+1=?",
+            {"题型": "choice", "课程名称": "其它课程", "标签": "基础计算", "题干": "1+1=?",
              "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": ""},
         ]
         result = import_questions_from_excel(db_session, rows, "T002")
@@ -107,7 +107,7 @@ class TestImportDuplicateDetection:
         other = db_session.query(Course).filter(Course.name == "其它课程").one()
         assert other.deleted_at is None
         rows = [
-            {"题型": "choice", "课程名称": "其它课程", "题干": "1+1=?",
+            {"题型": "choice", "课程名称": "其它课程", "标签": "基础计算", "题干": "1+1=?",
              "选项": "A. 1|B. 2|C. 3|D. 4", "答案": "B", "解析": "撞软删挂载"},
         ]
         before = db_session.query(Question).count()
@@ -126,7 +126,7 @@ class TestImportDuplicateDetection:
         db_session.commit()
 
         rows = [
-            {"题型": "choice", "课程名称": "测试课程", "题干": "1+1=?",
+            {"题型": "choice", "课程名称": "测试课程", "标签": "基础计算", "题干": "1+1=?",
              "选项": "A. 一|B. 二|C. 三|D. 四", "答案": "A", "解析": "不同选项也应跳过"},
         ]
         before = db_session.query(Question).count()
@@ -142,10 +142,10 @@ class TestImportDuplicateDetection:
         from tests.conftest import auth_header
 
         excel_bytes = _build_import_excel(
-            ["题型", "课程名称", "题干", "选项", "答案", "解析"],
+            ["题型", "课程名称", "标签", "题干", "选项", "答案", "解析"],
             [
-                ["choice", "测试课程", "1+1=?", "A. 1|B. 2|C. 3|D. 4", "B", "基础加法"],
-                ["fill", "测试课程", "地球的自转周期？", "", "约24小时", ""],
+                ["choice", "测试课程", "基础计算", "1+1=?", "A. 1|B. 2|C. 3|D. 4", "B", "基础加法"],
+                ["fill", "测试课程", "地理", "地球的自转周期？", "", "约24小时", ""],
             ],
         )
         resp = client.post(
@@ -160,3 +160,69 @@ class TestImportDuplicateDetection:
         assert data["data"]["skip_count"] == 1
         assert data["data"]["fail_count"] == 0
         assert len(data["data"]["skips"]) == 1
+
+    def test_import_without_course_column_uses_tags_for_independent_question(self, db_session):
+        """标签合法时，无课程列也应导入独立共享题。"""
+        rows = [{
+            "题型": "fill",
+            "标签": "独立题库、通识",
+            "题干": "没有课程列也能导入什么？",
+            "答案": "独立共享题",
+        }]
+
+        result = import_questions_from_excel(db_session, rows, "T001")
+
+        assert result["success_count"] == 1
+        created = db_session.query(Question).filter(Question.stem == "没有课程列也能导入什么？").one()
+        assert created.course_id is None
+        assert created.tags == ["独立题库", "通识"]
+
+    def test_import_rejects_row_without_effective_tag_but_keeps_valid_rows(self, db_session):
+        """空标签行失败，其他标签合法的行继续导入。"""
+        rows = [
+            {"题型": "fill", "标签": "、|，", "题干": "无标签题", "答案": "不会入库"},
+            {"题型": "fill", "标签": "有效标签", "题干": "有效标签题", "答案": "会入库"},
+        ]
+
+        result = import_questions_from_excel(db_session, rows, "T001")
+
+        assert result["success_count"] == 1
+        assert result["fail_count"] == 1
+        assert "标签不能为空" in result["errors"][0]["reason"]
+        assert db_session.query(Question).filter(Question.stem == "无标签题").count() == 0
+        assert db_session.query(Question).filter(Question.stem == "有效标签题").count() == 1
+
+    def test_import_api_requires_tag_header(self, client, teacher_token):
+        """导入文件缺少标签表头时应整体拒绝。"""
+        from tests.conftest import auth_header
+
+        excel_bytes = _build_import_excel(
+            ["题型", "题干", "选项", "答案", "解析"],
+            [["fill", "缺标签表头", "", "答案", ""]],
+        )
+
+        response = client.post(
+            "/api/questions/import",
+            headers=auth_header(teacher_token),
+            files={"file": ("missing-tag.xlsx", excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+
+        assert response.json()["code"] == 400
+        assert "标签" in response.json()["message"]
+
+    def test_downloaded_template_reimports_as_independent_questions(self, client, teacher_token):
+        """下载模板课程列留空，原样回传可导入独立题。"""
+        from tests.conftest import auth_header
+
+        template = client.get("/api/questions/import/template", headers=auth_header(teacher_token))
+        assert template.status_code == 200
+        response = client.post(
+            "/api/questions/import",
+            headers=auth_header(teacher_token),
+            files={"file": ("question-template.xlsx", template.content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+
+        data = response.json()["data"]
+        assert response.json()["code"] == 0
+        assert data["success_count"] == 3
+        assert data["fail_count"] == 0

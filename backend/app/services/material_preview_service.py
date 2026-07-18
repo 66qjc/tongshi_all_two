@@ -23,6 +23,27 @@ def ensure_material_preview(db: Session, material_id: int) -> MaterialPreview:
     return preview
 
 
+def bootstrap_material_preview(db: Session, material: Material) -> MaterialPreview:
+    """创建资料后启动预览：PDF 立即生成摘要，其它类型仅建立 pending。"""
+    if material.type == "pdf" and material.file_id:
+        return generate_material_preview(db, material.id)
+    return ensure_material_preview(db, material.id)
+
+
+def hydrate_material_preview_for_read(db: Session, material: Material) -> None:
+    """读路径懒生成：历史 PDF 若缺失预览或仍为 pending，则补生成摘要。
+
+    仅处理 PDF，失败状态不在每次请求自动重试，避免反复拖慢列表接口。
+    """
+    if material.type != "pdf" or not material.file_id:
+        return
+    preview = material.preview
+    if preview is not None and preview.status != "pending":
+        return
+    generate_material_preview(db, material.id)
+    db.refresh(material)
+
+
 def mark_material_preview_failed(db: Session, material_id: int, message: str) -> MaterialPreview:
     """将预览记录标记为失败并记录错误信息。"""
     preview = ensure_material_preview(db, material_id)

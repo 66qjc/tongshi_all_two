@@ -212,7 +212,8 @@ class QuestionOut(BaseModel):
 
 class QuestionCreate(BaseModel):
     type: str = "choice"
-    course_id: int
+    # 可选：共享题库以标签为主，可不挂课程
+    course_id: Optional[int] = None
     stem: str
     options: List[str] = []
     answer: str

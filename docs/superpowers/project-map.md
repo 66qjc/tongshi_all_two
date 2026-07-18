@@ -24,14 +24,17 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 ## 后端主要文件
 
 - ORM：`backend/app/models/entities.py`
+- ORM 元数据基类：`backend/app/db/base.py`（供 session、实体与独立验证脚本共用，避免脚本导入运行时配置）
 - Schema：`backend/app/schemas/common.py`
 - 兼容层：`backend/app/db/schema_compat.py`
 - 班级服务：`backend/app/services/class_service.py`
 - 资料服务：`backend/app/services/material_service.py`
-- 资料预览服务：`backend/app/services/material_preview_service.py`
+- 资料预览服务：`backend/app/services/material_preview_service.py`（PDF 创建后立即抽取摘要；游客/课程读路径对 pending PDF 懒生成；视频仍手动/专用路径生成）
 - 公开学习服务：`backend/app/services/public_learning_service.py`
 - 题库服务：`backend/app/services/question_service.py`
+- 管理员共享题库服务：`backend/app/services/admin_question_bank_service.py`
 - 公共课程题库贡献记录：`backend/app/services/question_contribution_service.py`
+- 课程 cleanup MySQL 验证脚本：`backend/scripts/verify_course_cleanup_mysql.py`（仅 CI/人工专用验证库使用）
 - 公告服务：`backend/app/services/announcement_service.py`
 - 任务服务：`backend/app/services/task_service.py`
 - 教师统计/成绩/作品审核：`backend/app/services/teacher_service.py`
@@ -54,7 +57,7 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - `/learn`（公开教程卡片；只展示资料数，进入课程资料）
 - `/learn/course/:courseId`（资料直读唯一主路径；旧 `lesson_id`/`tab=lessons` 查询参数忽略）
 - `/practice`
-- `/practice/quiz/:courseId`
+- `/practice/quiz`（全局共享题池；旧 `/practice/quiz/:courseId` 兼容重定向）
 - `/practice/announcement/:announcementId`
 - `/inbox`
 
@@ -80,8 +83,14 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 教师可以删除自己课程下的资料，包括公共课程同步到教师课程副本里的资料，但不会影响公共课程源
 - 教师可以新增和编辑自己创建的题目，但不能删除题目；题目删除仅由管理员执行
 - 公共课程的题库为全站共享题库，不再复制题目到教师课程副本；教师和管理员新增或导入题目会写入 `created_by` 并记录贡献日志
+- 共享题库 Excel 导入的“标签”列、每行有效标签和有效答案必须填写；课程名称可选，空值导入独立题库，公共课程与独立题贡献记录分别聚合。教师模板明确“题型、标签、题干、答案”四项必填；管理员经 `/api/questions/import` 遇同名课程歧义明确拒绝。管理员独立题库导入的行内课程名称优先于默认挂载，只有唯一活跃公共课程可挂载；未知、私有、歧义课程按行失败，空值才回退默认挂载
+- 教师、管理员与旧公共课程兼容导入服务三条路径均以行级嵌套事务隔离实际数据库 `flush` 失败，失败行不回滚同批已成功题目
 - 删除教师课程或公共课程时不转挂、不软删、不隐藏共享题目；活跃共享题库只看 `Question.deleted_at`，课程仅是挂载上下文
 - 公共课程题库的新增与导入会记录到 `question_contribution_logs`，保存课程快照、操作人、动作类型、题目数量和时间
+- 管理员共享题库主入口为 `/api/admin/question-bank` 与 `/admin/question-bank`；公共课程页只维护阶段和资料，旧题库接口保留兼容弃用响应
+- 阶段删除可在确认后级联软删该阶段下活跃资料；课程详情和公共课程读路径均排除已软删资料
+- MySQL cleanup 验证脚本只允许 `tongshi_verify_*` 专用库，在连接前校验重置、确认参数及管理员/验证 DSN 同一 `host/port`；DSN query 覆盖禁用，报告默认写入系统临时目录或 `--output-dir`，控制台和报告脱敏查询参数敏感值。通过 `app/db/base.py` 解耦和子进程回归，脚本导入不读取运行时 `Settings` 或项目 `.env`
+- `Settings` 连续创建实例时必须隔离当前环境的 `DATABASE_URL` 与 `SECRET_KEY`；相应回归分别位于 `test_schema_compat.py` 与 `test_auth.py`
 - 课程正式 API 统一使用 `/api/courses*`；历史 `/api/questions/courses*` 兼容入口已删除。
 - 课程搜索使用 `ilike()`（大小写不敏感 + 中文子串），不再使用 `contains()`。
 - 教师课程页“已添加课程”和“公共课程”均通过 `/api/courses` 分页接口携带关键词搜索。
@@ -393,6 +402,12 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - **第二阶段及以后：** 可恢复发布、并发扩容、工程结构收口均未开始。
 - 服务器部署影响：**本条为文档同步，不需要服务器修改。** 第一阶段代码若将来上线，须先过第二阶段备份/回退/健康检查门，不得直接部署脏工作区。
 
+### 2026-07-17 共享题库两端展示与标签入库对齐
+- 教师/管理端统一命名「共享题库」；列表中文题型、el-rate 星标（默认 3）、跨页连续序号；去掉课程列。
+- 教师新增/导入 `course_id` 可选；管理端新增默认独立题；Excel 导入标签列与每行有效标签必填；删除/批量/贡献仍仅管理员。
+- 计划：`docs/superpowers/plans/2026-07-17-shared-question-bank-ui-alignment.md`；修改记录第 73 轮。
+- 补齐：`main.ts` 按需注册白名单增加 `ElRate`（第 75 轮），否则浏览器中星标组件无法解析。
+
 ### 2026-07-17 删课后共享题库不再隐形
 
 - 问题：删课路径不转挂题目，但活跃题库查询仍要求所属课程未软删，导致题目 `deleted_at is None` 却在列表、练习、查重、管理端“消失”。
@@ -404,7 +419,7 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
 - 回归保护：扩展 `test_soft_delete_read_filters`、`test_030405_management_systems`、`test_public_course_delete`、`test_integration_bugfixes`
 - 服务器部署影响：需要服务器拉代码、**重启后端**；**不需要**数据库迁移、前端重建、Nginx 或环境变量调整
 
-### 2026-07-17 共享题库删课后续闭环（已通过临时 MySQL 验收）
+### 2026-07-17 共享题库删课后续闭环（历史临时 MySQL 验证记录）
 
 - 计划：`docs/superpowers/plans/2026-07-17-shared-question-bank-followups.md`
 - **稳定事实（代码侧）：**
@@ -413,6 +428,15 @@ Announcement -> QuizAttempt(announcement_id) -> TaskCompletion
   - 学生全局自由练习：`/api/quiz/questions` + `/practice/quiz`；课程卡片只承载作业；草稿键 `quiz-draft:global-practice`
   - 学生 quiz 路由强制学生角色；管理审计使用真实 `AuthUser`；历史 `question_bank_root_course_id` 不再参与启动改写/删课阻断；无效 ORM `cache_result` 已移除
 - **验证：** 定向后端相关套件通过；前端相关静态测试、`npm run type-check`、`npm run build` 通过
-- **真实 MySQL 验收（2026-07-17）：** 临时库 `tongshi_cleanup_verify` 上执行 `backend/scripts/verify_course_cleanup_mysql.py`，`information_schema` 外键矩阵与 cleanup 脱钩场景 `ALL_MYSQL_VERIFY_OK`；设计文档 `docs/superpowers/specs/2026-07-17-course-purge-reference-detachment-design.md`；SQLite `PRAGMA foreign_keys=ON` 单测通过
+- **历史真实 MySQL 记录（2026-07-17）：** 临时库 `tongshi_cleanup_verify` 曾记录 `information_schema` 外键矩阵与 cleanup 脱钩场景通过；设计文档见 `docs/superpowers/specs/2026-07-17-course-purge-reference-detachment-design.md`；SQLite `PRAGMA foreign_keys=ON` 单测通过。当前安全门脚本仅允许 `tongshi_verify_*` 专用库。
 - **附带修复：** 系统清理审计改为 `user_id=NULL`（避免无 `system` 用户时 FK 失败）；审计 `error_message` 截断 512
-- 服务器部署影响：见修改记录第 71 轮（需拉代码、重启后端、重建前端；需 schema_compat/可空列与 SET NULL FK 兼容迁移；发布前备份）
+- 服务器部署影响：历史引用脱钩发布要求见修改记录第 71 轮；本轮验收整改发布需拉代码、重启后端、重建前端，不新增数据库迁移，也不需调整 Nginx 或生产运行时环境变量。
+
+### 2026-07-17 验收整改与验证脚本安全门
+
+- 记录：`docs/superpowers/plans/2026-07-17-acceptance-remediation.md`。
+- 已完成：导入标签与答案必填/课程可选、独立题与公共课程贡献记录聚合、阶段资料级联删除与读路径过滤、前端星级组件注册、`Settings` 连续实例环境隔离，以及 MySQL 验证脚本的专用库、重置安全门、`.env` 导入隔离、同实例 DSN 约束、DSN query 覆盖禁用和查询参数脱敏。教师、管理员和旧公共课程兼容导入服务三条路径已补行级嵌套事务，真实 `flush` 失败不会回滚同批成功题目；管理员经通用导入接口遇同名课程歧义会明确拒绝；教师模板已注明四项必填；管理员独立题库行内课程仅挂载唯一活跃公共课，错误不降级、空值才回退默认挂载。
+- 定向验证：题库回归 `41 passed, 1 warning`；MySQL 验证脚本 `12 passed`，五条拒绝路径均以非零退出码正确拒绝；验证脚本与重复题限定组 `14 passed`，独立复审无阻断项；`Settings` 的 `DATABASE_URL`、`SECRET_KEY` 环境隔离回归两条通过。最终后端完整回归为 `488 passed, 1 deselected, 1 warning`（292.23s），排除本机无 Linux WSL 发行版而无法运行的部署脚本 Bash 过滤用例；前端静态测试 `44/44`、`npm run type-check`、`npm run build` 均通过。
+- 页面验收：教师 `/teacher/questions`、管理员 `/admin/question-bank`、管理员 `/admin/public-courses` 均可打开、无中文乱码；教师确认课程名称可选、标签必填和新增无课程字段，管理员确认独立题与标签必填。
+- 未验证：资料/阶段删除未点击确认，单份资料“保留教师副本”与阶段“自建资料移至未分类”仅源码确认；当前未配置 `MYSQL_VERIFY_URL` / `MYSQL_VERIFY_ADMIN_URL`，本轮未运行真实 MySQL 脚本。仓库内旧矩阵文件仅为历史临时产物，当前脚本默认输出系统临时目录或 `--output-dir`。
+- 服务器部署影响：需要拉代码、重启后端、重新构建部署前端；不需要数据库迁移、Nginx 或生产运行时环境变量修改。验证变量仅限 CI/人工专用验证库，绝不能指向正式数据库。

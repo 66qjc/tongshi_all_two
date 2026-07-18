@@ -27,6 +27,7 @@ const requiredComponents = [
   'ElProgress',
   'ElRadioButton',
   'ElRadioGroup',
+  'ElRate',
   'ElSelect',
   'ElSkeleton',
   'ElSwitch',

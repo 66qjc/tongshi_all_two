@@ -106,9 +106,13 @@ def _course_access_filter(teacher_id: str):
 
 
 def create_question(db: Session, data: dict, teacher_id: str):
-    course = _get_owned_course(db, data["course_id"], teacher_id)
-    if not course:
-        raise BusinessException(404, "课程不存在")
+    """创建共享题；course_id 可选，不传则写入独立共享题。"""
+    course = None
+    course_id = data.get("course_id")
+    if course_id is not None:
+        course = _get_owned_course(db, course_id, teacher_id)
+        if not course:
+            raise BusinessException(404, "课程不存在")
     data["tags"] = _normalize_tags(data.get("tags"))
 
     # 计算题干哈希用于防重复
@@ -137,18 +141,21 @@ def create_question(db: Session, data: dict, teacher_id: str):
         k: v
         for k, v in data.items()
         if k not in ["created_by", "stem_hash", "star_rating", "mount_course_name_snapshot"]
+        and v is not None
     }
+    # 显式允许 course_id 为空
+    if course is None:
+        question_data["course_id"] = None
     q = Question(
         **question_data,
         created_by=teacher_id,
         stem_hash=stem_hash,
         star_rating=data.get("star_rating", 3),  # 默认3星
-        mount_course_name_snapshot=course.name or "",
+        mount_course_name_snapshot=(course.name if course else "") or "",
     )
     db.add(q)
     db.flush()
-    if course.is_public:
-        record_question_contribution(db, course, teacher_id, "teacher", "create", 1)
+    record_question_contribution(db, course, teacher_id, "teacher", "create", 1)
     db.commit()
     db.refresh(q)
     return q
@@ -383,74 +390,88 @@ def import_questions_from_excel(db: Session, rows: list[dict], teacher_id: str, 
     errors = []
     skips = []
     contribution_counts: dict[int, tuple[Course, int]] = {}
+    independent_count = 0
     for idx, row in enumerate(rows, start=2):
+        course = None
         try:
-            course_name = str(_row_value(row, "课程名称", "课程", "course", "course_name")).strip()
-            query = db.query(Course).filter(
-                Course.name == course_name,
-                Course.deleted_at.is_(None),
-            )
-            if role != "admin":
-                query = query.filter(Course.created_by == teacher_id)
-            course = query.first()
-            if not course:
-                raise BusinessException(400, f"未找到课程: {course_name}")
-            q_type = str(_row_value(row, "题型", "type")).strip()
-            stem = str(_row_value(row, "题干", "stem")).strip()
-            if not stem:
-                raise BusinessException(400, "题干为空")
-            options = str(_row_value(row, "选项（选择题用 | 分隔）", "选项", "options")).strip()
-            option_list = [x.strip() for x in options.split("|") if x.strip()] if options else []
-            answer = str(_row_value(row, "答案", "answer")).strip()
-            explanation = str(_row_value(row, "解析", "explanation")).strip()
-            tags = _normalize_tags(_row_value(row, "标签", "课程标签", "tags", "course_tags"))
-            if q_type not in {"choice", "fill", "multi_choice"}:
-                raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
-            if q_type in {"choice", "multi_choice"} and not option_list:
-                raise BusinessException(400, "选择题必须填写选项")
-            # 与手工新增一致：先用题干 hash 做全站同题干拦截，再做完整指纹查重。
-            stem_hash = compute_stem_hash(stem)
-            existing = find_same_stem_question(db, stem)
-            if existing:
-                skip_count += 1
-                skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
-                continue
-            # 全站共享题库：查重范围为全站所有题目
-            duplicate = find_duplicate_question(
-                db,
-                q_type,
-                stem,
-                option_list,
-                answer,
-            )
-            if duplicate:
-                skip_count += 1
-                skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
-                continue
-            # 题目原地保存，course_id 保留为匹配到的课程
-            q = Question(
-                type=q_type,
-                course_id=course.id,
-                stem=stem,
-                options=option_list,
-                answer=answer,
-                explanation=explanation,
-                tags=tags,
-                created_by=teacher_id,
-                stem_hash=stem_hash,
-                star_rating=3,
-                mount_course_name_snapshot=course.name or "",
-            )
-            db.add(q)
-            db.flush()
-            if course.is_public:
+            with db.begin_nested():
+                course_name = str(_row_value(row, "课程名称", "课程", "course", "course_name", "课程名称（可选）")).strip()
+                if course_name:
+                    query = db.query(Course).filter(
+                        Course.name == course_name,
+                        Course.deleted_at.is_(None),
+                    )
+                    if role != "admin":
+                        query = query.filter(Course.created_by == teacher_id)
+                    courses = query.order_by(Course.id).all()
+                    if not courses:
+                        raise BusinessException(400, f"未找到课程: {course_name}")
+                    if role == "admin" and len(courses) > 1:
+                        raise BusinessException(400, f"课程名称不唯一: {course_name}")
+                    course = courses[0]
+                # 课程名称为空：独立共享题，course_id=None
+                q_type = str(_row_value(row, "题型", "type")).strip()
+                stem = str(_row_value(row, "题干", "stem")).strip()
+                if not stem:
+                    raise BusinessException(400, "题干为空")
+                options = str(_row_value(row, "选项（选择题用 | 分隔）", "选项", "options")).strip()
+                option_list = [x.strip() for x in options.split("|") if x.strip()] if options else []
+                answer = str(_row_value(row, "答案", "answer")).strip()
+                if not answer:
+                    raise BusinessException(400, "答案不能为空")
+                explanation = str(_row_value(row, "解析", "explanation")).strip()
+                tags = _normalize_tags(_row_value(row, "标签", "课程标签", "tags", "course_tags"))
+                if not tags:
+                    raise BusinessException(400, "标签不能为空")
+                if q_type not in {"choice", "fill", "multi_choice"}:
+                    raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
+                if q_type in {"choice", "multi_choice"} and not option_list:
+                    raise BusinessException(400, "选择题必须填写选项")
+                # 与手工新增一致：先用题干 hash 做全站同题干拦截，再做完整指纹查重。
+                stem_hash = compute_stem_hash(stem)
+                existing = find_same_stem_question(db, stem)
+                if existing:
+                    skip_count += 1
+                    skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
+                    continue
+                # 全站共享题库：查重范围为全站所有题目
+                duplicate = find_duplicate_question(
+                    db,
+                    q_type,
+                    stem,
+                    option_list,
+                    answer,
+                )
+                if duplicate:
+                    skip_count += 1
+                    skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
+                    continue
+                q = Question(
+                    type=q_type,
+                    course_id=course.id if course else None,
+                    stem=stem,
+                    options=option_list,
+                    answer=answer,
+                    explanation=explanation,
+                    tags=tags,
+                    created_by=teacher_id,
+                    stem_hash=stem_hash,
+                    star_rating=3,
+                    mount_course_name_snapshot=(course.name if course else "") or "",
+                )
+                db.add(q)
+                db.flush()
+            if course is not None and course.is_public:
                 _, count = contribution_counts.get(course.id, (course, 0))
                 contribution_counts[course.id] = (course, count + 1)
+            else:
+                independent_count += 1
             success_count += 1
         except Exception as exc:
             fail_count += 1
             errors.append({"row": idx, "reason": str(exc)})
     for public_course, count in contribution_counts.values():
         record_question_contribution(db, public_course, teacher_id, role, "import", count)
+    record_question_contribution(db, None, teacher_id, role, "import", independent_count)
     db.commit()
     return {"success_count": success_count, "fail_count": fail_count, "skip_count": skip_count, "errors": errors, "skips": skips}

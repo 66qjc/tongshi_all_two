@@ -27,13 +27,25 @@ def edit_stage(
     return success(format_stage_out(stage))
 
 
-@router.delete("/{stage_id}", summary="删除阶段", description="教师端：删除阶段，阶段下必须没有资料")
+@router.delete(
+    "/{stage_id}",
+    summary="删除阶段",
+    description="教师端：删除阶段；cascade_materials=true 时级联软删阶段下活跃资料",
+)
 def remove_stage(
     stage_id: int,
+    cascade_materials: bool = False,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(require_role("teacher")),
 ):
-    if not delete_stage(db, stage_id, current_user.id):
+    if not delete_stage(
+        db,
+        stage_id,
+        current_user.id,
+        cascade_materials=cascade_materials,
+        operator_id=current_user.id,
+        operator_role="teacher",
+    ):
         raise BusinessException(404, "阶段不存在")
     db.commit()
     return success()

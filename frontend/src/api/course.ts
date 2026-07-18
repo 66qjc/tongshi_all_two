@@ -76,8 +76,10 @@ export function updateCourseStage(stageId: number, data: { name?: string; sort_o
   return http.put<any, CourseStage>(`/stages/${stageId}`, data)
 }
 
-export function deleteCourseStage(stageId: number) {
-  return http.delete<any, any>(`/stages/${stageId}`)
+export function deleteCourseStage(stageId: number, options?: { cascadeMaterials?: boolean }) {
+  return http.delete<any, any>(`/stages/${stageId}`, {
+    params: { cascade_materials: options?.cascadeMaterials === true },
+  })
 }
 
 export function addPublicCourse(id: number) {

@@ -12,7 +12,6 @@ import {
   updateAdminQuestionBankItem,
   type AdminQuestionBankContribution,
 } from '@/api/adminQuestionBank'
-import { getAdminPublicCourses, type AdminPublicCourse } from '@/api/adminPublicCourse'
 import type { Question } from '@/api/question'
 
 const loading = ref(false)
@@ -24,7 +23,6 @@ const pageSize = ref(20)
 const filterType = ref('')
 const filterKeyword = ref('')
 const filterTag = ref('')
-const publicCourses = ref<AdminPublicCourse[]>([])
 const contributions = ref<AdminQuestionBankContribution[]>([])
 const contributionTotal = ref(0)
 const contributionPage = ref(1)
@@ -36,7 +34,6 @@ const importing = ref(false)
 const importFile = ref<File | null>(null)
 const importErrors = ref<{ row: number; reason: string }[]>([])
 const importErrorDialogVisible = ref(false)
-const mountCourseId = ref<number | ''>('')
 
 const form = reactive({
   type: 'choice' as 'choice' | 'fill' | 'multi_choice',
@@ -67,14 +64,6 @@ async function loadQuestions() {
   }
 }
 
-async function loadCourses() {
-  try {
-    publicCourses.value = await getAdminPublicCourses()
-  } catch {
-    publicCourses.value = []
-  }
-}
-
 async function loadContributions() {
   try {
     const result = await getAdminQuestionBankContributions(contributionPage.value, 20)
@@ -96,7 +85,6 @@ function openCreate() {
     tags: [],
     star_rating: 3,
   })
-  mountCourseId.value = ''
   dialogVisible.value = true
 }
 
@@ -111,7 +99,6 @@ function openEdit(row: Question) {
     tags: [...(row.tags || [])],
     star_rating: row.star_rating || 3,
   })
-  mountCourseId.value = ''
   dialogVisible.value = true
 }
 
@@ -135,10 +122,8 @@ async function handleSave() {
       await updateAdminQuestionBankItem(editingId.value, payload)
       ElMessage.success('已更新')
     } else {
-      await createAdminQuestionBankItem(
-        payload,
-        typeof mountCourseId.value === 'number' ? mountCourseId.value : null,
-      )
+      // 共享题库以标签为主，新增默认独立题（不挂课程）
+      await createAdminQuestionBankItem(payload, null)
       ElMessage.success('已新增到共享题库')
     }
     dialogVisible.value = false
@@ -220,10 +205,7 @@ async function handleImport() {
   }
   importing.value = true
   try {
-    const result = await importAdminQuestionBank(
-      importFile.value,
-      typeof mountCourseId.value === 'number' ? mountCourseId.value : null,
-    )
+    const result = await importAdminQuestionBank(importFile.value, null)
     ElMessage.success(`导入完成：成功 ${result.success_count} 题，跳过 ${result.skip_count} 题，失败 ${result.fail_count} 题`)
     const importDetails = [...result.skips, ...result.errors]
     if (importDetails.length > 0) {
@@ -254,7 +236,7 @@ async function handleDownloadTemplate() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadQuestions(), loadCourses(), loadContributions()])
+  await Promise.all([loadQuestions(), loadContributions()])
 })
 </script>
 
@@ -264,7 +246,7 @@ onMounted(async () => {
       <div>
         <p class="eyebrow">全站共享</p>
         <h1>共享题库</h1>
-        <p>不依赖公共课程入口维护全站题目；可选记录原始挂载公共课快照，也可创建独立题。</p>
+        <p>全站共享题目维护；以标签、题型、星级组织，不按课程划分。</p>
       </div>
       <div class="header-actions">
         <el-button @click="handleDownloadTemplate">下载导入模板</el-button>
@@ -278,9 +260,9 @@ onMounted(async () => {
           <el-form :inline="true">
             <el-form-item label="题型">
               <el-select v-model="filterType" clearable placeholder="全部" style="width: 140px" @change="page = 1; loadQuestions()">
-                <el-option label="单选" value="choice" />
-                <el-option label="多选" value="multi_choice" />
-                <el-option label="填空" value="fill" />
+                <el-option label="选择题" value="choice" />
+                <el-option label="多选题" value="multi_choice" />
+                <el-option label="填空题" value="fill" />
               </el-select>
             </el-form-item>
             <el-form-item label="题干">
@@ -309,12 +291,33 @@ onMounted(async () => {
           @selection-change="(rows: Question[]) => selectedQuestions = rows"
         >
           <el-table-column type="selection" width="48" />
-          <el-table-column prop="id" label="ID" width="80" />
+          <el-table-column label="序号" width="70">
+            <template #default="{ $index }">
+              {{ (page - 1) * pageSize + $index + 1 }}
+            </template>
+          </el-table-column>
           <el-table-column prop="stem" label="题干" min-width="260" show-overflow-tooltip />
-          <el-table-column prop="type" label="题型" width="100" />
-          <el-table-column prop="star_rating" label="星级" width="80" />
+          <el-table-column label="题型" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain">
+                {{ row.type === 'choice' ? '选择题' : row.type === 'multi_choice' ? '多选题' : row.type === 'fill' ? '填空题' : row.type }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="星级" width="140">
+            <template #default="{ row }">
+              <el-rate :model-value="Number(row.star_rating) || 3" disabled :max="5" />
+            </template>
+          </el-table-column>
           <el-table-column prop="creator_name" label="添加人" width="120" />
-          <el-table-column prop="course_name" label="原挂载课程" min-width="160" show-overflow-tooltip />
+          <el-table-column label="标签" min-width="150">
+            <template #default="{ row }">
+              <div class="tag-list">
+                <el-tag v-for="tag in row.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
+                <span v-if="!row.tags?.length" class="readonly-text">-</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <el-button size="small" plain @click="openEdit(row)">编辑</el-button>
@@ -335,11 +338,8 @@ onMounted(async () => {
 
         <el-card shadow="never" class="import-card">
           <h3>Excel 导入</h3>
-          <p>可选原始挂载公共课；不选则写入独立题库（course_id 为空）。题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。</p>
+          <p>题型、标签、题干、答案必填，课程名称可选；课程名称留空时导入独立共享题。题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。</p>
           <div class="import-row">
-            <el-select v-model="mountCourseId" clearable placeholder="可选挂载公共课" style="width: 240px">
-              <el-option v-for="course in publicCourses" :key="course.id" :label="course.name" :value="course.id" />
-            </el-select>
             <input type="file" accept=".xlsx,.xls" @change="(e: Event) => importFile = (e.target as HTMLInputElement).files?.[0] || null" />
             <el-button type="primary" :loading="importing" @click="handleImport">开始导入</el-button>
           </div>
@@ -367,18 +367,12 @@ onMounted(async () => {
     </el-tabs>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑共享题' : '新增共享题'" width="640px">
-      <div v-if="!editingId" class="form-group">
-        <label>原始挂载公共课（可选）</label>
-        <el-select v-model="mountCourseId" clearable placeholder="不选则为独立题库" style="width: 100%">
-          <el-option v-for="course in publicCourses" :key="course.id" :label="course.name" :value="course.id" />
-        </el-select>
-      </div>
       <div class="form-group">
         <label>题型</label>
         <el-radio-group v-model="form.type">
-          <el-radio-button value="choice">单选</el-radio-button>
-          <el-radio-button value="multi_choice">多选</el-radio-button>
-          <el-radio-button value="fill">填空</el-radio-button>
+          <el-radio-button value="choice">选择题</el-radio-button>
+          <el-radio-button value="multi_choice">多选题</el-radio-button>
+          <el-radio-button value="fill">填空题</el-radio-button>
         </el-radio-group>
       </div>
       <div class="form-group">
@@ -439,4 +433,14 @@ onMounted(async () => {
 .form-group { margin-bottom: 14px; }
 .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
 .option-row { display: grid; grid-template-columns: 28px 1fr; gap: 8px; margin-bottom: 8px; align-items: center; }
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.readonly-text {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
 </style>

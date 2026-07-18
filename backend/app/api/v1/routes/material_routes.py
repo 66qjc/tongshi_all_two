@@ -14,14 +14,14 @@ from app.schemas.common import AuthUser, MaterialCreate, MaterialUpdate
 from app.services.material_service import (
     can_view_course_materials, list_materials, create_material,
     update_material, delete_material, resolve_material_file_for_user,
-    format_material_preview,
+    format_material_preview_for_material,
 )
 from app.services.material_preview_service import generate_material_preview
 
 router = APIRouter(tags=["materials"])
 
 
-def _format_material(m):
+def _format_material(db: Session, m):
     return {
         "id": m.id, "course_id": m.course_id,
         "course_name": m.course.name if m.course else "",
@@ -32,7 +32,7 @@ def _format_material(m):
         "source_material_id": m.source_material_id,
         "is_synced": bool(m.source_material_id),
         "stage_id": m.stage_id,
-        "preview": format_material_preview(m.preview),
+        "preview": format_material_preview_for_material(db, m),
     }
 
 
@@ -46,7 +46,7 @@ def get_course_contents(
     if not can_view_course_materials(db, course_id, current_user.id, current_user.role):
         raise BusinessException(404, "课程不存在")
     materials, _ = list_materials(db, course_id, keyword=keyword)
-    return success([_format_material(m) for m in materials])
+    return success([_format_material(db, m) for m in materials])
 
 
 @router.get("/materials", summary="获取全部资料列表", description="教师端：按课程返回所有学习资料，支持分页和关键词搜索")
@@ -67,7 +67,7 @@ def get_all_materials(
         page_size,
         include_public_sources=False,
     )
-    return paginated_success([_format_material(m) for m in materials], total, page, page_size)
+    return paginated_success([_format_material(db, m) for m in materials], total, page, page_size)
 
 
 @router.post("/materials", summary="新增资料", description="教师端：为指定课程添加视频或 PDF 学习资料")

@@ -240,7 +240,17 @@ function materialTypeLabel(type: Material['type']) {
 }
 
 function materialSummary(material: Material) {
-  return material.preview?.summary || material.size || '暂无摘要'
+  // 游客/学生阅读页只强调 PDF 摘要，避免视频/链接显示误导性兜底文案。
+  if (material.type !== 'pdf') {
+    if (material.type === 'video') return materialMetaText(material) || '当前为视频资料，可在中间区域直接播放。'
+    return '当前为外部链接资料，可在中间区域打开原链接。'
+  }
+  const status = material.preview?.status
+  const summary = (material.preview?.summary || '').trim()
+  if (summary) return summary
+  if (status === 'processing' || status === 'pending') return 'PDF 摘要生成中，请稍候刷新。'
+  if (status === 'failed') return material.preview?.error_message || 'PDF 摘要暂不可用。'
+  return '暂无 PDF 摘要。'
 }
 
 function materialMetaText(material: Material) {

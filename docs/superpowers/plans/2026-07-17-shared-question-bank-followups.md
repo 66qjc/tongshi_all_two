@@ -2,7 +2,7 @@
 
 > **供执行代理使用：** 实施时必须先使用 `subagent-driven-development`（推荐）或 `executing-plans`，按任务逐项执行并在每个任务后复核。
 >
-> **状态：** 代码主体已实施（2026-07-17 工作区）；SQLite/前端静态/type-check/build 已通过；真实 MySQL 临时库 cleanup/FK 已验证通过（`tongshi_cleanup_verify`）
+> **状态：** 本轮 P1/P2 整改已实施并完成最终自动化回归（2026-07-17 工作区）：后端 `488 passed, 1 deselected, 1 warning`（292.23s），前端静态测试 `44/44`、`npm run type-check`、`npm run build` 均通过。历史临时库 `tongshi_cleanup_verify` cleanup/FK 验证记录保留；当前环境未配置 `MYSQL_VERIFY_URL` / `MYSQL_VERIFY_ADMIN_URL`，本轮未运行真实 MySQL 脚本。
 >
 > **日期：** 2026-07-17
 >
@@ -29,28 +29,39 @@
 - 前端：教师题库、教师课程、管理员公共课程、学生练习、个人中心错题本
 - 测试：练习提交、软删除读取、到期清理、公共课删除、共享题库贡献、题目导入查重及相关前端静态测试
 
-### 1.2 本次新鲜验证（2026-07-17 提交前复核）
+### 1.2 本次最终验证（2026-07-17）
 
 ```powershell
-backend\.venv\Scripts\python.exe -m pytest backend/tests/test_030405_management_systems.py backend/tests/test_admin_question_bank.py backend/tests/test_global_practice_pool.py backend/tests/test_integration_bugfixes.py backend/tests/test_public_course_delete.py backend/tests/test_public_question_contribution.py backend/tests/test_question_import_skip.py backend/tests/test_quiz_submit_scope.py backend/tests/test_schema_compat.py backend/tests/test_soft_delete_cleanup.py backend/tests/test_soft_delete_read_filters.py -q
+backend\.venv\Scripts\python.exe -m pytest backend/tests -q --deselect backend/tests/test_deploy_files_static.py::test_redeploy_script_normalizes_crlf_before_remote_bash
 ```
 
-结果：`170 passed, 1 warning`。
+结果：`488 passed, 1 deselected, 1 warning`（292.23s）。排除项因本机 WSL 无 Linux 发行版，无法执行 Bash 过滤，不属于本轮业务代码失败。
 
 ```powershell
 $tests = Get-ChildItem frontend/tests -Filter '*.test.mjs'
 foreach ($test in $tests) { node $test.FullName }
 ```
 
-结果：`43` 个前端静态测试全部通过；`npm run type-check`、`npm run build` 通过。
+结果：`44/44` 个前端静态测试全部通过；`npm run type-check`、`npm run build` 通过。
 
-真实 MySQL 临时库：`backend/scripts/verify_course_cleanup_mysql.py` 输出 `ALL_MYSQL_VERIFY_OK`，`cleaned_count=3`、`failed_count=0`，五类可脱钩外键均为 `ON DELETE SET NULL`。
+历史真实 MySQL 临时库记录：`backend/scripts/verify_course_cleanup_mysql.py` 曾输出 `ALL_MYSQL_VERIFY_OK`，`cleaned_count=3`、`failed_count=0`，五类可脱钩外键均为 `ON DELETE SET NULL`。
 
-### 1.3 复审阶段的验证限制（现已解除）
+### 1.3 历史验证限制与本轮边界
 
 - 初次复审时，通用 SQLite 内存库未开启 `PRAGMA foreign_keys=ON`；现已新增 cleanup 专用外键开启测试。
-- 初次复审时没有真实 MySQL 到期清理证据；现已在专用临时库 `tongshi_cleanup_verify` 完成外键矩阵与 cleanup 场景验证，未触碰正式库 `tongshi`。
+- 初次复审时没有真实 MySQL 到期清理证据；历史记录显示曾在专用临时库 `tongshi_cleanup_verify` 完成外键矩阵与 cleanup 场景验证，未触碰正式库 `tongshi`。
 - 目标文档是未跟踪新文件；工作区已有共享题库相关未提交修改，本计划不得覆盖或回滚这些修改。
+
+### 1.4 本轮验收整改（2026-07-17）
+
+- Excel 导入的“标签”列、每行有效标签和每行有效答案已设为必填；答案校验同时覆盖教师、管理员与旧公共课程兼容导入服务；课程名称保持可选，空值导入独立共享题库。
+- 管理员经 `/api/questions/import` 填写非空课程名称时，同名课程歧义会明确拒绝，不会任意挂载课程；教师模板明确“题型、标签、题干、答案”四项必填。
+- 管理员独立题库 Excel 的行内课程名称优先于默认 `mount_course_id`，仅唯一活跃公共课程可挂载；未知、私有、同名歧义课程均作为该行错误，空值才回退默认挂载。贡献日志按每门公共课和独立题库分别聚合，模板增加空白课程名称列。
+- 教师、管理员与旧公共课程兼容导入服务三条路径均使用行级嵌套事务隔离真实数据库 `flush` 失败；教师与管理员均新增重复主键失败回归，失败行不会回滚同批成功数据。
+- 独立题与公共课程题的贡献日志已按挂载上下文分别聚合；阶段删除已支持确认后级联软删活跃资料，读路径过滤软删资料。
+- `ElRate` 已补入前端按需注册；`Settings` 连续实例的 `DATABASE_URL` 与 `SECRET_KEY` 环境隔离回归各通过一条；新增 `app/db/base.py` 解耦 session 与 entities。MySQL 验证脚本在数据库连接前校验专用库、安全重置、确认参数及 admin/verify DSN 同一 `host/port`，禁用 DSN query 覆盖，默认将报告写入系统临时目录或 `--output-dir`，并脱敏查询参数中的敏感值及通过子进程 `.env` 隔离回归。
+- 题库定向后端回归 `41 passed, 1 warning`；MySQL 验证脚本单元测试已更新为 `12 passed`，五条拒绝路径均以非零退出码正确拒绝；验证脚本与重复题限定组 `14 passed`，独立复审确认无阻断项。教师、管理员与旧公共课程兼容导入服务已补“答案不能为空”和真实 `flush` 失败隔离回归。最终后端完整回归为 `488 passed, 1 deselected, 1 warning`（292.23s），前端静态测试 `44/44`、`npm run type-check`、`npm run build` 均通过。
+- 浏览器已验证教师 `/teacher/questions`、管理员 `/admin/question-bank`、管理员 `/admin/public-courses` 可打开且中文正常；教师课程名称可选、标签必填且新增无课程字段，管理员可创建独立题且标签必填。未点击资料或阶段删除确认，相关删除语义仅源码确认。当前未配置 `MYSQL_VERIFY_URL` / `MYSQL_VERIFY_ADMIN_URL`，本轮未运行真实 MySQL 脚本；历史临时库记录不得替代上述未运行场景。
 
 ## 二、对原问题清单的复审结论
 
@@ -403,7 +414,7 @@ foreach ($test in $tests) { node $test.FullName }
 
 - [x] 更新稳定事实、废止旧文档、记录实际测试与服务器影响。
 - [x] 运行受影响后端测试、前端静态测试、`npm run type-check`、`npm run build`。
-- [x] 在真实 MySQL 或等价临时库执行外键开启的 cleanup 验证；未执行时明确写“未验证”，不得签字。
+- [x] 历史临时库曾执行外键开启 cleanup 验证；本轮已完成脚本安全门单元测试。当前未配置 `MYSQL_VERIFY_URL` / `MYSQL_VERIFY_ADMIN_URL`，本轮真实 MySQL 脚本未运行，相关验收不得据此签字。
 - [x] 运行 `git diff --check`。
 - [x] 代码修改完成后运行 `graphify update .`；`graphify-out/` 不进入暂存范围。
 
@@ -422,7 +433,7 @@ foreach ($test in $tests) { node $test.FullName }
 
 ### 6.2 整体闭环验收
 
-只有 Task 7–9 的已确认方案全部完成，旧接口兼容行为有测试，且真实 MySQL cleanup 验证通过，才可声称“共享题库删课语义闭环”。SQLite 测试、前端静态测试或文档完成不能替代该验收门。
+只有 Task 7–9 的已确认方案全部完成，旧接口兼容行为有测试，且在当前验收环境真实 MySQL cleanup 验证通过，才可声称“共享题库删课语义闭环”。SQLite 测试、前端静态测试、历史临时库记录或文档完成不能替代该验收门。
 
 ## 七、建议执行顺序
 
@@ -454,9 +465,11 @@ foreach ($test in $tests) { node $test.FullName }
 
 所有实现批次都必须在 `backend/docs/项目修改记录.md` 写明实际部署动作；未部署统一写“尚未执行”。
 
+> **本轮验收整改部署补充：** 正常发布需要拉取代码、重启后端、重新构建并部署前端；不新增数据库迁移，也不需要调整 Nginx 或生产运行时环境变量。`MYSQL_VERIFY_URL`、`MYSQL_VERIFY_ADMIN_URL` 与 `MYSQL_VERIFY_ALLOW_RESET` 仅供 CI 或人工验证临时注入，且绝不能指向正式库。
+
 ## 九、明确不做
 
-- 不在本计划中实现完整题目标签化、标签必填或删除 `Question.course_id` 的全部迁移。
+- 不重做完整题目标签产品，也不删除 `Question.course_id` 的全部迁移；本轮已将 Excel 导入的标签列及每行有效标签设为必填，课程名称仍可选。
 - 不恢复 rehome 作为删课主路径。
 - 不提前实施 Redis 多 worker、一致性限流、启动锁或压测。
 - 不借共享题库任务重构无关学生页面、回收站全站 UX 或其他资源生命周期。

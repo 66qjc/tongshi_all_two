@@ -1,6 +1,6 @@
 # 课程物理清理引用脱钩设计
 
-> 状态：已按 2026-07-17 工作区实现；真实 MySQL 临时库验证已通过
+> 状态：已按 2026-07-17 工作区实现；本轮 P1/P2 验证脚本整改已补齐并完成最终自动化回归：后端 `488 passed, 1 deselected, 1 warning`（292.23s），前端静态测试 `44/44`、`npm run type-check`、`npm run build` 均通过。历史临时库验证记录保留；当前未配置 `MYSQL_VERIFY_URL` / `MYSQL_VERIFY_ADMIN_URL`，未运行真实 MySQL 脚本。
 > 日期：2026-07-17
 > 关联计划：`docs/superpowers/plans/2026-07-17-shared-question-bank-followups.md`（J1）
 
@@ -15,10 +15,10 @@
 
 ## 二、真实 MySQL 入站外键矩阵
 
-验证环境：本机 MySQL 8.0.44 临时库 `tongshi_cleanup_verify`（**未**改写正式库 `tongshi`）。
+历史验证环境：本机 MySQL 8.0.44 临时库 `tongshi_cleanup_verify`（**未**改写正式库 `tongshi`）。
 导出方式：`information_schema.KEY_COLUMN_USAGE` + `REFERENTIAL_CONSTRAINTS` + `COLUMNS`，条件 `REFERENCED_TABLE_NAME = 'courses'`。
 导出脚本：`backend/scripts/verify_course_cleanup_mysql.py`。
-原始快照：`backend/tmp_mysql_course_fk_matrix.txt`（验证产物，非正式业务配置）。
+历史快照：`backend/tmp_mysql_course_fk_matrix.txt` 是此前遗留的临时产物，不是当前脚本输入或验收依赖，当前脚本不再生成该文件。矩阵报告默认写入系统临时目录，也可用 `--output-dir` 显式指定。
 
 | 表.列 | 约束名（验证库） | DELETE_RULE | 可空 | 处理策略 |
 |---|---|---|---|---|
@@ -57,13 +57,13 @@ MySQL 实测发现：清理审计写 `user_id="system"` 时，若 `users` 表无
 
 ## 五、验证记录
 
-### 5.1 真实 MySQL（临时库）
+### 5.1 历史真实 MySQL（临时库）
 
 ```text
 backend/.venv/Scripts/python.exe backend/scripts/verify_course_cleanup_mysql.py
 ```
 
-结果：`ALL_MYSQL_VERIFY_OK`
+历史结果：`ALL_MYSQL_VERIFY_OK`
 
 断言：
 
@@ -82,8 +82,24 @@ pytest backend/tests/test_soft_delete_cleanup.py::test_course_cleanup_with_sqlit
 
 结果：passed。`PRAGMA foreign_keys=ON` 下同样完成脱钩与删课；系统审计 `user_id is None`。
 
+### 5.3 本轮脚本安全门与未执行边界
+
+- 新增 `backend/app/db/base.py` 将 ORM 元数据基类从 session 模块抽离，避免验证脚本导入 session/实体链路时加载运行时配置。
+- `backend/tests/test_verify_course_cleanup_mysql.py` 已覆盖缺失连接、缺失重置开关、正式库名称拒绝、专用库名称确认、admin/verify DSN 同一实例、用户信息与查询参数口令脱敏、外键矩阵完整性和子进程脚本导入 `.env` 隔离，共 `12 passed`；五条脚本拒绝路径均以非零退出码正确拒绝。
+- `Settings` 连续实例环境隔离回归已覆盖 `DATABASE_URL` 与 `SECRET_KEY`，两条均通过；该修复与 MySQL 验证变量的运行时隔离保持一致。
+- 脚本不读取项目 `.env` 或应用运行时 `Settings`；只在 CI 或人工验收时读取 `MYSQL_VERIFY_URL`、`MYSQL_VERIFY_ADMIN_URL` 与 `MYSQL_VERIFY_ALLOW_RESET`。
+- 重置前 `MYSQL_VERIFY_ADMIN_URL` 必须与 `MYSQL_VERIFY_URL` 指向同一 MySQL `host/port`；DSN query 覆盖禁用，控制台与矩阵报告必须脱敏查询参数中的 `password`、`token`、`api_key` 等敏感值。
+- 当前环境未配置前两项连接变量，因此本轮没有执行真实 MySQL 场景。历史临时库结果不能替代本轮执行结果，也不得据此宣称当前验收已完成。
+
+### 5.4 本轮完整回归
+
+- 后端完整回归：`488 passed, 1 deselected, 1 warning`（292.23s）。唯一排除项为 `test_deploy_files_static.py::test_redeploy_script_normalizes_crlf_before_remote_bash`，因本机 WSL 无 Linux 发行版而无法执行 Bash 过滤。
+- 前端完整回归：静态测试 `44/44` 通过，`npm run type-check`、`npm run build` 通过。
+- 验证脚本与重复题限定组 `14 passed`，独立复审确认无阻断项；该结果与完整回归均不替代当前环境尚未执行的真实 MySQL 场景。
+
 ## 六、部署注意
 
 - 正式库发布前备份。
 - 启动 `ensure_schema_compatibility` 会幂等调整可空列、快照回填、root 清空与 SET NULL FK 重建。
-- 验证脚本只操作 `tongshi_cleanup_verify`，发布流程不要指向生产库跑 DROP DATABASE。
+- 验证脚本只允许操作 `tongshi_verify_*` 专用库，发布流程和生产库连接绝不能用于脚本的 DROP/CREATE 操作。
+- 本轮验收整改本身不新增数据库迁移，也不需要调整 Nginx 或生产运行时环境变量；发布代码时仍需拉取代码、重启后端、重新构建前端。

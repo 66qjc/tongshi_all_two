@@ -46,6 +46,63 @@ def test_guest_can_read_public_course_detail_and_stage_materials(client: TestCli
     assert detail["stages"][0]["materials"][0]["title"] == "阶段资料"
 
 
+def test_guest_public_course_detail_hydrates_pdf_summary(client: TestClient, db_session):
+    """游客读公开课程详情时，pending PDF 应懒生成并返回摘要。"""
+    from pathlib import Path
+
+    import fitz
+
+    from app.core.config import settings
+    from app.models.entities import MaterialPreview
+
+    course = Course(name="公开摘要课程", created_by="admin", is_public=True, description="摘要验收")
+    db_session.add(course)
+    db_session.flush()
+
+    object_key = "materials/public-summary.pdf"
+    target = Path(settings.local_upload_dir) / object_key
+    target.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "AI literacy course summary sample")
+    doc.save(target)
+    doc.close()
+
+    stored = StoredFile(
+        biz_type="material",
+        biz_id=course.id,
+        storage_provider="local",
+        object_key=object_key,
+        original_name="public-summary.pdf",
+        stored_name="public-summary.pdf",
+        content_type="application/pdf",
+        size_bytes=target.stat().st_size,
+        created_by="admin",
+    )
+    db_session.add(stored)
+    db_session.flush()
+    material = Material(
+        course_id=course.id,
+        type="pdf",
+        title="公开摘要 PDF",
+        file_id=stored.id,
+        size="1 MB",
+    )
+    db_session.add(material)
+    db_session.flush()
+    db_session.add(MaterialPreview(material_id=material.id, status="pending"))
+    db_session.commit()
+
+    detail_resp = client.get(f"/api/public/learning/courses/{course.id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()["data"]
+    item = detail["uncategorized_materials"][0]
+    assert item["title"] == "公开摘要 PDF"
+    assert item["preview"] is not None
+    assert item["preview"]["status"] == "ready"
+    assert "AI literacy course summary sample" in item["preview"]["summary"]
+
+
 def test_guest_cannot_read_private_course_or_private_materials(client: TestClient, db_session):
     private_course = Course(name="私有课程", created_by="T001", is_public=False)
     db_session.add(private_course)

@@ -30,7 +30,6 @@ from app.models.entities import (
     User,
 )
 from app.services.audit_service import create_audit_log
-from app.services.file_service import _has_active_file_reference, _has_any_file_reference
 from app.services.history_snapshot_service import capture_snapshot
 from app.services.soft_delete_policy import RESOURCE_POLICIES, retention_deadline
 from app.services.soft_delete_service import RESOURCE_MODELS
@@ -69,6 +68,8 @@ def _next_sunday_retry(now_beijing: datetime) -> str:
 
 def collect_file_references(db: Session, file_id: int) -> dict[str, bool]:
     """汇总文件引用状态，供清理前判断是否可删对象存储。"""
+    from app.services.file_service import _has_active_file_reference, _has_any_file_reference
+
     has_snapshot = False
     for row in db.query(HistorySnapshot).filter(HistorySnapshot.fact_type == "文件引用").all():
         payload = row.payload or {}

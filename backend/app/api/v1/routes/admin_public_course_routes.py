@@ -30,6 +30,7 @@ from app.services import admin_question_bank_service as question_bank_service
 from app.services.course_stage_service import create_stage, delete_stage, format_stage_out, list_stages_for_course, update_stage
 from app.services.public_course_sync_service import sync_stages_to_course_copies
 from app.services.question_bank_service import count_all_questions
+from app.services.soft_delete_service import soft_delete
 
 router = APIRouter(prefix="/public-courses", tags=["admin-public-courses"])
 
@@ -244,12 +245,17 @@ def edit_public_stage(
     return success(format_stage_out(stage))
 
 
-@router.delete("/{course_id}/stages/{stage_id}", summary="删除公共课程阶段", description="管理员：删除阶段（阶段下必须没有资料）并同步教师副本")
+@router.delete(
+    "/{course_id}/stages/{stage_id}",
+    summary="删除公共课程阶段",
+    description="管理员：删除阶段并同步教师副本；cascade_materials=true 时级联软删阶段下活跃资料",
+)
 def remove_public_stage(
     course_id: int,
     stage_id: int,
+    cascade_materials: bool = False,
     db: Session = Depends(get_db),
-    _: AuthUser = Depends(require_role("admin")),
+    current_user: AuthUser = Depends(require_role("admin")),
 ):
     course = service.get_course_by_id(db, course_id)
     if not course or not course.is_public:
@@ -257,16 +263,45 @@ def remove_public_stage(
     stage = db.query(CourseStage).filter(CourseStage.id == stage_id, CourseStage.course_id == course_id).first()
     if not stage:
         raise BusinessException(404, "阶段不存在")
+    source_has_active_materials = db.query(Material).filter(
+        Material.stage_id == stage_id,
+        Material.deleted_at.is_(None),
+    ).first() is not None
+    if source_has_active_materials and not cascade_materials:
+        raise BusinessException(400, "阶段下仍有资料，请先移出或删除资料，或确认级联删除")
+
     # 删除源阶段前，先清理教师副本中引用该阶段的副本阶段
     copy_stages = db.query(CourseStage).filter(CourseStage.source_stage_id == stage_id).all()
     for copy_stage in copy_stages:
-        if copy_stage.materials:
-            # 将副本阶段下的资料设为未分类，避免级联阻塞
-            db.query(Material).filter(Material.stage_id == copy_stage.id).update(
-                {Material.stage_id: None}, synchronize_session=False,
-            )
+        active_copy = [
+            m for m in (copy_stage.materials or [])
+            if getattr(m, "deleted_at", None) is None
+        ]
+        if active_copy:
+            if cascade_materials:
+                for material in list(active_copy):
+                    if material.source_material_id is None:
+                        # 教师在副本阶段自行新增的资料不随公共源删除，转为未分类。
+                        material.stage_id = None
+                    else:
+                        soft_delete(db, material, current_user, action="material.delete")
+                        material.stage_id = None
+            else:
+                # 将副本阶段下活跃资料设为未分类，避免级联阻塞
+                db.query(Material).filter(
+                    Material.stage_id == copy_stage.id,
+                    Material.deleted_at.is_(None),
+                ).update(
+                    {Material.stage_id: None}, synchronize_session=False,
+                )
         db.delete(copy_stage)
-    if not delete_stage(db, stage_id):
+    if not delete_stage(
+        db,
+        stage_id,
+        cascade_materials=cascade_materials,
+        operator_id=current_user.id,
+        operator_role="admin",
+    ):
         raise BusinessException(400, "阶段删除失败")
     sync_stages_to_course_copies(db, course)
     db.commit()
@@ -462,6 +497,7 @@ def import_public_questions(
     headers = [str(c.value).strip() if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
     required_header_groups = [
         ("题型", ["题型", "type"]),
+        ("标签", ["标签", "课程标签", "tags", "course_tags"]),
         ("题干", ["题干", "stem"]),
         ("答案", ["答案", "answer"]),
     ]

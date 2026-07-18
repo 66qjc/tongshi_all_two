@@ -94,8 +94,9 @@ def create_material(
     )
     db.add(material)
     db.flush()
-    from app.services.material_preview_service import ensure_material_preview
-    ensure_material_preview(db, material.id)
+    from app.services.material_preview_service import bootstrap_material_preview
+    # PDF 创建后立即抽取摘要；视频/其它类型仅建立 pending 预览记录。
+    bootstrap_material_preview(db, material)
     db.commit()
     db.refresh(material)
     return material
@@ -167,6 +168,14 @@ def format_material_preview(preview) -> dict | None:
         "resolution": preview.resolution or "",
         "error_message": preview.error_message or "",
     }
+
+
+def format_material_preview_for_material(db: Session, material: Material) -> dict | None:
+    """格式化资料预览；PDF 在读路径对 pending/缺失记录做一次懒生成。"""
+    from app.services.material_preview_service import hydrate_material_preview_for_read
+
+    hydrate_material_preview_for_read(db, material)
+    return format_material_preview(material.preview)
 
 
 def resolve_material_file_for_user(db: Session, material_id: int, user_id: str, role: str):

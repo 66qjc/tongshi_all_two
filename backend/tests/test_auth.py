@@ -248,20 +248,21 @@ class TestAuth:
         assert current["code"] == 401
 
     def test_settings_require_secret_key(self, monkeypatch):
-        original_init = Settings.__init__
-
-        def init_without_secret(self):
-            self.secret_key = ""
-            self.algorithm = "HS256"
-            self.access_token_expire_minutes = 10080
-            self.allowed_origins = "*"
-            self.database_url = "sqlite://"
-            original_init(self)
-
-        monkeypatch.setattr(Settings, "__init__", init_without_secret)
+        monkeypatch.delenv("SECRET_KEY", raising=False)
 
         with pytest.raises(ValueError, match="SECRET_KEY"):
             Settings()
+
+    def test_settings_instances_do_not_reuse_previous_secret_key(self, monkeypatch):
+        """连续实例不得复用前一次测试设置的密钥。"""
+        monkeypatch.setenv("SECRET_KEY", "first-secret-key")
+        first = Settings()
+
+        monkeypatch.setenv("SECRET_KEY", "second-secret-key")
+        second = Settings()
+
+        assert first.secret_key == "first-secret-key"
+        assert second.secret_key == "second-secret-key"
 
     def test_legacy_query_token_setting_is_ignored(self, monkeypatch):
         monkeypatch.setenv("ALLOW_QUERY_TOKEN_FOR_FILES", "true")

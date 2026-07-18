@@ -222,6 +222,9 @@ def create_public_material(db: Session, course_id: int, data: dict) -> Material:
     db.add(material)
     db.flush()
     sync_material_to_course_copies(db, material)
+    from app.services.material_preview_service import bootstrap_material_preview
+    # 公共课 PDF 上传后立即生成摘要，供游客公开阅读页展示。
+    bootstrap_material_preview(db, material)
     db.commit()
     db.refresh(material)
     return material
@@ -520,9 +523,7 @@ def import_questions_to_public_course(
     skips = []
     errors = []
     for idx, row in enumerate(rows, start=2):
-        savepoint = None
         try:
-            savepoint = db.begin_nested()
             q_type = str(_row_value(row, "题型", "type")).strip()
             stem = str(_row_value(row, "题干", "stem")).strip()
             if not stem:
@@ -530,8 +531,12 @@ def import_questions_to_public_course(
             options = str(_row_value(row, "选项（选择题用 | 分隔）", "选项", "options")).strip()
             option_list = [x.strip() for x in options.split("|") if x.strip()] if options else []
             answer = str(_row_value(row, "答案", "answer")).strip()
+            if not answer:
+                raise BusinessException(400, "答案不能为空")
             explanation = str(_row_value(row, "解析", "explanation")).strip()
             tags = _normalize_tags(_row_value(row, "标签", "课程标签", "tags", "course_tags"))
+            if not tags:
+                raise BusinessException(400, "标签不能为空")
             if q_type not in {"choice", "fill", "multi_choice"}:
                 raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
             if q_type in {"choice", "multi_choice"} and not option_list:
@@ -541,7 +546,6 @@ def import_questions_to_public_course(
             if existing:
                 skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
                 skip_count += 1
-                savepoint.rollback()
                 continue
             # 全站共享题库：查重范围为全站所有题目
             duplicate = find_duplicate_question(
@@ -554,7 +558,6 @@ def import_questions_to_public_course(
             if duplicate:
                 skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
                 skip_count += 1
-                savepoint.rollback()
                 continue
             question = Question(
                 type=q_type, course_id=course.id, stem=stem,
@@ -563,13 +566,11 @@ def import_questions_to_public_course(
                 stem_hash=stem_hash,
                 mount_course_name_snapshot=course.name or "",
             )
-            db.add(question)
-            db.flush()
-            savepoint.commit()
+            with db.begin_nested():
+                db.add(question)
+                db.flush()
             success_count += 1
         except Exception as exc:
-            if savepoint is not None and savepoint.is_active:
-                savepoint.rollback()
             fail_count += 1
             errors.append({"row": idx, "reason": str(exc)})
     if operator_id and success_count > 0:

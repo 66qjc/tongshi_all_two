@@ -24,7 +24,7 @@ const navItems = computed(() => [
   { name: '作业完成', path: '/teacher/task-report', icon: '&#9745;' },
   { name: '作品审核', path: '/teacher/reviews', icon: '&#10003;' },
   { name: '学生管理', path: '/teacher/student-admin', icon: '&#9782;' },
-  { name: '题库管理', path: '/teacher/questions', icon: '&#9998;' },
+  { name: '共享题库', path: '/teacher/questions', icon: '&#9998;' },
   { name: 'AI 点名', path: '/teacher/random-picker', icon: '&#127922;' },
 ])
 

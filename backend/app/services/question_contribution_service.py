@@ -14,19 +14,20 @@ def resolve_public_question_course(db: Session, course: Course) -> Course:
 
 def record_question_contribution(
     db: Session,
-    public_course: Course,
+    public_course: Course | None,
     operator_id: str,
     operator_role: str,
     action: str,
     question_count: int,
 ) -> None:
-    """记录一次公共题库贡献批次。"""
-    if question_count <= 0 or not public_course.is_public:
+    """记录一次共享题库贡献批次。"""
+    if question_count <= 0:
         return
     operator = db.query(User).filter(User.id == operator_id).first()
+    is_public_course = public_course is not None and public_course.is_public
     db.add(QuestionContributionLog(
-        public_course_id=public_course.id,
-        public_course_name=public_course.name,
+        public_course_id=public_course.id if is_public_course else None,
+        public_course_name=public_course.name if is_public_course else "独立题库",
         operator_id=operator_id,
         operator_name=operator.name if operator else operator_id,
         operator_role=operator.role if operator else operator_role,

@@ -77,8 +77,14 @@ export function updateAdminPublicCourseStage(courseId: number, stageId: number, 
   return http.put<any, AdminCourseStage>(`/admin/public-courses/${courseId}/stages/${stageId}`, data)
 }
 
-export function deleteAdminPublicCourseStage(courseId: number, stageId: number) {
-  return http.delete<any, any>(`/admin/public-courses/${courseId}/stages/${stageId}`)
+export function deleteAdminPublicCourseStage(
+  courseId: number,
+  stageId: number,
+  options?: { cascadeMaterials?: boolean },
+) {
+  return http.delete<any, any>(`/admin/public-courses/${courseId}/stages/${stageId}`, {
+    params: { cascade_materials: options?.cascadeMaterials === true },
+  })
 }
 
 export function getAdminPublicMaterials(courseId: number) {

@@ -191,6 +191,19 @@ def test_settings_defaults_keep_mysql_and_local_storage(monkeypatch):
     assert settings.storage_backend in {"local", "s3"}
 
 
+def test_settings_instances_read_current_database_environment(monkeypatch):
+    """连续创建配置实例时，后一次必须读取当前数据库环境变量。"""
+    monkeypatch.setenv("SECRET_KEY", "settings-isolation-test")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///first-settings.db")
+    first = Settings()
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///second-settings.db")
+    second = Settings()
+
+    assert first.database_url == "sqlite:///first-settings.db"
+    assert second.database_url == "sqlite:///second-settings.db"
+
+
 def test_settings_reads_seaweedfs_s3_config(monkeypatch):
     """应正确读取本地 SeaweedFS S3 配置"""
     monkeypatch.setenv("STORAGE_BACKEND", "s3")

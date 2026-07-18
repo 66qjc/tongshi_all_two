@@ -48,9 +48,17 @@ const metaText = computed(() => {
 
 const summaryText = computed(() => {
   if (!props.material) return ''
-  if (props.material.preview?.summary) return props.material.preview.summary
+  // 仅 PDF 展示抽取摘要；视频/链接使用简短说明，不假装已有正文摘要。
+  if (props.material.type === 'pdf') {
+    const summary = (props.material.preview?.summary || '').trim()
+    if (summary) return summary
+    const status = props.material.preview?.status
+    if (status === 'processing' || status === 'pending') return 'PDF 摘要生成中，请稍候。'
+    if (status === 'failed') return props.material.preview?.error_message || 'PDF 摘要暂不可用。'
+    return '暂无 PDF 摘要，可先阅读正文内容。'
+  }
   if (props.material.type === 'link') return '该资料为外部学习链接，请在新窗口打开阅读。'
-  return '暂无资料摘要，可先阅读正文内容，再结合课程任务完成学习记录。'
+  return ''
 })
 
 const pdfPagesToRender = computed(() => {

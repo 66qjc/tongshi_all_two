@@ -164,13 +164,13 @@ async function handleStageOrderChange(stage: CourseStage) {
 }
 
 async function handleDeleteStage(stage: CourseStage) {
-  if (stage.materials.length > 0) {
-    ElMessage.warning('该阶段下仍有资料。请先编辑这些资料，将所属阶段改为「未分类」或其他阶段，或删除资料。')
-    return
-  }
+  const count = stage.materials?.length || 0
+  const tip = count > 0
+    ? `确定删除阶段「${stage.name}」？将同时删除该阶段下的 ${count} 份资料（软删除），此操作需确认。`
+    : `确定删除阶段「${stage.name}」？`
   try {
-    await ElMessageBox.confirm(`确定删除阶段「${stage.name}」？`, '删除确认', { type: 'warning' })
-    await deleteCourseStage(stage.id)
+    await ElMessageBox.confirm(tip, '删除确认', { type: 'warning', confirmButtonText: '确定删除' })
+    await deleteCourseStage(stage.id, { cascadeMaterials: true })
     ElMessage.success('已删除')
     await loadCourse()
   } catch (error) {

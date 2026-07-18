@@ -109,7 +109,7 @@ def get_course_questions_for_quiz(
     ])
 
 
-@router.post("", summary="新增题目", description="教师端：创建选择题或填空题")
+@router.post("", summary="新增题目", description="教师端：创建共享题；course_id 可选，不传则写入独立共享题（仅标签归属）")
 def add_question(data: QuestionCreate, db: Session = Depends(get_db), current_user: AuthUser = Depends(require_role("teacher"))):
     q = create_question(db, data.model_dump(), current_user.id)
     return success({"id": q.id})
@@ -145,15 +145,15 @@ def _build_question_template(question_type: str) -> bytes:
     ws.title = "题目导入模板"
     ws.append(["题型", "课程名称", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"])
     if question_type == "choice":
-        ws.append(["choice", "示例课程", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
+        ws.append(["choice", "", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
     elif question_type == "fill":
-        ws.append(["fill", "示例课程", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
+        ws.append(["fill", "", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
     elif question_type == "multi_choice":
-        ws.append(["multi_choice", "示例课程", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
+        ws.append(["multi_choice", "", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
     else:
-        ws.append(["choice", "示例课程", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
-        ws.append(["fill", "示例课程", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
-        ws.append(["multi_choice", "示例课程", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
+        ws.append(["choice", "", "人工智能基础", "图灵测试由谁提出？", "A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦", "A", "图灵提出了图灵测试。"])
+        ws.append(["fill", "", "通识常识", "中国的首都是哪里？", "", "北京", "填空题直接填写答案关键词。"])
+        ws.append(["multi_choice", "", "编程基础", "以下哪些是编程语言？", "A. Python|B. Java|C. HTML|D. C++", "ABD", "HTML 是标记语言，不是编程语言。"])
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
@@ -194,7 +194,7 @@ def download_multi_choice_question_template(current_user: AuthUser = Depends(req
     return _download_template_response("multi_choice")
 
 
-@router.post("/import", summary="Excel 批量导入题目", description="教师端：上传 Excel 批量导入题目（.xlsx，表头：题型/课程名称/题干/选项/答案/解析）")
+@router.post("/import", summary="Excel 批量导入题目", description="教师端：上传 Excel 批量导入题目（.xlsx，题型、标签、题干、答案必填；课程名称可选）")
 def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: AuthUser = Depends(require_roles("teacher", "admin"))):
     content = file.file.read()
     err = validate_upload(file.filename, len(
@@ -212,7 +212,7 @@ def import_questions(file: UploadFile = File(...), db: Session = Depends(get_db)
         ws.iter_rows(min_row=1, max_row=1))]
     required_header_groups = [
         ("题型", ["题型", "type"]),
-        ("课程名称", ["课程名称", "课程", "course", "course_name"]),
+        ("标签", ["标签", "课程标签", "tags", "course_tags"]),
         ("题干", ["题干", "stem"]),
         ("答案", ["答案", "answer"]),
     ]

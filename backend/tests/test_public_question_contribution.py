@@ -255,7 +255,7 @@ def test_admin_import_skips_same_stem_and_writes_hash(client, db_session):
     workbook = _build_question_import_file(
         ["题型", "题干", "选项", "答案", "解析", "标签"],
         [
-            ["fill", "管理员导入已有题干", "", "不同答案", "", ""],
+            ["fill", "管理员导入已有题干", "", "不同答案", "", "已有题"],
             ["fill", "管理员导入全新题干", "", "新答案", "", "导入"],
         ],
     )
@@ -617,12 +617,12 @@ def test_admin_can_page_question_contribution_logs(client):
     assert data["data"]["items"][0]["question_count"] == 1
 
 
-def test_private_course_create_and_import_do_not_write_contribution_logs(
+def test_private_course_create_and_import_write_independent_contribution_logs(
     client,
     db_session,
     teacher_token,
 ):
-    """私有课程题目新增和导入保持原行为，不写贡献记录。"""
+    """私有课程挂载题仍属共享题库，应写独立题库贡献记录。"""
     create_course_resp = client.post(
         "/api/courses",
         json={"name": "私有题库课程"},
@@ -644,7 +644,7 @@ def test_private_course_create_and_import_do_not_write_contribution_logs(
     )
     excel = _build_question_import_file(
         ["题型", "课程名称", "标签", "题干", "选项（选择题用 | 分隔）", "答案", "解析"],
-        [["choice", "私有题库课程", "", "私有导入题", "A|B", "A", ""]],
+        [["choice", "私有题库课程", "私有标签", "私有导入题", "A|B", "A", ""]],
     )
     client.post(
         "/api/questions/import",
@@ -652,7 +652,12 @@ def test_private_course_create_and_import_do_not_write_contribution_logs(
         headers=auth_header(teacher_token),
     )
 
-    assert db_session.query(QuestionContributionLog).count() == 0
+    logs = db_session.query(QuestionContributionLog).order_by(QuestionContributionLog.id).all()
+    assert len(logs) == 2
+    assert [(log.public_course_id, log.public_course_name, log.action, log.question_count) for log in logs] == [
+        (None, "独立题库", "create", 1),
+        (None, "独立题库", "import", 1),
+    ]
     assert db_session.query(Question).filter(
         Question.course_id == private_course_id,
         Question.created_by == "T001",

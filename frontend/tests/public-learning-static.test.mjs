@@ -171,9 +171,13 @@ assert.match(
 )
 assert.match(inlineReader, /浏览器无法直接显示 PDF/, 'PDF 内嵌失败时应有中文降级提示')
 assert.match(inlineReader, /type === 'video'/, 'MaterialInlineReader 应处理视频资料')
-assert.match(inlineReader, /<video[\s\S]*controls/, '视频资料应在页面中间直接播放')
-assert.match(inlineReader, /type === 'link'/, 'MaterialInlineReader 应处理链接资料')
-assert.match(inlineReader, /打开原资料/, '链接资料应提供打开入口')
+	assert.match(inlineReader, /<video[\s\S]*controls/, '视频资料应在页面中间直接播放')
+	assert.match(inlineReader, /type === 'link'/, 'MaterialInlineReader 应处理链接资料')
+	assert.match(inlineReader, /打开原资料/, '链接资料应提供打开入口')
+	assert.match(inlineReader, /props\.material\.type === 'pdf'/, '直读器应仅对 PDF 展示抽取摘要')
+	assert.match(inlineReader, /PDF 摘要生成中/, 'PDF 摘要生成中应有中文状态')
+	assert.match(detail, /function materialSummary\(material: Material\)/, '课程详情右侧导读应展示资料摘要')
+	assert.match(detail, /material\.type !== 'pdf'/, '右侧导读应区分 PDF 与其它资料类型')
 
 assert.match(previewDialog, /previewUrl/, '资料预览弹窗应支持外部传入公开预览 URL')
 assert.match(

@@ -63,7 +63,7 @@ test('教师端危险操作和空状态应说明真实后果和下一步', () =>
   assert.match(teacherCourses, /软删除你工作台中的课程副本/, '删除课程应说明会影响教师自己的课程副本')
   assert.match(teacherCourses, /共享题目不随课程删除、不转挂/, '删除课程应说明共享题不随课删除')
   assert.match(teacherCourses, /不影响公共课程源/, '删除课程应说明不影响公共课程源')
-  assert.match(teacherCourseDetail, /所属阶段改为「未分类」或其他阶段/, '删除阶段失败提示应给出可执行移动方式')
+  assert.match(teacherCourseDetail, /同时删除该阶段下/, '删除阶段确认应说明会一并删除阶段下资料')
   assert.match(teacherCourseDetail, /本课程副本中的资料/, '课程详情资料删除应统一课程副本文案')
   assert.match(teacherCourseDetail, /不影响公共课程源内容/, '课程详情资料删除应说明不影响公共课程源内容')
   assert.match(teacherCourseDetail, /上传新资料/, '课程详情空状态旁应有上传新资料入口')
@@ -74,7 +74,7 @@ test('教师端危险操作和空状态应说明真实后果和下一步', () =>
   assert.match(teacherReviews, /在新窗口打开报告/, '教师作品 PDF 预览降级说明应使用新窗口打开')
   assert.doesNotMatch(teacherReviews, /新窗口查看/, '教师作品 PDF 预览降级说明不应使用新窗口查看')
   assert.doesNotMatch(teacherAnnouncements, /题目属于同一课程|当前课程暂无题目/, '共享题库后发布作业页不应暗示题目必须属于当前课程')
-  assert.match(teacherAnnouncements, /题库暂无题目，请先到题库管理中新增或导入题目。/, '共享题库空状态应说明全站题库暂无题目')
+  assert.match(teacherAnnouncements, /题库暂无题目，请先到共享题库中新增或导入题目。/, '共享题库空状态应说明全站题库暂无题目')
 })
 
 test('导入说明应有中文解释且避免纯内部枚举口吻', () => {
@@ -101,7 +101,7 @@ test('管理端文案承诺应和实际行为一致', () => {
   assert.match(adminPublicCourses, /资料与阶段由管理员维护，会同步到教师课程副本/, '公共课程说明应区分资料阶段同步')
   assert.match(adminPublicCourses, /全站共享题库请到「共享题库」菜单维护/, '公共课程页应引导到独立共享题库入口')
   assert.match(adminPublicCourses, /公共课程源资料/, '删除公共资料应使用公共课程源术语')
-  assert.match(adminPublicCourses, /教师课程副本中移除对应同步资料/, '删除公共资料应说明同步资料会从教师课程副本移除')
+  assert.match(adminPublicCourses, /已同步到教师课程副本的资料会保留/, '删除公共资料应说明既有教师课程副本会保留')
   assert.match(adminPublicCourses, /教师自行新增资料不受影响/, '删除公共资料应说明不影响教师自建资料')
   assert.match(adminPublicCourses, /全站共享题库|共享题库/, '公共课程文案应说明题库是全站共享')
   assert.doesNotMatch(adminPublicCourses, /同步题目|公共题目已(?:新增|更新)，并同步|暂无题目，新增后会同步|导入后会自动同步/, '题库说明不应继续使用题目同步到教师课程副本的旧口径')

@@ -10,10 +10,10 @@ from app.core.exceptions import BusinessException
 from app.core.timezone_utils import to_beijing_iso
 from app.models.entities import Course, Material, StoredFile
 from app.services.file_service import build_x_accel_redirect_path
-from app.services.material_service import format_material_preview
+from app.services.material_service import format_material_preview_for_material
 
 
-def _format_public_material(material: Material) -> dict:
+def _format_public_material(db: Session, material: Material) -> dict:
     """格式化公开资料输出。"""
     return {
         "id": material.id,
@@ -30,7 +30,7 @@ def _format_public_material(material: Material) -> dict:
         "source_material_id": material.source_material_id,
         "is_synced": bool(material.source_material_id),
         "stage_id": material.stage_id,
-        "preview": format_material_preview(material.preview),
+        "preview": format_material_preview_for_material(db, material),
     }
 
 
@@ -126,7 +126,7 @@ def build_public_course_detail(db: Session, course_id: int) -> dict:
             "sort_order": stage.sort_order,
             "created_at": to_beijing_iso(stage.created_at),
             "materials": [
-                _format_public_material(material)
+                _format_public_material(db, material)
                 for material in stage.materials
                 if getattr(material, "deleted_at", None) is None
             ],
@@ -134,7 +134,7 @@ def build_public_course_detail(db: Session, course_id: int) -> dict:
         stages.append(stage_data)
     data["stages"] = stages
     data["uncategorized_materials"] = [
-        _format_public_material(material)
+        _format_public_material(db, material)
         for material in course.materials
         if material.stage_id is None and getattr(material, "deleted_at", None) is None
     ]
@@ -164,7 +164,7 @@ def list_public_materials(
         query = query.filter(Material.title.ilike(f"%{keyword.strip()}%"))
     total = query.count()
     materials = query.order_by(Material.id.desc()).limit(safe_limit).all()
-    return {"items": [_format_public_material(material) for material in materials], "total": total}
+    return {"items": [_format_public_material(db, material) for material in materials], "total": total}
 
 
 def resolve_public_material_file(db: Session, material_id: int):

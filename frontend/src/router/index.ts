@@ -182,7 +182,7 @@ const router = createRouter({
           path: 'questions',
           name: 'teacher-questions',
           component: () => import('../views/teacher/TeacherQuestions.vue'),
-          meta: { title: '题库管理' },
+          meta: { title: '共享题库' },
         },
         {
           path: 'courses',

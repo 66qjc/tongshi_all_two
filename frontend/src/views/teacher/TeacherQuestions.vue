@@ -2,11 +2,8 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createQuestion, downloadQuestionTemplate, getQuestions, importQuestions, updateQuestion, type Question } from '@/api/question'
-import { getCourses, type Course } from '@/api/course'
 import { useDebounce } from '@/composables/useDebounce'
 
-const courses = ref<Course[]>([])
-const writableCourses = ref<Course[]>([])
 const questions = ref<Question[]>([])
 const loading = ref(true)
 // 全站共享题库：不再按课程筛选题目（后端忽略 course_id 过滤）
@@ -33,7 +30,6 @@ const importErrorDialogVisible = ref(false)
 const importFailureReason = ref('')
 
 const form = reactive({
-  course_id: '' as number | '',
   type: 'choice' as 'choice' | 'fill' | 'multi_choice',
   stem: '',
   options: ['', '', '', ''],
@@ -42,19 +38,11 @@ const form = reactive({
   tags: [] as string[],
   star_rating: 3,
 })
-/** 编辑时若挂载课已软删且不在可写列表，展示只读原挂载信息，不强迫改挂 */
-const deletedMountLabel = ref('')
 
 function getQuestionTagType(type: Question['type']) {
   if (type === 'choice') return 'primary'
   if (type === 'multi_choice') return 'warning'
   return 'success'
-}
-
-async function loadCourses() {
-  const all = await getCourses()
-  courses.value = all
-  writableCourses.value = all.filter(course => course.is_owner)
 }
 
 async function loadQuestions() {
@@ -91,10 +79,7 @@ function handlePageChange(newPage: number) {
 
 function openNew() {
   editingId.value = null
-  deletedMountLabel.value = ''
-  const defaultCourse = writableCourses.value.length === 1 ? writableCourses.value[0]?.id : undefined
   Object.assign(form, {
-    course_id: defaultCourse ?? '',
     type: 'choice',
     stem: '',
     options: ['', '', '', ''],
@@ -108,13 +93,7 @@ function openNew() {
 
 function openEdit(row: Question) {
   editingId.value = row.id
-  const mountStillWritable = writableCourses.value.some(course => course.id === row.course_id)
-  deletedMountLabel.value = mountStillWritable
-    ? ''
-    : (row.course_name ? `挂载课程（已删除）：${row.course_name}` : '挂载课程（已删除）')
   Object.assign(form, {
-    // 挂载课已删时保留原 course_id，用户主动选择活跃自有课才改挂
-    course_id: mountStillWritable ? row.course_id : (row.course_id ?? ''),
     type: row.type,
     stem: row.stem,
     options: row.options?.length ? [...row.options] : ['', '', '', ''],
@@ -127,17 +106,12 @@ function openEdit(row: Question) {
 }
 
 async function handleSave() {
-  if (typeof form.course_id !== 'number') {
-    ElMessage.warning(editingId.value && deletedMountLabel.value ? '请选择要改挂的活跃自有课程，或取消后保持原挂载' : '请选择所属课程')
-    return
-  }
   if (!form.stem.trim() || !form.answer.trim()) {
     ElMessage.warning('请填写题干和答案')
     return
   }
 
   const payload = {
-    course_id: form.course_id,
     type: form.type,
     stem: form.stem.trim(),
     options: form.type === 'choice' || form.type === 'multi_choice' ? form.options.map(item => item.trim()).filter(Boolean) : [],
@@ -158,7 +132,7 @@ async function handleSave() {
     dialogVisible.value = false
     await loadQuestions()
   } catch {
-    ElMessage.error('保存失败，请检查课程和题目内容')
+    ElMessage.error('保存失败，请检查题目内容')
   }
 }
 
@@ -221,7 +195,7 @@ async function handleImport() {
     page.value = 1
     await loadQuestions()
   } catch (error) {
-    const message = error instanceof Error && error.message ? error.message : '导入失败，请检查文件格式和课程名称'
+    const message = error instanceof Error && error.message ? error.message : '导入失败，请检查文件格式'
     importFailureReason.value = message
     importErrors.value = []
     importErrorDialogVisible.value = true
@@ -232,14 +206,14 @@ async function handleImport() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadCourses(), loadQuestions()])
+  await loadQuestions()
 })
 </script>
 
 <template>
   <div class="questions-page">
     <div class="page-header">
-      <h1>题库管理</h1>
+      <h1>共享题库</h1>
       <div class="header-actions">
         <el-button round @click="openImport">导入题目</el-button>
         <el-button type="primary" round @click="openNew">新增题目</el-button>
@@ -255,11 +229,15 @@ onMounted(async () => {
       </el-select>
       <el-input v-model="filterTag" placeholder="搜索标签" clearable style="width: 160px" @keyup.enter="page = 1; loadQuestions()" @clear="page = 1; loadQuestions()" />
       <el-button @click="resetFilter">重置</el-button>
-      <span class="filter-count">全站题库 共 {{ total }} 题</span>
+      <span class="filter-count">共享题库 共 {{ total }} 题</span>
     </div>
 
     <el-table :data="questions" stripe style="width: 100%" v-loading="loading">
-      <el-table-column type="index" label="序号" width="70" />
+      <el-table-column label="序号" width="70">
+        <template #default="{ $index }">
+          {{ (page - 1) * pageSize + $index + 1 }}
+        </template>
+      </el-table-column>
       <el-table-column label="题干" min-width="260">
         <template #default="{ row }">
           <span>{{ row.stem.length > 48 ? row.stem.slice(0, 48) + '…' : row.stem }}</span>
@@ -273,7 +251,6 @@ onMounted(async () => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="course_name" label="所属课程" min-width="160" />
       <el-table-column label="添加人" min-width="120">
         <template #default="{ row }">
           {{ row.creator_name || row.created_by || '-' }}
@@ -281,10 +258,10 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="星级" width="140">
         <template #default="{ row }">
-          <el-rate :model-value="row.star_rating || 3" disabled :max="5" />
+          <el-rate :model-value="Number(row.star_rating) || 3" disabled :max="5" />
         </template>
       </el-table-column>
-      <el-table-column label="课程标签" min-width="150">
+      <el-table-column label="标签" min-width="150">
         <template #default="{ row }">
           <div class="tag-list">
             <el-tag v-for="tag in row.tags || []" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
@@ -308,7 +285,7 @@ onMounted(async () => {
     </el-table>
 
     <div v-if="!loading && questions.length === 0" class="empty-state">
-      暂无题目，点击"新增题目"或"导入题目"开始维护题库。
+      暂无题目，点击"新增题目"或"导入题目"开始维护共享题库。
     </div>
 
     <div v-if="total > pageSize" class="pagination-wrap">
@@ -324,19 +301,6 @@ onMounted(async () => {
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑题目' : '新增题目'" width="560px">
       <div class="form-group">
-        <label>所属课程</label>
-        <p v-if="deletedMountLabel" class="deleted-mount-hint">{{ deletedMountLabel }}。如需改挂，请在下方选择活跃自有课程。</p>
-        <el-select
-          v-model="form.course_id"
-          :placeholder="deletedMountLabel ? '可选：改挂到活跃自有课程' : '请选择课程'"
-          size="large"
-          style="width: 100%"
-          clearable
-        >
-          <el-option v-for="course in writableCourses" :key="course.id" :label="course.name" :value="course.id" />
-        </el-select>
-      </div>
-      <div class="form-group">
         <label>题型</label>
         <el-radio-group v-model="form.type" size="large">
           <el-radio-button value="choice">选择题</el-radio-button>
@@ -345,7 +309,7 @@ onMounted(async () => {
         </el-radio-group>
       </div>
       <div class="form-group">
-        <label>课程标签</label>
+        <label>标签</label>
         <el-select
           v-model="form.tags"
           multiple
@@ -391,15 +355,15 @@ onMounted(async () => {
         <p>请先选择模板类型并下载，再按模板填写后上传。</p>
         <table class="format-table">
           <thead>
-            <tr><th>题型</th><th>课程名称</th><th>标签</th><th>题干</th><th>选项（选择题用 | 分隔）</th><th>答案</th><th>解析</th></tr>
+            <tr><th>题型（必填）</th><th>课程名称（可选）</th><th>标签（必填）</th><th>题干（必填）</th><th>选项（选择题用 | 分隔）</th><th>答案（必填）</th><th>解析</th></tr>
           </thead>
           <tbody>
-            <tr><td>choice</td><td>示例课程</td><td>人工智能</td><td>图灵测试由谁提出？</td><td>A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦</td><td>A</td><td>图灵提出了图灵测试。</td></tr>
-            <tr><td>multi_choice</td><td>示例课程</td><td>编程基础|多选</td><td>以下哪些是编程语言？</td><td>A. Python|B. Java|C. HTML|D. C++</td><td>ABD</td><td>HTML 是标记语言，不是编程语言。</td></tr>
-            <tr><td>fill</td><td>示例课程</td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
+            <tr><td>choice</td><td></td><td>人工智能</td><td>图灵测试由谁提出？</td><td>A. 图灵|B. 冯·诺依曼|C. 乔布斯|D. 爱因斯坦</td><td>A</td><td>图灵提出了图灵测试。</td></tr>
+            <tr><td>multi_choice</td><td></td><td>编程基础|多选</td><td>以下哪些是编程语言？</td><td>A. Python|B. Java|C. HTML|D. C++</td><td>ABD</td><td>HTML 是标记语言，不是编程语言。</td></tr>
+            <tr><td>fill</td><td></td><td>通识常识</td><td>中国的首都是哪里？</td><td></td><td>北京</td><td>填空题直接填写答案关键词。</td></tr>
           </tbody>
         </table>
-        <p class="import-note">请将「课程名称」填写为当前教师已有课程名称；「标签」支持用逗号、顿号或 | 分隔多个标签；题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。多选题答案列填写排序后的字母组合，如 ABD。</p>
+        <p class="import-note">「题型、标签、题干、答案」均为必填；「标签」支持用逗号、顿号或 | 分隔多个标签；「课程名称」可选，不填则写入独立共享题；题型列填写 choice（选择题）、multi_choice（多选题）或 fill（填空题）。多选题答案列填写排序后的字母组合，如 ABD。</p>
       </div>
       <div class="import-actions">
         <div class="template-block">
@@ -533,13 +497,6 @@ onMounted(async () => {
   font-size: 0.75rem;
   font-weight: 600;
   color: #d97706;
-}
-
-.deleted-mount-hint {
-  margin: 0 0 8px;
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
-  line-height: 1.5;
 }
 
 .readonly-text {

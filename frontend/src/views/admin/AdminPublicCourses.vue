@@ -267,7 +267,7 @@ async function saveMaterial() {
 async function removeMaterial(material: Material) {
   if (!selectedCourse.value) return
   try {
-    await ElMessageBox.confirm('确定删除该公共资料吗？将删除公共课程源资料，并从已添加该课程的教师课程副本中移除对应同步资料；教师自行新增资料不受影响。', '删除公共资料', {
+    await ElMessageBox.confirm('确定删除该公共资料吗？将软删除公共课程源资料；已同步到教师课程副本的资料会保留，教师自行新增资料不受影响。', '删除公共资料', {
       type: 'warning',
       confirmButtonText: '确定删除',
       cancelButtonText: '取消',
@@ -337,16 +337,15 @@ async function handleStageOrderChange(stage: AdminCourseStage) {
 
 async function handleDeleteStage(stage: AdminCourseStage) {
   if (!selectedCourse.value) return
-  const hasMaterials = stageMaterials(stage.id).length > 0
-  if (hasMaterials) {
-    ElMessage.warning('该阶段下仍有资料。请先编辑这些资料，将所属阶段改为「未分类」或其他阶段，或删除资料。')
-    return
-  }
+  const count = stageMaterials(stage.id).length
+  const tip = count > 0
+    ? `确定删除阶段「${stage.name}」？将同时删除该阶段下的 ${count} 份公共资料（软删除），对应同步资料会软删除；教师自行新增资料会保留并移至未分类。`
+    : `确定删除阶段「${stage.name}」？`
   try {
-    await ElMessageBox.confirm('确定删除阶段「' + stage.name + '」？', '删除确认', { type: 'warning' })
-    await deleteAdminPublicCourseStage(selectedCourse.value.id, stage.id)
+    await ElMessageBox.confirm(tip, '删除确认', { type: 'warning', confirmButtonText: '确定删除' })
+    await deleteAdminPublicCourseStage(selectedCourse.value.id, stage.id, { cascadeMaterials: true })
     ElMessage.success('已删除')
-    await fetchContent()
+    await Promise.all([fetchContent(), fetchCourses(selectedCourse.value.id)])
   } catch (err: any) {
     if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err?.message || '删除阶段失败')

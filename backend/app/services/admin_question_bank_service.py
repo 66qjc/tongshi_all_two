@@ -19,6 +19,9 @@ from app.services.question_contribution_service import record_question_contribut
 from app.services.soft_delete_service import soft_delete
 
 
+_IMPORT_COURSE_NAME_KEYS = ("课程名称", "课程", "course", "course_name", "课程名称（可选）")
+
+
 def _normalize_tags(value) -> list[str]:
     if value is None:
         return []
@@ -42,6 +45,32 @@ def _row_value(row: dict, *keys: str):
         if value is not None and str(value).strip() != "":
             return value
     return ""
+
+
+def _resolve_import_course_by_name(db: Session, course_name: str) -> Course:
+    """按名称解析唯一的活跃公共课程，避免同名课程被任意挂载。"""
+    public_courses = (
+        db.query(Course)
+        .filter(
+            Course.name == course_name,
+            Course.is_public.is_(True),
+            Course.deleted_at.is_(None),
+        )
+        .all()
+    )
+    if len(public_courses) == 1:
+        return public_courses[0]
+    if len(public_courses) > 1:
+        raise BusinessException(400, f"课程名称“{course_name}”匹配到多门活跃公共课程，请使用唯一课程名称")
+
+    active_courses = (
+        db.query(Course)
+        .filter(Course.name == course_name, Course.deleted_at.is_(None))
+        .all()
+    )
+    if active_courses:
+        raise BusinessException(400, f"课程名称“{course_name}”不是活跃公共课程")
+    raise BusinessException(400, f"未找到名称为“{course_name}”的活跃公共课程")
 
 
 def mount_course_state(question: Question) -> str:
@@ -171,7 +200,7 @@ def create_question(
     if course is not None:
         record_question_contribution(db, course, operator.id, operator.role, "create", 1)
     else:
-        _record_independent_contribution(db, operator, "create", 1)
+        record_question_contribution(db, None, operator.id, operator.role, "create", 1)
     create_audit_log(
         db,
         user=operator,
@@ -292,9 +321,9 @@ def import_questions(
     operator: AuthUser,
     mount_course_id: int | None = None,
 ) -> dict:
-    course = None
+    default_course = None
     if mount_course_id is not None:
-        course = (
+        default_course = (
             db.query(Course)
             .filter(
                 Course.id == mount_course_id,
@@ -303,7 +332,7 @@ def import_questions(
             )
             .first()
         )
-        if not course:
+        if not default_course:
             raise BusinessException(404, "挂载公共课程不存在")
 
     success_count = 0
@@ -311,10 +340,10 @@ def import_questions(
     skip_count = 0
     errors: list[dict] = []
     skips: list[dict] = []
+    contribution_counts: dict[int | None, int] = {}
+    contribution_courses: dict[int, Course] = {}
     for idx, row in enumerate(rows, start=2):
-        savepoint = None
         try:
-            savepoint = db.begin_nested()
             q_type = str(_row_value(row, "题型", "type")).strip()
             stem = str(_row_value(row, "题干", "stem")).strip()
             if not stem:
@@ -322,21 +351,26 @@ def import_questions(
             options = str(_row_value(row, "选项（选择题用 | 分隔）", "选项", "options")).strip()
             option_list = [x.strip() for x in options.split("|") if x.strip()] if options else []
             answer = str(_row_value(row, "答案", "answer")).strip()
+            if not answer:
+                raise BusinessException(400, "答案不能为空")
             explanation = str(_row_value(row, "解析", "explanation")).strip()
             tags = _normalize_tags(_row_value(row, "标签", "课程标签", "tags", "course_tags"))
+            if not tags:
+                raise BusinessException(400, "标签不能为空")
             if q_type not in {"choice", "fill", "multi_choice"}:
                 raise BusinessException(400, "题型必须为 choice、fill 或 multi_choice")
             if q_type in {"choice", "multi_choice"} and not option_list:
                 raise BusinessException(400, "选择题必须填写选项")
+            course_name = str(_row_value(row, *_IMPORT_COURSE_NAME_KEYS)).strip()
+            target_course = _resolve_import_course_by_name(db, course_name) if course_name else default_course
             stem_hash = compute_stem_hash(stem)
             if find_same_stem_question(db, stem) or find_duplicate_question(db, q_type, stem, option_list, answer):
                 skips.append({"row": idx, "reason": f"题库中已存在相同题目（题干: {stem[:50]}），已跳过"})
                 skip_count += 1
-                savepoint.rollback()
                 continue
             question = Question(
                 type=q_type,
-                course_id=course.id if course else None,
+                course_id=target_course.id if target_course else None,
                 stem=stem,
                 options=option_list,
                 answer=answer,
@@ -344,23 +378,29 @@ def import_questions(
                 tags=tags,
                 created_by=operator.id,
                 stem_hash=stem_hash,
-                mount_course_name_snapshot=(course.name if course else "") or "",
+                mount_course_name_snapshot=(target_course.name if target_course else "") or "",
             )
-            db.add(question)
-            db.flush()
-            savepoint.commit()
+            with db.begin_nested():
+                db.add(question)
+                db.flush()
             success_count += 1
+            contribution_key = target_course.id if target_course else None
+            contribution_counts[contribution_key] = contribution_counts.get(contribution_key, 0) + 1
+            if target_course:
+                contribution_courses[target_course.id] = target_course
         except Exception as exc:  # noqa: BLE001
-            if savepoint is not None and savepoint.is_active:
-                savepoint.rollback()
             fail_count += 1
             errors.append({"row": idx, "reason": str(exc)})
 
-    if success_count > 0:
-        if course is not None:
-            record_question_contribution(db, course, operator.id, operator.role, "import", success_count)
-        else:
-            _record_independent_contribution(db, operator, "import", success_count)
+    for course_id, question_count in contribution_counts.items():
+        record_question_contribution(
+            db,
+            contribution_courses.get(course_id) if course_id is not None else None,
+            operator.id,
+            operator.role,
+            "import",
+            question_count,
+        )
     db.commit()
     return {
         "success_count": success_count,
@@ -404,25 +444,3 @@ def format_contribution(log: QuestionContributionLog) -> dict:
         "question_count": log.question_count,
         "created_at": log.created_at.isoformat() if log.created_at else "",
     }
-
-
-def _record_independent_contribution(
-    db: Session,
-    operator: AuthUser,
-    action: str,
-    question_count: int,
-) -> None:
-    if question_count <= 0:
-        return
-    user = db.query(User).filter(User.id == operator.id).first()
-    db.add(
-        QuestionContributionLog(
-            public_course_id=None,
-            public_course_name="独立题库",
-            operator_id=operator.id,
-            operator_name=user.name if user else operator.name or operator.id,
-            operator_role=user.role if user else operator.role,
-            action=action,
-            question_count=question_count,
-        )
-    )

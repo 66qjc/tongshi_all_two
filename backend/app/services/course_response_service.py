@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.timezone_utils import to_beijing_iso
 from app.models.entities import Class, Course, CourseStage, Material, Question, StudentClassEnrollment
 from app.schemas.common import AuthUser
-from app.services.material_service import format_material_preview
+from app.services.material_service import format_material_preview_for_material
 from app.services.question_service import list_courses
 
 
@@ -180,7 +180,7 @@ def build_course_list(db: Session, current_user: AuthUser, keyword: str | None =
     return _format_course_batch(db, courses, current_user)
 
 
-def _format_material(material):
+def _format_material(db: Session, material):
     return {
         "id": material.id,
         "course_id": material.course_id,
@@ -196,7 +196,7 @@ def _format_material(material):
         "source_material_id": material.source_material_id,
         "is_synced": bool(material.source_material_id),
         "stage_id": material.stage_id,
-        "preview": format_material_preview(material.preview),
+        "preview": format_material_preview_for_material(db, material),
     }
 
 
@@ -213,6 +213,11 @@ def build_course_detail(db: Session, detail: tuple[Course, int, int, int], curre
 
     stages = []
     for stage in sorted(course.stages, key=lambda s: (s.sort_order, s.id)):
+        # 软删资料不得出现在课程详情，避免幽灵卡片阻断删阶段
+        active_materials = [
+            m for m in stage.materials
+            if getattr(m, "deleted_at", None) is None
+        ]
         stage_data = {
             "id": stage.id,
             "course_id": stage.course_id,
@@ -220,12 +225,16 @@ def build_course_detail(db: Session, detail: tuple[Course, int, int, int], curre
             "name": stage.name,
             "sort_order": stage.sort_order,
             "created_at": to_beijing_iso(stage.created_at),
-            "materials": [_format_material(m) for m in stage.materials],
+            "materials": [_format_material(db, m) for m in active_materials],
         }
         stages.append(stage_data)
     data["stages"] = stages
 
-    uncategorized = [_format_material(m) for m in course.materials if m.stage_id is None]
+    uncategorized = [
+        _format_material(db, m)
+        for m in course.materials
+        if m.stage_id is None and getattr(m, "deleted_at", None) is None
+    ]
     data["uncategorized_materials"] = uncategorized
 
     return data
