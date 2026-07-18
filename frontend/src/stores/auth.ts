@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import { login as apiLogin, register as apiRegister, changePassword as apiChangePassword } from '@/api/auth'
+import { login as apiLogin, changePassword as apiChangePassword } from '@/api/auth'
 
 export interface User {
   id: string
@@ -108,16 +108,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(id: string, name: string, password: string, role: 'student' | 'teacher', major?: string): Promise<boolean> {
-    try {
-      await apiRegister({ id, name, password, role, major })
-      // 注册成功后自动登录
-      return await login(id, password)
-    } catch {
-      return false
-    }
-  }
-
   function logout() {
     user.value = null
     token.value = null
@@ -139,5 +129,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, token, isLoggedIn, login, register, logout, replaceAccessToken, changePassword }
+  return { user, token, isLoggedIn, login, logout, replaceAccessToken, changePassword }
 })

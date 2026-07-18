@@ -48,12 +48,6 @@ const router = createRouter({
       meta: { title: '登录 · AI 通识课程平台', public: true },
     },
     {
-      path: '/register',
-      name: 'register',
-      component: () => import('../views/RegisterView.vue'),
-      meta: { title: '注册 · AI 通识课程平台', public: true },
-    },
-    {
       path: '/learn',
       name: 'learn',
       component: () => import('../views/LearnView.vue'),
