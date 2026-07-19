@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import require_role
+from app.core.security import require_role, require_roles
 from app.core.response import success
 from app.schemas.common import AuthUser, QuizSubmitRequest
 from app.services.quiz_service import (
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/quiz", tags=["quiz"])
 
 
 def _format_practice_question(q) -> dict:
-    """学生练习题池：始终隐藏答案与解析。"""
+    """学生练习题池：不返回答案与解析字段，防止前端泄露。"""
     return {
         "id": q.id,
         "type": q.type,
@@ -27,8 +27,6 @@ def _format_practice_question(q) -> dict:
         "stem": q.stem,
         "options": q.options or [],
         "tags": q.tags or [],
-        "answer": "",
-        "explanation": "",
         "star_rating": q.star_rating if q.star_rating is not None else 3,
     }
 
@@ -71,10 +69,10 @@ def history(
     return success(get_quiz_history(db, current_user.id, limit))
 
 
-@router.get("/stats", summary="答题统计总览", description="学生端：返回总题目数、已完成数、正确率、今日答题数")
+@router.get("/stats", summary="答题统计总览", description="返回总题目数、已完成数、正确率、今日答题数")
 def stats(
     db: Session = Depends(get_db),
-    current_user: AuthUser = Depends(require_role("student")),
+    current_user: AuthUser = Depends(require_roles("student", "teacher", "admin")),
 ):
     return success(get_quiz_stats(db, current_user.id))
 

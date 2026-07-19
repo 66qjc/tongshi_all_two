@@ -300,9 +300,9 @@ def test_teacher_cannot_use_student_quiz_submit_route(client, teacher_token, db_
     assert "student" in body["message"] or "学生" in body["message"]
 
 
-def test_admin_cannot_use_student_quiz_stats_route(client, db_session):
+def test_admin_can_access_quiz_stats(client, db_session):
+    """管理员可以访问答题统计（BUG-03 修复后）。"""
     admin_token = client.post("/api/token", json={"id": "admin", "password": "Admin#2026"}).json()["data"]["access_token"]
     resp = client.get("/api/quiz/stats", headers={"Authorization": f"Bearer {admin_token}"})
     body = resp.json()
-    assert body["code"] == 403
-    assert "student" in body["message"] or "学生" in body["message"]
+    assert body["code"] == 0

@@ -23,8 +23,8 @@ def test_global_practice_pool_hides_answers(client, student_token, db_session):
     body = resp.json()
     assert body["code"] == 0
     item = next(x for x in body["data"] if x["id"] == q.id)
-    assert item["answer"] == ""
-    assert item["explanation"] == ""
+    assert "answer" not in item, "练习题响应不应包含 answer 字段"
+    assert "explanation" not in item, "练习题响应不应包含 explanation 字段"
     assert "全局题池隐藏答案" in item["stem"]
 
 

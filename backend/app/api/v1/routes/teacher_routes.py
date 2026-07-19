@@ -308,8 +308,10 @@ def _write_student_sheet(ws, students: list) -> None:
             s["incomplete_tasks"],
             s["task_completion_rate"],
         ])
-        # 学号列强制文本格式
-        ws.cell(row=ws.max_row, column=2).number_format = "@"
+        # 学号列显式覆写为文本值并设置格式，防止 Excel 识别为数值
+        sid_cell = ws.cell(row=ws.max_row, column=2)
+        sid_cell.value = _as_student_id_text(s["id"])
+        sid_cell.number_format = "@"
 
     # 汇总行（仅当有数据时追加）
     if students:
@@ -375,8 +377,10 @@ def _write_course_score_sheet(ws, group: dict) -> None:
             student["task_completion_rate"],
             *[scores.get(task["id"]) for task in tasks],
         ])
-        # 学号列强制文本格式，避免 Excel 把长学号显示成科学计数
-        ws.cell(row=ws.max_row, column=2).number_format = "@"
+        # 学号列显式覆写为文本值并设置格式，防止 Excel 识别为数值
+        sid_cell = ws.cell(row=ws.max_row, column=2)
+        sid_cell.value = _as_student_id_text(student["id"])
+        sid_cell.number_format = "@"
 
     if students:
         count = len(students)

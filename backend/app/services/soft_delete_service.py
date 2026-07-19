@@ -191,6 +191,7 @@ def _resolve_material_stage_on_restore(db: Session, item: Material, target_cours
             info["阶段ID"] = stage.id
             info["阶段名称"] = stage.name
             return info
+        # 原阶段已被物理删除（如阶段级联删除后 FK SET NULL），走快照恢复路径
         item.stage_id = None
 
     name = (item.deleted_stage_name or "").strip()

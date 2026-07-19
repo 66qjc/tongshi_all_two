@@ -1,6 +1,7 @@
 """课程阶段/目录服务。"""
 from __future__ import annotations
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
@@ -10,9 +11,9 @@ from app.models.entities import Course, CourseStage
 
 def list_stages_for_course(db: Session, course_id: int, teacher_id: str | None = None):
     """获取某课程下的所有阶段（含阶段下的资料）。"""
-    query = db.query(Course).filter(Course.id == course_id)
+    query = db.query(Course).filter(Course.id == course_id, Course.deleted_at.is_(None))
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(or_(Course.created_by == teacher_id, Course.is_public.is_(True)))
     course = query.first()
     if not course:
         return None
@@ -33,9 +34,9 @@ def create_stage(
     teacher_id: str | None = None,
 ):
     """为课程创建新阶段。"""
-    query = db.query(Course).filter(Course.id == course_id)
+    query = db.query(Course).filter(Course.id == course_id, Course.deleted_at.is_(None))
     if teacher_id is not None:
-        query = query.filter(Course.created_by == teacher_id)
+        query = query.filter(or_(Course.created_by == teacher_id, Course.is_public.is_(True)))
     course = query.first()
     if not course:
         raise BusinessException(404, "课程不存在")
