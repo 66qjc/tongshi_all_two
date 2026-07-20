@@ -37,38 +37,32 @@ assert.match(
 
 assert.match(
   actView,
-  /import\s+\{\s*useAuthStore\s*\}\s+from\s+['"](?:@\/|\.\.\/)stores\/auth['"]/,
-  'ActView 应读取现有认证状态',
+  /getProjects\(\)[\s\S]*studentProjects\.value\s*=/,
+  'ActView 应对游客与登录用户统一调用 getProjects 并写入作品列表',
 )
 
-assert.match(
+assert.doesNotMatch(
   actView,
-  /const\s+authStore\s*=\s*useAuthStore\(\)/,
-  'ActView 应创建 authStore',
-)
-
-assert.match(
-  actView,
-  /if\s*\(\s*authStore\.isLoggedIn\s*\)\s*\{[\s\S]*getProjects\(\)[\s\S]*studentProjects\.value\s*=/,
-  'ActView 只有登录后才应调用 getProjects 并写入作品列表',
+  /if\s*\(\s*authStore\.isLoggedIn\s*\)\s*\{[\s\S]*getProjects\(\)/,
+  'ActView 不应再把 getProjects 限制为仅登录后调用',
 )
 
 assert.doesNotMatch(
   actView,
   /Promise\.all\(\s*\[\s*getShowcase\(\)\s*,\s*getProjects\(\)\s*\]/,
-  '游客访问 /act 时不应通过 Promise.all 同时触发作品接口',
+  '展示内容与作品列表应分别加载，避免互相拖垮错误态',
 )
 
-assert.match(
+assert.doesNotMatch(
   actView,
   /登录后可查看同学作品/,
-  '游客项目区应展示登录后查看同学作品的中文提示',
+  '游客项目区不应再展示登录墙文案',
 )
 
 assert.match(
   actView,
-  /router\.push\(['"]\/login['"]\)/,
-  '游客项目区应提供去登录按钮',
+  /router\.push\(`\/create\/project\/\$\{project\.id\}`\)/,
+  '作品卡片应可进入公开作品详情',
 )
 
 console.log('act guest access static checks passed')

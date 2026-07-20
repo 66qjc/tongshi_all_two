@@ -32,5 +32,10 @@ assert.match(
   '管理端删阶段后应同时刷新详情和课程列表',
 )
 assert.match(admin, /已同步到教师课程副本的资料会保留/, '单份公共资料删除文案应符合保留副本的语义')
+assert.match(
+  teacher,
+  /handleDeleteStage[\s\S]*?error\?\.message/,
+  '教师删阶段失败应展示后端真实错误信息（error?.message）',
+)
 
 console.log('course-stage-delete-static.test.mjs passed')

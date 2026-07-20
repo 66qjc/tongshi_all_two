@@ -301,7 +301,7 @@ df -h /
 - Modify: `/home/ubuntu/tongshi_all_two/backend/.env`。
 - Modify: `/etc/systemd/system/tongshi-backend.service`。
 
-- [ ] **Step 1：补充已被代码支持的配置键**
+- [x] **Step 1：补充已被代码支持的配置键**（已于 2026-07-19 在服务器执行）
 
 在 `.env` 中补充以下配置；现有 `SECRET_KEY`、`DATABASE_URL`、`MYSQL_PASSWORD` 等值不得改变：
 
@@ -319,7 +319,7 @@ DB_POOL_TIMEOUT=30
 
 当前代码支持 `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_POOL_SIZE` 和 `REDIS_SOCKET_TIMEOUT`，没有 `REDIS_ENABLED` 配置；本任务不自行添加不存在的开关。
 
-- [ ] **Step 2：补充 systemd 服务依赖**
+- [x] **Step 2：补充 systemd 服务依赖**（已于 2026-07-19 在服务器执行）
 
 将服务单元的 `[Unit]` 调整为：
 
@@ -340,10 +340,10 @@ RestartSec=5
 `ExecStart` 继续使用单 worker 的生产命令，不加入 `--reload`：
 
 ```ini
-ExecStart=/home/ubuntu/tongshi_all_two/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8050
+ExecStart=/home/ubuntu/tongshi_all_two/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8050
 ```
 
-- [ ] **Step 3：重载并验证依赖顺序**
+- [x] **Step 3：重载并验证依赖顺序**（已于 2026-07-19 在服务器执行）
 
 ```bash
 sudo systemctl daemon-reload
@@ -359,6 +359,14 @@ journalctl -u tongshi-backend.service -n 40 --no-pager
 - [ ] **Step 4：保留多 worker 决策门槛**
 
 在 `main.py` 的 `Base.metadata.create_all()` 和 schema 兼容逻辑补齐 MySQL 启动锁、并完成并发启动测试前，不修改 `ExecStart` 为多 worker。当前服务器优先保证单 worker 稳定运行。
+
+#### Task 4 实际执行记录（2026-07-19）
+
+- 已在修改前创建仅 root 可读的配置快照：`/data/tongshi/config-snapshots/redis-db-pool-20260719-162347/`；其中包含修改前的后端 `.env` 与 `tongshi-backend.service`，未将敏感内容写入项目仓库或命令输出。
+- 已在服务器 `.env` 仅新增本任务约定的 9 个 Redis / 数据库连接池键：Redis 指向 `127.0.0.1:6379`、DB `0`、连接池 `5`、socket 超时 `5` 秒；数据库连接池为 `5 + 5`、连接回收 `1800` 秒、获取超时 `30` 秒。既有 `DATABASE_URL`、`SECRET_KEY`、MySQL 凭据均未改动。
+- 已将 `tongshi-backend.service` 的 `After` 与 `Wants` 同时补为 `mysql.service redis-server.service`；保留单 worker、`Restart=always` 与 `RestartSec=5`，实际 `ExecStart` 继续监听 `127.0.0.1:8050`，不向公网直接开放后端端口。
+- 已执行 `systemctl daemon-reload` 和 `systemctl restart tongshi-backend.service`。2026-07-19 16:24（Asia/Shanghai）二次复核：Tongshi 后端与 Redis 均为 `active`，`/health` 返回 200，Redis 返回 `PONG`，应用实际加载的全部 9 项参数与目标值一致，启动日志无异常。
+- 未执行数据库迁移、Nginx 重载、MySQL / Redis 重启或前端构建。服务器 `.env` 当前仍为 `664`，其凭据文件权限收紧应作为独立安全变更另行评估，不在本任务中混改。
 
 ### Task 5：固化单机部署流程
 

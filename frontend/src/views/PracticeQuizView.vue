@@ -118,9 +118,13 @@ watch(mockQuestions, (qs) => {
     const restoredRevealExplanations: (string | null)[] = qs.map(() => null)
     qs.forEach((q, idx) => {
       if (draft.answeredQuestionIds.includes(q.id) && draft.answers[q.id] !== undefined) {
-        restoredAnswers[idx] = draft.answers[q.id] ?? null
-        restoredResults[idx] = draft.results?.[q.id] ?? null
-        // 草稿仅恢复作答状态；正确答案需重新提交后由接口回填
+        const wasCorrect = draft.results?.[q.id]
+        if (wasCorrect === true) {
+          // 仅恢复答对的题目状态；答错的题留空让用户重新作答，
+          // 正确答案需重新提交后由接口回填，避免显示"回答错误"却看不到答案。
+          restoredAnswers[idx] = draft.answers[q.id] ?? null
+          restoredResults[idx] = true
+        }
       }
     })
     answers.value = restoredAnswers
@@ -133,6 +137,11 @@ watch(mockQuestions, (qs) => {
       if (idx >= 0) currentIndex.value = idx
     }
     resetState()
+    // 恢复后全部答对：直接进入总结并清理残留草稿
+    if (restoredResults.every(r => r === true)) {
+      practiceFinished.value = true
+      clearQuizDraft(null, 'global')
+    }
   } else {
     answers.value = qs.map(() => null)
     results.value = qs.map(() => null)
@@ -279,9 +288,14 @@ async function finishPractice() {
 }
 
 // 自由练习没有作业上下文，全部答完后直接展示总结。
+// 存在答错题目时不自动切换，让学生先查看答案解析，手动点击"完成练习"。
 watch(allDone, (done) => {
-  if (done && !isAssignmentMode.value && submitted.value === false) {
-    practiceFinished.value = true
+  if (done && !isAssignmentMode.value && !practiceFinished.value) {
+    const allCorrect = results.value.every(r => r === true)
+    if (allCorrect) {
+      practiceFinished.value = true
+      clearQuizDraft(null, 'global')
+    }
   }
 })
 

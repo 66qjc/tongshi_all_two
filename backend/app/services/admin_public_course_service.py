@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache import invalidate_cache
@@ -122,36 +123,66 @@ def get_course_sync_status(db: Session, course: Course) -> dict:
 
 
 def create_public_course(db: Session, name: str, admin_id: str, description: str = "") -> Course:
-    if db.query(Course).filter(Course.name == name, Course.created_by == admin_id).first():
+    if db.query(Course).filter(
+        Course.name == name,
+        Course.created_by == admin_id,
+        Course.deleted_at.is_(None),
+    ).first():
         raise BusinessException(400, "公共课程已存在")
     # 不再写入 question_bank_root_course_id；该列仅兼容保留，不参与业务。
-    course = Course(name=name, created_by=admin_id, description=(description or "").strip(), is_public=True)
+    course = Course(
+        name=name,
+        created_by=admin_id,
+        description=(description or "").strip(),
+        is_public=True,
+    )
     db.add(course)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(400, "公共课程已存在")
     db.commit()
     db.refresh(course)
     # 清除公共课程列表缓存
     invalidate_cache("course:public:*")
     return course
-
 
 def update_public_course(db: Session, course_id: int, name: str, description: str | None = None) -> Course | None:
     course = _get_public_course(db, course_id)
     if not course:
         return None
-    course.name = name.strip()
+    normalized_name = name.strip()
+    duplicate = db.query(Course).filter(
+        Course.name == normalized_name,
+        Course.created_by == course.created_by,
+        Course.deleted_at.is_(None),
+        Course.id != course.id,
+    ).first()
+    if duplicate:
+        raise BusinessException(400, "公共课程已存在")
+
+    course.name = normalized_name
     if description is not None:
         course.description = description.strip()
+    try:
+        # 先校验公共课程自身，再同步并校验所有教师副本，任一冲突则整体回滚。
+        db.flush()
+        sync_course_name_to_copies(db, course)
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(400, "公共课程或教师课程中已存在同名课程")
+
     db.query(Question).filter(
         Question.course_id == course.id,
         Question.deleted_at.is_(None),
     ).update({Question.mount_course_name_snapshot: course.name}, synchronize_session=False)
-    sync_course_name_to_copies(db, course)
     db.commit()
     db.refresh(course)
     # 清除公共课程列表缓存
     invalidate_cache("course:public:*")
     return course
-
 
 def delete_public_course(db: Session, course_id: int, operator: AuthUser | None = None) -> bool:
     """软删除公共课程，不转挂题目，不破坏阶段/同步引用。"""

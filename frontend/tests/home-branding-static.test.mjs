@@ -14,14 +14,14 @@ const header = read('src/components/AppHeader.vue')
 
 assert.match(
   hero,
-  /中国计量大学\s*·\s*AI 通识教育课程平台/,
-  '首页首屏徽标应写明“中国计量大学 · AI 通识教育课程平台”。',
+  /中国计量大学[\s\S]*?AI 通识课平台/,
+  '首页首屏徽标应写明中国计量大学与 AI 通识课平台归属。',
 )
 
 assert.match(
   hero,
-  /src="\/cjlu-logo\.svg"\s+alt="中国计量大学校徽"\s+class="hero-badge-logo"/,
-  '首页首屏徽标应使用学校徽标图片并提供中文可访问名称。',
+  /src="\/cjlu-logo\.svg"\s+alt=""\s+aria-hidden="true"/,
+  '首页首屏应使用学校徽标；相邻已有完整可见品牌文字时图片应作为装饰隐藏。',
 )
 
 assert.match(

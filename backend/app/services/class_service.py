@@ -7,7 +7,7 @@ from io import BytesIO
 from typing import Dict, List
 
 from openpyxl import load_workbook
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -58,16 +58,25 @@ def list_classes(db: Session, teacher_id: str, course_id: int | None = None, key
     if keyword:
         query = query.filter(Class.name.like(f"%{keyword}%"))
     classes = query.order_by(Class.created_at.desc(), Class.id.desc()).all()
+    # 批量获取学生数，避免逐条 COUNT 的 N+1 查询
+    class_ids = [cls.id for cls in classes]
+    count_map: dict[int, int] = {}
+    if class_ids:
+        rows = (
+            db.query(StudentClassEnrollment.class_id, func.count(StudentClassEnrollment.id))
+            .filter(StudentClassEnrollment.class_id.in_(class_ids))
+            .group_by(StudentClassEnrollment.class_id)
+            .all()
+        )
+        count_map = {row[0]: row[1] for row in rows}
     result = []
     for cls in classes:
-        student_count = db.query(StudentClassEnrollment).filter(
-            StudentClassEnrollment.class_id == cls.id).count()
         result.append({
             "id": cls.id,
             "name": cls.name,
             "course_id": cls.course_id,
             "course_name": cls.course.name if cls.course else "",
-            "student_count": student_count,
+            "student_count": count_map.get(cls.id, 0),
             "created_at": _now_iso(cls.created_at),
         })
     return result
@@ -208,9 +217,15 @@ def list_class_students(db: Session, class_id: int, teacher_id: str):
         .order_by(StudentClassEnrollment.import_order.asc(), StudentClassEnrollment.enrolled_at.asc())
         .all()
     )
+    # 批量加载学生，避免逐条查询的 N+1 问题
+    user_ids = [e.user_id for e in enrollments]
+    students_map: dict[str, User] = {}
+    if user_ids:
+        students = db.query(User).filter(User.id.in_(user_ids)).all()
+        students_map = {s.id: s for s in students}
     result = []
     for enrollment in enrollments:
-        student = db.query(User).filter(User.id == enrollment.user_id).first()
+        student = students_map.get(enrollment.user_id)
         if not student:
             continue
         result.append({

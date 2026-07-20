@@ -1,4 +1,4 @@
-﻿import http from './http'
+﻿import http, { fetchWithAuth } from './http'
 import type { Project } from './project'
 
 export interface TeacherStats {
@@ -83,16 +83,7 @@ function resolveDownloadFilename(disposition: string | null) {
 }
 
 export async function downloadProjectReportsZip() {
-  const token = localStorage.getItem('auth_token')
-  if (!token) {
-    throw new Error('请先登录后再下载')
-  }
-
-  const response = await fetch('/api/teacher/projects/batch-download', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
+  const response = await fetchWithAuth('/api/teacher/projects/batch-download')
 
   const contentType = response.headers.get('content-type') || ''
   if (contentType.includes('application/json')) {

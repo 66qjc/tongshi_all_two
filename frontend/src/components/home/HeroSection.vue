@@ -16,7 +16,7 @@ interface OrbitModule {
 const modules: OrbitModule[] = [
   { char: '学', name: '公开学习', en: 'LEARN', desc: '浏览 AI 通识教程与阶段化学习资料，游客可直接阅读。', route: '/learn', color: 'var(--color-learn)' },
   { char: '思', name: '练习作业', en: 'PRACTICE', desc: '通过练习、作业与错题回顾检验理解，巩固每个知识点。', route: '/practice', color: 'var(--color-practice)' },
-  { char: '践', name: '实践作品', en: 'CREATE', desc: '提交自己的实践成果，浏览同学们的创作与项目。', route: '/create', color: 'var(--color-create)' },
+  { char: '践', name: '实践作品', en: 'CREATE', desc: '浏览同学们的创作与项目，登录后提交自己的实践成果。', route: '/create', color: 'var(--color-create)' },
   { char: '悟', name: '公益行动', en: 'ACT', desc: '在公益课、读书会与真实行动中理解技术的价值。', route: '/act', color: 'var(--color-act)' },
 ]
 

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { getShowcase } from '../api/showcase'
 import type { ShowcaseItemOut } from '../api/showcase'
 import { getProjects } from '../api/project'
@@ -9,7 +8,6 @@ import type { Project } from '../api/project'
 import AuthenticatedFileImage from '@/components/common/AuthenticatedFileImage.vue'
 
 const router = useRouter()
-const authStore = useAuthStore()
 
 // ── 动态展示数据 ────────────────────────────────────
 const loading = ref(false)
@@ -18,7 +16,7 @@ const projectLoadError = ref(false)
 const showcaseData = ref<Record<string, ShowcaseItemOut[]>>({})
 const studentProjects = ref<Project[]>([])
 
-// 页面挂载时先加载公开展示内容，登录后再加载学生作品。
+// 页面挂载时分别加载公开展示与已审作品；游客也可浏览作品广场。
 onMounted(async () => {
   loading.value = true
   loadError.value = false
@@ -32,14 +30,12 @@ onMounted(async () => {
     loading.value = false
   }
 
-  if (authStore.isLoggedIn) {
-    try {
-      const projectRes = await getProjects()
-      // 仅展示前 6 条已通过审核的作品
-      studentProjects.value = (projectRes?.items || []).slice(0, 6)
-    } catch {
-      projectLoadError.value = true
-    }
+  try {
+    const projectRes = await getProjects()
+    // 仅展示前 6 条已通过审核的作品
+    studentProjects.value = (projectRes?.items || []).slice(0, 6)
+  } catch {
+    projectLoadError.value = true
   }
 })
 
@@ -222,11 +218,6 @@ function scrollToOutcomes() {
           <p>浏览同学提交的课程作品与实践报告，了解课堂所学如何落到具体项目中。</p>
         </div>
         <div v-if="loading" class="dynamic-state">加载中...</div>
-        <div v-else-if="loadError" class="dynamic-state dynamic-error">加载失败，请刷新页面重试</div>
-        <div v-else-if="!authStore.isLoggedIn" class="dynamic-state guest-project-state">
-          <p>登录后可查看同学作品</p>
-          <el-button type="success" round @click="router.push('/login')">去登录</el-button>
-        </div>
         <div v-else-if="projectLoadError" class="dynamic-state dynamic-error">作品加载失败，请稍后重试</div>
         <div v-else-if="studentProjects.length === 0" class="dynamic-state">暂无已审核作品，完成课程作业后可在此展示。</div>
         <div v-else class="project-grid">
@@ -677,17 +668,6 @@ function scrollToOutcomes() {
 }
 .dynamic-error {
   color: #c0392b;
-}
-
-.guest-project-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-md);
-}
-
-.guest-project-state p {
-  margin: 0;
 }
 
 .showcase-grid {

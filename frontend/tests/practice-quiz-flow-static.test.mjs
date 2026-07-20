@@ -85,3 +85,47 @@ test('结果解析框只在答错时渲染', () => {
     'result-box 应只在当前题答错时展示，避免正确题渲染回答正确解析框',
   )
 })
+
+// ─── 草稿恢复：仅恢复答对题目 ───
+
+test('草稿恢复仅恢复答对的题目，答错留空重新作答', () => {
+  assert.match(
+    source,
+    /if\s*\(\s*wasCorrect\s*===\s*true\s*\)/,
+    '草稿恢复逻辑应只恢复 wasCorrect === true 的题目',
+  )
+  assert.match(
+    source,
+    /restoredResults\[idx\]\s*=\s*true/,
+    '恢复的结果应标记为 true',
+  )
+  // 答错的题不应被恢复（不存在 restoredResults[idx] = false 的赋值）
+  assert.doesNotMatch(
+    source,
+    /restoredResults\[idx\]\s*=\s*false/,
+    '不应将答错的题恢复为 false，应留空让用户重新作答',
+  )
+})
+
+test('恢复后全部答对则直接进入总结并清理草稿', () => {
+  assert.match(
+    source,
+    /if\s*\(\s*restoredResults\.every\(\s*r\s*=>\s*r\s*===\s*true\s*\)\s*\)\s*\{[\s\S]*?practiceFinished\.value\s*=\s*true[\s\S]*?clearQuizDraft/,
+    '恢复后若全部答对应直接展示总结并清理草稿',
+  )
+})
+
+// ─── allDone watcher：仅全部答对才自动结束 ───
+
+test('allDone watcher 仅在全部答对时自动结束练习', () => {
+  assert.match(
+    source,
+    /watch\(allDone,\s*\(done\)\s*=>\s*\{[\s\S]*?const\s+allCorrect\s*=\s*results\.value\.every\(\s*r\s*=>\s*r\s*===\s*true\s*\)/,
+    'allDone watcher 应检查是否全部答对',
+  )
+  assert.match(
+    source,
+    /if\s*\(\s*allCorrect\s*\)\s*\{[\s\S]*?practiceFinished\.value\s*=\s*true[\s\S]*?clearQuizDraft\(null,\s*'global'\)/,
+    '全部答对时才设置 practiceFinished 并清理草稿',
+  )
+})

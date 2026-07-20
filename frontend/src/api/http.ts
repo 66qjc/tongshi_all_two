@@ -93,4 +93,42 @@ http.interceptors.response.use(
   }
 )
 
+/** 清除登录态并跳转登录页（供拦截器和 fetchWithAuth 共用） */
+function clearAuthAndRedirect() {
+  localStorage.removeItem('auth_user')
+  localStorage.removeItem('auth_token')
+  window.location.href = '/login'
+}
+
+/**
+ * 原生 fetch 包装：用于文件下载/导出等需要 blob 响应的场景。
+ * 自动附加 Authorization 头，统一识别 HTTP 401 和业务 JSON {code:401/非0}。
+ * 使用 response.clone() 探测 JSON，不消费正常文件响应的 body。
+ */
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = localStorage.getItem('auth_token')
+  const headers: Record<string, string> = { ...(options.headers as Record<string, string> || {}) }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const response = await fetch(url, { ...options, headers })
+  // HTTP 层 401
+  if (response.status === 401) {
+    clearAuthAndRedirect()
+    throw new Error('登录已过期')
+  }
+  // 探测是否为 JSON 业务错误（用 clone 避免消费文件流）
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    const cloned = response.clone()
+    const payload = await cloned.json()
+    if (payload?.code === 401) {
+      clearAuthAndRedirect()
+      throw new Error('登录已过期')
+    }
+    if (payload?.code !== undefined && payload.code !== 0) {
+      throw new Error(payload.message || '请求失败')
+    }
+  }
+  return response
+}
+
 export default http

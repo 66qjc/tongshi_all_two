@@ -1,4 +1,4 @@
-import http from './http'
+import http, { fetchWithAuth } from './http'
 import type { Question } from './question'
 
 export interface AdminQuestionBankPayload {
@@ -40,6 +40,11 @@ export function getAdminQuestionBank(params?: {
   return http.get<any, PaginatedResult<Question>>('/admin/question-bank', { params })
 }
 
+/** 活跃共享题库去重标签，供新增/筛选下拉选用 */
+export function getAdminQuestionBankTags() {
+  return http.get<any, string[]>('/admin/question-bank/tags')
+}
+
 export function createAdminQuestionBankItem(data: AdminQuestionBankPayload, mountCourseId?: number | null) {
   return http.post<any, Question>('/admin/question-bank', data, {
     params: mountCourseId ? { mount_course_id: mountCourseId } : undefined,
@@ -73,14 +78,12 @@ export function importAdminQuestionBank(file: File, mountCourseId?: number | nul
   }>('/admin/question-bank/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     params: mountCourseId ? { mount_course_id: mountCourseId } : undefined,
+    timeout: 60000, // 大批量导入需要更长超时
   })
 }
 
 export async function downloadAdminQuestionBankTemplate(type: 'all' | 'choice' | 'fill' | 'multi_choice' = 'all') {
-  const token = localStorage.getItem('auth_token')
-  const response = await fetch(`/api/admin/question-bank/import/template?template_type=${type}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  const response = await fetchWithAuth(`/api/admin/question-bank/import/template?template_type=${type}`)
   if (!response.ok) throw new Error('模板下载失败')
   return response.blob()
 }

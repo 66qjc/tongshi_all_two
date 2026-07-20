@@ -1,7 +1,7 @@
 """Database models"""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, Computed, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -66,7 +66,9 @@ class StudentClassEnrollment(Base):
 
 class Course(Base):
     __tablename__ = "courses"
-    __table_args__ = (UniqueConstraint("name", "created_by", name="uq_course_name_created_by"),)
+    __table_args__ = (
+        UniqueConstraint("name", "created_by", "active_name_unique_marker", name="uq_course_active_name"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(128), nullable=False)
@@ -81,6 +83,10 @@ class Course(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     deleted_at = Column(DateTime, nullable=True, index=True)
     deleted_by = Column(String(32), nullable=True, index=True)
+    # 数据库生成列：活跃课程为 1，软删后为 NULL；配合三列唯一约束实现"同教师同名活跃课程唯一"
+    active_name_unique_marker = Column(
+        Integer, Computed("CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END"), nullable=True,
+    )
 
     creator = relationship("User", foreign_keys=[created_by])
     classes = relationship("Class", back_populates="course", cascade="all, delete-orphan")
@@ -101,7 +107,7 @@ class CourseStage(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
-    source_stage_id = Column(Integer, ForeignKey("course_stages.id"), nullable=True, index=True)
+    source_stage_id = Column(Integer, ForeignKey("course_stages.id", ondelete="SET NULL"), nullable=True, index=True)
     name = Column(String(64), nullable=False)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

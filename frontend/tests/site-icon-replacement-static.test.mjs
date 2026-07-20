@@ -14,7 +14,6 @@ const filesUsingSiteIcon = [
   'src/views/teacher/TeacherLayout.vue',
   'src/views/admin/AdminLayout.vue',
   'src/views/LoginView.vue',
-  'src/views/RegisterView.vue',
   'src/views/PracticeView.vue',
   'src/views/PracticeAssignments.vue',
   'src/views/AboutView.vue',
@@ -28,7 +27,6 @@ const legacySingleTextIcons = [
   ['src/views/teacher/TeacherLayout.vue', /<text\b[\s\S]*?>师<\/text>/],
   ['src/views/admin/AdminLayout.vue', /<text\b[\s\S]*?>管<\/text>/],
   ['src/views/LoginView.vue', /<text\b[\s\S]*?>探<\/text>/],
-  ['src/views/RegisterView.vue', /<text\b[\s\S]*?>探<\/text>/],
 ]
 
 for (const [file, pattern] of legacySingleTextIcons) {
@@ -49,7 +47,6 @@ for (const [file, pattern] of legacyPageIcons) {
 const highContrastIconFrames = [
   ['src/components/AppFooter.vue', /class="footer-logo-mark"[\s\S]*?<img[\s\S]*?class="footer-logo-icon"/],
   ['src/views/LoginView.vue', /class="brand-logo brand-logo-mark"[\s\S]*?<img[\s\S]*?class="brand-logo-image"/],
-  ['src/views/RegisterView.vue', /class="brand-logo brand-logo-mark"[\s\S]*?<img[\s\S]*?class="brand-logo-image"/],
 ]
 
 for (const [file, pattern] of highContrastIconFrames) {
@@ -59,7 +56,6 @@ for (const [file, pattern] of highContrastIconFrames) {
 const highContrastFrameStyles = [
   ['src/components/AppFooter.vue', /\.footer-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.9/],
   ['src/views/LoginView.vue', /\.brand-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.92/],
-  ['src/views/RegisterView.vue', /\.brand-logo-mark\s*\{[\s\S]*?background:\s*rgba\(255,\s*253,\s*248,\s*0\.92/],
 ]
 
 for (const [file, pattern] of highContrastFrameStyles) {

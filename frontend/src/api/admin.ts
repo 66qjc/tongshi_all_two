@@ -1,4 +1,4 @@
-import http from './http'
+import http, { fetchWithAuth } from './http'
 
 export interface TeacherItem {
     id: string
@@ -55,10 +55,7 @@ export function importTeachers(file: File) {
 }
 
 export async function downloadTeacherImportTemplate() {
-    const token = localStorage.getItem('auth_token')
-    const response = await fetch('/api/admin/teachers/import/template', {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    })
+    const response = await fetchWithAuth('/api/admin/teachers/import/template')
     if (!response.ok) {
         throw new Error('下载模板失败')
     }
@@ -175,15 +172,12 @@ export function getAuditLogs(params: AuditLogQueryParams) {
 }
 
 export async function downloadAuditLogs(params?: AuditLogQueryParams) {
-    const token = localStorage.getItem('auth_token')
     const query = new URLSearchParams()
     Object.entries(params || {}).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') query.append(key, String(value))
     })
     const suffix = query.toString() ? `?${query.toString()}` : ''
-    const response = await fetch(`/api/admin/audit-logs/export${suffix}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    })
+    const response = await fetchWithAuth(`/api/admin/audit-logs/export${suffix}`)
     if (!response.ok) throw new Error('审计日志导出失败')
     return await response.blob()
 }

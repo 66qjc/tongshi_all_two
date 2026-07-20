@@ -17,7 +17,7 @@ from app.core.exceptions import BusinessException
 from app.core.upload_validation import validate_upload, ALLOWED_EXCEL_EXTENSIONS, MAX_EXCEL_SIZE
 from app.schemas.common import AuthUser, QuestionCreate, QuestionUpdate
 from app.services.question_service import (
-    list_questions, create_question, update_question,
+    list_questions, list_question_tags, create_question, update_question,
     get_course_questions, import_questions_from_excel, can_view_course_questions,
 )
 
@@ -84,6 +84,14 @@ def get_questions(
         tag=tag,
     )
     return paginated_success([_format_question(q, current_user.id) for q in questions], total, page, page_size)
+
+
+@router.get("/tags", summary="共享题库标签列表", description="聚合活跃共享题标签，供教师端新增/筛选下拉选用")
+def get_question_tags(
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("teacher")),
+):
+    return success(list_question_tags(db))
 
 
 @router.get("/course/{course_id}", summary="课程题目", description="获取指定课程的题目（用于测验），可选 ?ids=1,2,3 过滤指定题目")

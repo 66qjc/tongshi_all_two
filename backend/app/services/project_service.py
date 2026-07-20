@@ -2,7 +2,8 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.exceptions import BusinessException
@@ -234,19 +235,32 @@ def toggle_like(db: Session, user_id: str, project_id: int):
         ProjectLike.user_id == user_id, ProjectLike.project_id == project_id).first()
 
     if existing:
-        db.delete(existing)
-        # 原子递减 likes，钳制到 0 防止负数
-        db.execute(
-            Project.__table__.update()
-            .where(Project.id == project_id)
-            .values(likes=func.max(Project.likes - 1, 0))
+        # 取消点赞：用 Core DELETE + rowcount 保证并发安全
+        result = db.execute(
+            ProjectLike.__table__.delete()
+            .where(ProjectLike.user_id == user_id)
+            .where(ProjectLike.project_id == project_id)
         )
+        if result.rowcount == 1:
+            # 只有真正删了行才递减，避免并发重复取消
+            db.execute(
+                Project.__table__.update()
+                .where(Project.id == project_id)
+                .values(likes=case((Project.likes > 0, Project.likes - 1), else_=0))
+            )
         db.commit()
         db.refresh(project)
         return {"liked": False, "likes": max(0, project.likes)}
     else:
+        # 点赞：先 flush 插入，成功后再递增 likes
         db.add(ProjectLike(user_id=user_id, project_id=project_id))
-        # 原子递增 likes，避免并发竞态
+        try:
+            db.flush()
+        except IntegrityError:
+            # 并发场景：另一请求已插入同一 ProjectLike，唯一约束触发
+            db.rollback()
+            db.refresh(project)
+            return {"liked": True, "likes": project.likes}
         db.execute(
             Project.__table__.update()
             .where(Project.id == project_id)

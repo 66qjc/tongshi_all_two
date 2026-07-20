@@ -131,10 +131,6 @@ const publicVisiblePages = [
     selectors: ['.brand-content h1', '.form-content h2'],
   },
   {
-    file: 'src/views/RegisterView.vue',
-    selectors: ['.brand-content h1', '.form-content h2'],
-  },
-  {
     file: 'src/views/ChangePasswordView.vue',
     selectors: ['.card-header'],
   },

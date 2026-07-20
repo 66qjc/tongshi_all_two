@@ -60,6 +60,14 @@ def list_question_bank(
     return paginated_success([service.format_question(q) for q in items], total, safe_page, safe_page_size)
 
 
+@router.get("/tags", summary="共享题库标签列表", description="聚合活跃共享题标签，供管理员端新增/筛选下拉选用")
+def list_question_bank_tags(
+    db: Session = Depends(get_db),
+    _: AuthUser = Depends(require_role("admin")),
+):
+    return success(service.list_question_tags(db))
+
+
 @router.post("", summary="新增共享题", description="管理员：可选择活跃公共课作为挂载快照，也可创建独立题")
 def create_question_bank_item(
     data: AdminQuestionCreate,

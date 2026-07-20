@@ -111,17 +111,18 @@ test('管理端文案承诺应和实际行为一致', () => {
   assert.doesNotMatch(adminPublicCourses, /公开学习数据源/, '管理端不应暴露“公开学习数据源”这种内部口吻')
 })
 
-test('公开端长文案不应暴露内部迁移说明或错误登录边界', () => {
-  assert.match(hero, /登录后查看作品展示，并提交自己的实践成果/, '首页作品入口应说明需要登录')
-  assert.doesNotMatch(hero, /查看优秀作品，登录后提交/, '首页作品入口不应暗示游客可查看作品')
+test('公开端长文案不应暴露内部迁移说明，并应准确说明游客作品边界', () => {
+  assert.match(hero, /浏览同学们的创作与项目，登录后提交自己的实践成果/, '首页作品入口应说明游客可浏览、登录后提交')
+  assert.doesNotMatch(hero, /提交自己的实践成果，浏览同学们的创作与项目/, '首页作品入口不应把需要登录的提交动作放在游客浏览之前造成误解')
   assert.doesNotMatch(moduleShowcase, /写死|旧模块|真实数据/, '首页模块说明不应暴露开发迁移说明')
   assert.doesNotMatch(statsSection, /旧模块|过期|真实数据/, '首页统计区不应暴露开发迁移说明')
   assert.doesNotMatch(appFooter, /课程大纲/, '页脚不应把公开学习馆称为课程大纲')
   assert.match(appFooter, /公开学习馆/, '页脚应使用公开学习馆术语')
   const createRoute = router.match(/path:\s*['"]\/create['"][\s\S]*?\n\s*\},/u)?.[0] || ''
-  assert.doesNotMatch(createRoute, /public:\s*true/, '作品入口必须要求登录，不能标记为公开路由')
+  assert.match(createRoute, /public:\s*true/, '作品广场应允许游客浏览已通过作品')
+  const uploadRoute = router.match(/path:\s*['"]\/create\/upload['"][\s\S]*?\n\s*\},/u)?.[0] || ''
+  assert.doesNotMatch(uploadRoute, /public:\s*true/, '作品提交入口仍必须要求登录')
 })
-
 test('学生端应统一公开教程、学习资料和作业术语', () => {
   assert.match(learn, /公开教程/, '学页标题应使用公开教程')
   assert.match(learn, /选一门教程开始阅读|游客可直接浏览公开课程与学习资料/, '学页说明应使用直接任务指令')

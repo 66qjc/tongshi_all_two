@@ -581,6 +581,53 @@ def ensure_schema_compatibility(engine) -> None:
                             FOREIGN KEY (source_stage_id) REFERENCES course_stages(id) ON DELETE SET NULL
                     """))
 
+        # ── courses 活跃名称唯一约束（生成列 + 三列唯一索引）──────────────
+        if "courses" in table_names:
+            inspector = inspect(conn)
+            course_columns = {col["name"] for col in inspector.get_columns("courses")}
+            if "active_name_unique_marker" not in course_columns:
+                if conn.dialect.name == "mysql":
+                    conn.execute(text("""
+                        ALTER TABLE courses
+                        ADD COLUMN active_name_unique_marker INTEGER
+                            GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN 1 ELSE NULL END) STORED
+                    """))
+                    # DDL 后必须重新读取列和索引信息，不能继续使用旧 inspector。
+                    inspector = inspect(conn)
+                    course_columns = {col["name"] for col in inspector.get_columns("courses")}
+                else:
+                    # SQLite 不支持为旧表补生成列；此时保留已有唯一索引，不破坏现有保护。
+                    course_columns = set(course_columns)
+
+            if "active_name_unique_marker" in course_columns:
+                inspector = inspect(conn)
+                course_indexes = inspector.get_indexes("courses")
+                has_active_unique = any(
+                    index.get("unique")
+                    and index.get("column_names") == [
+                        "name", "created_by", "active_name_unique_marker"
+                    ]
+                    for index in course_indexes
+                )
+                if not has_active_unique:
+                    # 新索引创建失败时直接抛出；旧索引仍保留，不能吞异常后删除保护。
+                    conn.execute(text(
+                        "CREATE UNIQUE INDEX uq_course_active_name "
+                        "ON courses (name, created_by, active_name_unique_marker)"
+                    ))
+                    inspector = inspect(conn)
+                    course_indexes = inspector.get_indexes("courses")
+                    has_active_unique = any(
+                        index.get("unique")
+                        and index.get("column_names") == [
+                            "name", "created_by", "active_name_unique_marker"
+                        ]
+                        for index in course_indexes
+                    )
+                if has_active_unique:
+                    # 只有替代索引已确认存在后，才允许删除旧约束。
+                    _ensure_course_name_owner_unique(conn, inspector)
+
         # ── material_previews 表（依赖 materials 和 stored_files）──────────
         inspector = inspect(conn)
         table_names = set(inspector.get_table_names())
@@ -1005,23 +1052,40 @@ def _drop_column_if_exists(conn, inspector, table: str, column: str) -> None:
 
 
 def _ensure_course_name_owner_unique(conn, inspector) -> None:
-    """兼容旧库 courses.name 全局唯一约束，改为同一教师下唯一。"""
-    if conn.dialect.name != "mysql":
-        return
+    """在活跃名称索引已存在后清理旧课程名称唯一索引。
+
+    该函数保留旧名称以兼容现有调用，但不再创建废弃的
+    ``(name, created_by)`` 唯一索引。迁移必须先建立新的条件唯一索引，
+    再删除旧索引，避免中途失去唯一性保护。
+    """
     if "courses" not in {t for t in inspector.get_table_names()}:
         return
 
     indexes = inspector.get_indexes("courses")
-    for index in indexes:
-        if index.get("unique") and index.get("column_names") == ["name"]:
-            conn.execute(text(f"ALTER TABLE courses DROP INDEX {index['name']}"))
-
-    has_owner_unique = any(
-        index.get("unique") and index.get("column_names") == ["name", "created_by"]
-        for index in inspector.get_indexes("courses")
+    has_active_unique = any(
+        index.get("unique")
+        and index.get("column_names") == [
+            "name", "created_by", "active_name_unique_marker"
+        ]
+        for index in indexes
     )
-    if not has_owner_unique:
-        conn.execute(text("ALTER TABLE courses ADD UNIQUE KEY uq_course_name_created_by (name, created_by)"))
+    if not has_active_unique:
+        return
+
+    legacy_column_sets = {
+        ("name",),
+        ("name", "created_by"),
+    }
+    for index in indexes:
+        if not index.get("unique"):
+            continue
+        if tuple(index.get("column_names") or ()) not in legacy_column_sets:
+            continue
+        index_name = conn.dialect.identifier_preparer.quote(index["name"])
+        if conn.dialect.name == "mysql":
+            conn.execute(text(f"ALTER TABLE courses DROP INDEX {index_name}"))
+        else:
+            conn.execute(text(f"DROP INDEX {index_name}"))
 
 
 def _make_column_nullable(conn, inspector, table: str, column: str, col_type: str) -> None:

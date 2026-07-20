@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import BusinessException
 from app.core.timezone_utils import to_beijing_iso
-from app.models.entities import Course, CourseStage
+from app.models.entities import Course, CourseStage, Material
 
 
 def list_stages_for_course(db: Session, course_id: int, teacher_id: str | None = None):
@@ -124,9 +124,19 @@ def delete_stage(
         op_id = operator_id or teacher_id or ""
         operator = AuthUser(id=op_id, name="", role=operator_role)
         for material in list(active_materials):
-            # 先软删并写入 deleted_stage_* 快照；勿再清空 stage_id，
-            # 以免干扰快照；物理删阶段时由 FK ON DELETE SET NULL 脱钩。
+            # 先软删并写入 deleted_stage_* 快照
             soft_delete(db, material, operator, action="material.delete")
+
+    # 脱钩：将该阶段下全部资料（含已软删）的 stage_id 置空，
+    # 避免物理删阶段时触发外键约束失败。
+    db.query(Material).filter(Material.stage_id == stage_id).update(
+        {Material.stage_id: None}, synchronize_session=False,
+    )
+    # 脱钩：将所有 source_stage_id 指向本阶段的阶段引用置空，
+    # 避免入站外键阻止删除。
+    db.query(CourseStage).filter(CourseStage.source_stage_id == stage_id).update(
+        {CourseStage.source_stage_id: None}, synchronize_session=False,
+    )
 
     db.delete(stage)
     db.flush()

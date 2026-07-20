@@ -1,4 +1,4 @@
-import http from './http'
+import http, { fetchWithAuth } from './http'
 
 // 课程基础信息
 export interface Course {
@@ -49,6 +49,11 @@ export function getQuestions(params?: {
   return http.get<any, PaginatedResult<Question>>('/questions', { params })
 }
 
+/** 活跃共享题库去重标签，供新增/筛选下拉选用 */
+export function getQuestionTags() {
+  return http.get<any, string[]>('/questions/tags')
+}
+
 export function getCourseQuestions(courseId: number, ids?: string) {
   const params = ids ? { params: { ids } } : undefined
   return http.get<any, Question[]>(`/questions/course/${courseId}`, params)
@@ -67,11 +72,11 @@ export function importQuestions(file: File) {
   formData.append('file', file)
   return http.post<any, { success_count: number; fail_count: number; skip_count: number; errors: { row: number; reason: string }[]; skips: { row: number; reason: string }[] }>('/questions/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000, // 大批量导入需要更长超时
   })
 }
 
 export async function downloadQuestionTemplate(type: 'all' | 'choice' | 'fill' | 'multi_choice' = 'all') {
-  const token = localStorage.getItem('auth_token')
   const url = type === 'choice'
     ? '/api/questions/import/template/choice'
     : type === 'fill'
@@ -79,9 +84,7 @@ export async function downloadQuestionTemplate(type: 'all' | 'choice' | 'fill' |
       : type === 'multi_choice'
         ? '/api/questions/import/template/multi_choice'
         : '/api/questions/import/template'
-  const response = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  })
+  const response = await fetchWithAuth(url)
   if (!response.ok) {
     throw new Error('模板下载失败')
   }

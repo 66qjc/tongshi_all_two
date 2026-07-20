@@ -16,8 +16,8 @@ async function loadData() {
   loading.value = true
   try {
     const [courseResult, a, stats] = await Promise.all([
-      getCourseList(),
-      getAnnouncements(),
+      getCourseList().catch(() => ({ courses: [] as Course[], hint: null as string | null })),
+      getAnnouncements().catch(() => [] as Announcement[]),
       getQuizStats().catch(() => ({ total_questions: 0, questions_done: 0, accuracy: 0, today_count: 0 })),
     ])
     courses.value = courseResult.courses

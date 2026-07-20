@@ -174,9 +174,9 @@ async function handleDeleteStage(stage: CourseStage) {
     await deleteCourseStage(stage.id, { cascadeMaterials: true })
     ElMessage.success('已删除')
     await loadCourse()
-  } catch (error) {
+  } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('删除失败，请稍后重试')
+      ElMessage.error(error?.message || '删除失败，请稍后重试')
     }
   }
 }

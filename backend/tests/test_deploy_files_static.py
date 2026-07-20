@@ -234,6 +234,14 @@ finally {
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("本机未安装 Bash，无法执行 CRLF 过滤回归。")
+    bash_probe = subprocess.run(
+        [bash, "--version"],
+        capture_output=True,
+        check=False,
+    )
+    if bash_probe.returncode != 0:
+        # Windows 的 WSL 占位 bash.exe 可能存在，但未安装发行版时并不可执行。
+        pytest.skip("本机 Bash 不可用，无法执行 CRLF 过滤回归。")
     filtered = subprocess.run(
         [bash, "-o", "pipefail", "-c", "tr -d '\\r' | bash -se"],
         input=b"printf 'crlf-filter-ok\\n'\r\n",

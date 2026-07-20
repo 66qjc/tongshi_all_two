@@ -295,6 +295,11 @@ def remove_public_stage(
                 ).update(
                     {Material.stage_id: None}, synchronize_session=False,
                 )
+        # 脱钩：将副本阶段下全部资料（含已软删）的 stage_id 置空，
+        # 避免物理删副本阶段时外键约束失败。
+        db.query(Material).filter(Material.stage_id == copy_stage.id).update(
+            {Material.stage_id: None}, synchronize_session=False,
+        )
         db.delete(copy_stage)
     if not delete_stage(
         db,

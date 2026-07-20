@@ -8,6 +8,7 @@ import {
   downloadAdminQuestionBankTemplate,
   getAdminQuestionBank,
   getAdminQuestionBankContributions,
+  getAdminQuestionBankTags,
   importAdminQuestionBank,
   updateAdminQuestionBankItem,
   type AdminQuestionBankContribution,
@@ -23,6 +24,7 @@ const pageSize = ref(20)
 const filterType = ref('')
 const filterKeyword = ref('')
 const filterTag = ref('')
+const tagOptions = ref<string[]>([])
 const contributions = ref<AdminQuestionBankContribution[]>([])
 const contributionTotal = ref(0)
 const contributionPage = ref(1)
@@ -61,6 +63,15 @@ async function loadQuestions() {
     ElMessage.error('题库加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTagOptions() {
+  try {
+    tagOptions.value = await getAdminQuestionBankTags()
+  } catch {
+    // 标签选项失败不阻断主列表与手输
+    tagOptions.value = []
   }
 }
 
@@ -127,7 +138,7 @@ async function handleSave() {
       ElMessage.success('已新增到共享题库')
     }
     dialogVisible.value = false
-    await loadQuestions()
+    await Promise.all([loadQuestions(), loadTagOptions()])
   } catch (error: any) {
     ElMessage.error(error?.message || '保存失败')
   } finally {
@@ -213,7 +224,7 @@ async function handleImport() {
       importErrorDialogVisible.value = true
     }
     importFile.value = null
-    await loadQuestions()
+    await Promise.all([loadQuestions(), loadTagOptions()])
   } catch (error: any) {
     ElMessage.error(error?.message || '导入失败')
   } finally {
@@ -236,7 +247,7 @@ async function handleDownloadTemplate() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadQuestions(), loadContributions()])
+  await Promise.all([loadQuestions(), loadContributions(), loadTagOptions()])
 })
 </script>
 
@@ -269,7 +280,19 @@ onMounted(async () => {
               <el-input v-model="filterKeyword" clearable placeholder="搜索题干" @keyup.enter="page = 1; loadQuestions()" />
             </el-form-item>
             <el-form-item label="标签">
-              <el-input v-model="filterTag" clearable placeholder="标签关键词" @keyup.enter="page = 1; loadQuestions()" />
+              <el-select
+                v-model="filterTag"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                placeholder="选择或输入标签"
+                style="width: 180px"
+                @change="page = 1; loadQuestions()"
+                @clear="page = 1; loadQuestions()"
+              >
+                <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
+              </el-select>
             </el-form-item>
             <el-form-item>
               <el-button type="primary" @click="page = 1; loadQuestions()">查询</el-button>
@@ -396,7 +419,17 @@ onMounted(async () => {
       </div>
       <div class="form-group">
         <label>标签</label>
-        <el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width: 100%" />
+        <el-select
+          v-model="form.tags"
+          multiple
+          filterable
+          allow-create
+          default-first-option
+          placeholder="选择已有标签，或输入后回车创建"
+          style="width: 100%"
+        >
+          <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
+        </el-select>
       </div>
       <div class="form-group">
         <label>星级</label>

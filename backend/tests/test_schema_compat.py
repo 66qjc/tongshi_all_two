@@ -502,3 +502,59 @@ def test_ensure_schema_compatibility_creates_material_previews_table():
         "created_at",
         "updated_at",
     }.issubset(columns)
+
+
+
+
+def test_legacy_course_owner_helper_does_not_recreate_removed_unique_index():
+    """新活跃名称索引存在时，兼容逻辑不能重新添加旧索引。"""
+    from app.db import schema_compat
+
+    statements: list[str] = []
+
+    class FakeDialect:
+        name = "mysql"
+
+    class FakeConn:
+        dialect = FakeDialect()
+
+        def execute(self, statement):
+            statements.append(str(statement))
+
+    class FakeInspector:
+        def get_table_names(self):
+            return ["courses"]
+
+        def get_indexes(self, table):
+            assert table == "courses"
+            return [{
+                "name": "uq_course_active_name",
+                "unique": True,
+                "column_names": ["name", "created_by", "active_name_unique_marker"],
+            }]
+
+    schema_compat._ensure_course_name_owner_unique(FakeConn(), FakeInspector())
+
+    assert not any("uq_course_name_created_by" in sql for sql in statements)
+
+
+def test_sqlite_course_migration_keeps_legacy_unique_when_replacement_cannot_be_created():
+    """替代索引创建失败时不能先删除仍能保护数据的旧索引。"""
+    engine = create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE courses (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(128) NOT NULL,
+                created_by VARCHAR(32) NOT NULL,
+                deleted_at DATETIME
+            )
+        """))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX uq_course_name_created_by ON courses (name, created_by)"
+        ))
+
+    ensure_schema_compatibility(engine)
+
+    indexes = {index["name"] for index in inspect(engine).get_indexes("courses")}
+    assert "uq_course_name_created_by" in indexes

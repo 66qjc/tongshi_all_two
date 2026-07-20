@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from sqlalchemy import String, cast, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache import invalidate_cache
@@ -76,6 +77,20 @@ def _normalize_tags(value) -> list[str]:
             seen.add(tag)
             tags.append(tag)
     return tags
+
+
+def list_question_tags(db: Session) -> list[str]:
+    """聚合活跃共享题库中的去重标签，供新增/筛选下拉选用。"""
+    rows = (
+        db.query(Question.tags)
+        .filter(Question.deleted_at.is_(None))
+        .all()
+    )
+    seen: set[str] = set()
+    for (raw_tags,) in rows:
+        for tag in _normalize_tags(raw_tags):
+            seen.add(tag)
+    return sorted(seen, key=lambda s: s.casefold())
 
 
 def _row_value(row: dict, *keys: str):
@@ -277,20 +292,34 @@ def list_courses(db: Session, teacher_id: str | None = None, keyword: str | None
 
 
 def create_course(db: Session, name: str, teacher_id: str, description: str = "", is_public: bool = False):
-    """创建课程"""
-    if db.query(Course).filter(Course.name == name, Course.created_by == teacher_id).first():
+    """创建课程。"""
+    if db.query(Course).filter(
+        Course.name == name,
+        Course.created_by == teacher_id,
+        Course.deleted_at.is_(None),
+    ).first():
         raise BusinessException(400, "课程已存在")
-    course = Course(name=name, created_by=teacher_id, description=description, is_public=is_public)
+    course = Course(
+        name=name,
+        created_by=teacher_id,
+        description=description,
+        is_public=is_public,
+    )
     db.add(course)
+    try:
+        # 先触发唯一约束，避免并发同名创建在 commit 阶段变成 500。
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(400, "课程已存在")
     db.commit()
     db.refresh(course)
     # 清除课程列表缓存
     invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
 
-
 def add_public_course(db: Session, course_id: int, teacher_id: str):
-    """添加公共课程到教师课程"""
+    """添加公共课程到教师课程。"""
     source = db.query(Course).filter(
         Course.id == course_id,
         Course.is_public.is_(True),
@@ -299,15 +328,28 @@ def add_public_course(db: Session, course_id: int, teacher_id: str):
     if not source:
         raise BusinessException(404, "公共课程不存在")
 
-    existing = db.query(Course).filter(Course.name == source.name, Course.created_by == teacher_id, Course.deleted_at.is_(None)).first()
+    existing = db.query(Course).filter(
+        Course.name == source.name,
+        Course.created_by == teacher_id,
+        Course.deleted_at.is_(None),
+    ).first()
     if existing:
         return existing
 
-    course = Course(name=source.name, created_by=teacher_id,
-                    description=source.description or "",
-                    is_public=False, source_course_id=source.id)
+    course = Course(
+        name=source.name,
+        created_by=teacher_id,
+        description=source.description or "",
+        is_public=False,
+        source_course_id=source.id,
+    )
     db.add(course)
-    db.flush()
+    try:
+        # 先落课程行，再复制阶段和资料；并发同名时整笔事务回滚。
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(400, "课程已存在")
 
     mirror_public_course_content(db, source, course)
 
@@ -317,9 +359,8 @@ def add_public_course(db: Session, course_id: int, teacher_id: str):
     invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
 
-
 def update_course(db: Session, course_id: int, name: str, teacher_id: str, description: str | None = None, is_public: bool | None = None):
-    """更新课程"""
+    """更新课程。"""
     course = _get_owned_course(db, course_id, teacher_id)
     if not course:
         return None
@@ -327,26 +368,33 @@ def update_course(db: Session, course_id: int, name: str, teacher_id: str, descr
         duplicate = db.query(Course).filter(
             Course.name == name,
             Course.created_by == teacher_id,
+            Course.deleted_at.is_(None),
             Course.id != course_id,
         ).first()
         if duplicate:
             raise BusinessException(400, "课程已存在")
     course.name = name
+    if description is not None:
+        course.description = description
+    if is_public is not None:
+        course.is_public = is_public
+    try:
+        # 数据库唯一约束是并发写入的最终保护，冲突统一转换为中文业务错误。
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise BusinessException(400, "课程已存在")
+
     # 课程改名时同步活跃挂载题名称快照，便于后续脱钩展示
     db.query(Question).filter(
         Question.course_id == course.id,
         Question.deleted_at.is_(None),
     ).update({Question.mount_course_name_snapshot: name}, synchronize_session=False)
-    if description is not None:
-        course.description = description
-    if is_public is not None:
-        course.is_public = is_public
     db.commit()
     # 清除缓存
     invalidate_cache(f"course:detail:{course_id}")
     invalidate_cache(f"courses:teacher:{teacher_id}")
     return course
-
 
 def delete_course(db: Session, course_id: int, teacher_id: str):
     """删除课程（软删除）"""

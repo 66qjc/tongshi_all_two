@@ -255,7 +255,7 @@ def verify_answers_and_reset_password(db: Session, user_id: str, answers: list[d
 
 def submit_reset_request(db: Session, user_id: str, message: str) -> dict:
     """提交人工密码重置申请"""
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == user_id, User.deleted_at.is_(None)).first()
     if not user:
         raise BusinessException(404, "学号不存在")
 

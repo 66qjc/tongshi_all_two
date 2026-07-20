@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import String, cast
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session
 
@@ -276,8 +277,30 @@ def restore_resource(
         item.deleted_stage_name = None
         item.deleted_stage_sort_order = None
 
+    # 课程恢复冲突检查：同教师下已有同名活跃课程时拒绝恢复
+    if isinstance(item, Course):
+        conflict = db.query(Course).filter(
+            Course.name == item.name,
+            Course.created_by == item.created_by,
+            Course.deleted_at.is_(None),
+            Course.id != item.id,
+        ).first()
+        if conflict:
+            raise BusinessException(400, f"同教师下已存在活跃课程「{item.name}」，请先重命名当前活跃课程再恢复")
+
     item.deleted_at = None
     item.deleted_by = None
+    restoring_course_name = item.name if isinstance(item, Course) else ""
+    if isinstance(item, Course):
+        try:
+            # 先单独触发课程名称唯一约束，避免把后续子资源或审计错误误判为重名。
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            raise BusinessException(
+                400,
+                f"同教师下已存在活跃课程「{restoring_course_name}」，请先重命名当前活跃课程再恢复",
+            )
     restored_children: dict[str, int] = {}
     if isinstance(item, Course) and get_resource_policy(resource_type).restore_mode == "same_batch":
         for child_type in get_resource_policy(resource_type).cascade_children:
@@ -309,7 +332,11 @@ def restore_resource(
         resource_name=_resource_name(item),
         details=details,
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise
     result = _format_deleted(item)
     result["恢复子资源数量"] = restored_child_count
     if remount_course_id is not None:

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createQuestion, downloadQuestionTemplate, getQuestions, importQuestions, updateQuestion, type Question } from '@/api/question'
+import { createQuestion, downloadQuestionTemplate, getQuestionTags, getQuestions, importQuestions, updateQuestion, type Question } from '@/api/question'
 import { useDebounce } from '@/composables/useDebounce'
 
 const questions = ref<Question[]>([])
@@ -15,6 +15,7 @@ watch(debouncedKeyword, () => {
   loadQuestions()
 })
 const filterTag = ref('')
+const tagOptions = ref<string[]>([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -61,6 +62,15 @@ async function loadQuestions() {
     ElMessage.error('题目加载失败，请稍后重试')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadTagOptions() {
+  try {
+    tagOptions.value = await getQuestionTags()
+  } catch {
+    // 标签选项失败不阻断主列表与手输
+    tagOptions.value = []
   }
 }
 
@@ -130,7 +140,7 @@ async function handleSave() {
       ElMessage.success('已添加')
     }
     dialogVisible.value = false
-    await loadQuestions()
+    await Promise.all([loadQuestions(), loadTagOptions()])
   } catch {
     ElMessage.error('保存失败，请检查题目内容')
   }
@@ -193,7 +203,7 @@ async function handleImport() {
     }
     importDialogVisible.value = false
     page.value = 1
-    await loadQuestions()
+    await Promise.all([loadQuestions(), loadTagOptions()])
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : '导入失败，请检查文件格式'
     importFailureReason.value = message
@@ -206,7 +216,7 @@ async function handleImport() {
 }
 
 onMounted(async () => {
-  await loadQuestions()
+  await Promise.all([loadQuestions(), loadTagOptions()])
 })
 </script>
 
@@ -227,7 +237,19 @@ onMounted(async () => {
         <el-option label="多选题" value="multi_choice" />
         <el-option label="填空题" value="fill" />
       </el-select>
-      <el-input v-model="filterTag" placeholder="搜索标签" clearable style="width: 160px" @keyup.enter="page = 1; loadQuestions()" @clear="page = 1; loadQuestions()" />
+      <el-select
+        v-model="filterTag"
+        clearable
+        filterable
+        allow-create
+        default-first-option
+        placeholder="选择或输入标签"
+        style="width: 180px"
+        @change="page = 1; loadQuestions()"
+        @clear="page = 1; loadQuestions()"
+      >
+        <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
+      </el-select>
       <el-button @click="resetFilter">重置</el-button>
       <span class="filter-count">共享题库 共 {{ total }} 题</span>
     </div>
@@ -316,10 +338,12 @@ onMounted(async () => {
           filterable
           allow-create
           default-first-option
-          placeholder="输入标签后回车"
+          placeholder="选择已有标签，或输入后回车创建"
           size="large"
           style="width: 100%"
-        />
+        >
+          <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag" />
+        </el-select>
       </div>
       <div class="form-group">
         <label>题干</label>
